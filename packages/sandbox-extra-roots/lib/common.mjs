@@ -1,5 +1,5 @@
 /**
- * sandbox-extra-roots-common — 共享工具模块（@dsh-plugins/sandbox-extra-roots）
+ * sandbox-extra-roots-common — 共享工具模块（@chaoset/sandbox-extra-roots）
  *
  * 目标:在不修改全局安装的前提下,给 dsh 沙盒的 workspace-write 模式
  * 增加"额外允许写入的目录"列表(工具缓存目录等)。

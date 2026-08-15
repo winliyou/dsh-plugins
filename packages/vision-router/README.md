@@ -1,4 +1,4 @@
-# @dsh-plugins/vision-router — DSH 识图自动降级插件
+# @chaoset/vision-router — DSH 识图自动降级插件
 
 让 **任何 preset** 的会话在**纯文本模型**（deepseek-v4-flash 等）下也能处理图片：
 请求含图片而当前模型不支持时，自动调用视觉模型（默认 `zai-open / glm-4v-flash`，
@@ -21,13 +21,13 @@
 
 ```bash
 # 安装到默认 web profile
-dsh plugin --profile web add @dsh-plugins/vision-router
+dsh plugin --profile web add @chaoset/vision-router
 
 # 指定其他 profile
-dsh plugin --profile tui add @dsh-plugins/vision-router
+dsh plugin --profile tui add @chaoset/vision-router
 
 # 卸载
-dsh plugin --profile web remove @dsh-plugins/vision-router
+dsh plugin --profile web remove @chaoset/vision-router
 ```
 
 也可以从其他来源安装：
@@ -35,7 +35,7 @@ dsh plugin --profile web remove @dsh-plugins/vision-router
 - **GitHub**：如果该包有独立 Git 仓库或 Release tarball，可用
   `dsh plugin --profile web add github:owner/repo` 或
   `dsh plugin --profile web add https://github.com/owner/repo/releases/download/v1.0.0/vision-router.tgz`
-- **镜像站**：`dsh plugin --profile web add @dsh-plugins/vision-router --registry=https://registry.npmmirror.com`
+- **镜像站**：`dsh plugin --profile web add @chaoset/vision-router --registry=https://registry.npmmirror.com`
 
 更完整的说明见仓库根目录 `README.md` 的「安装来源」。
 

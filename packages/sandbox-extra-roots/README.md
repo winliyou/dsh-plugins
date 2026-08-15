@@ -1,4 +1,4 @@
-# @dsh-plugins/sandbox-extra-roots — DSH 沙盒额外允许目录插件
+# @chaoset/sandbox-extra-roots — DSH 沙盒额外允许目录插件
 
 给 dsh 沙盒的 `workspace-write` 模式增加"额外允许写入的目录"列表（工具缓存目录等），
 **官方白名单始终保留**（workspace 根 + /tmp + 平台临时目录），只追加不替换：
@@ -17,13 +17,13 @@
 
 ```bash
 # 安装到默认 web profile
-dsh plugin --profile web add @dsh-plugins/sandbox-extra-roots
+dsh plugin --profile web add @chaoset/sandbox-extra-roots
 
 # 指定其他 profile
-dsh plugin --profile tui add @dsh-plugins/sandbox-extra-roots
+dsh plugin --profile tui add @chaoset/sandbox-extra-roots
 
 # 卸载
-dsh plugin --profile web remove @dsh-plugins/sandbox-extra-roots
+dsh plugin --profile web remove @chaoset/sandbox-extra-roots
 ```
 
 也可以从其他来源安装：
@@ -31,7 +31,7 @@ dsh plugin --profile web remove @dsh-plugins/sandbox-extra-roots
 - **GitHub**：如果该包有独立 Git 仓库或 Release tarball，可用
   `dsh plugin --profile web add github:owner/repo` 或
   `dsh plugin --profile web add https://github.com/owner/repo/releases/download/v1.0.0/sandbox-extra-roots.tgz`
-- **镜像站**：`dsh plugin --profile web add @dsh-plugins/sandbox-extra-roots --registry=https://registry.npmmirror.com`
+- **镜像站**：`dsh plugin --profile web add @chaoset/sandbox-extra-roots --registry=https://registry.npmmirror.com`
 
 更完整的说明见仓库根目录 `README.md` 的「安装来源」。
 

@@ -4,9 +4,9 @@ DSH（DeepSeek Harness）host 层全局插件的 npm 包（monorepo）：
 
 | 包 | 功能 |
 |---|---|
-| `@dsh-plugins/vision-router` | 识图自动降级：纯文本模型收到图片时自动调用视觉模型转述 |
-| `@dsh-plugins/sandbox-extra-roots` | 沙盒额外允许写入目录（Seatbelt/bwrap/Landlock + fs fence） |
-| `@dsh-plugins/adaptive-perf` | 极简性能自适应：标准/PTC 模式抑制运行时上下文并按需精简工具目录 |
+| `@chaoset/vision-router` | 识图自动降级：纯文本模型收到图片时自动调用视觉模型转述 |
+| `@chaoset/sandbox-extra-roots` | 沙盒额外允许写入目录（Seatbelt/bwrap/Landlock + fs fence） |
+| `@chaoset/adaptive-perf` | 极简性能自适应：标准/PTC 模式抑制运行时上下文并按需精简工具目录 |
 
 每个包同时提供：
 
@@ -22,14 +22,14 @@ DSH（DeepSeek Harness）host 层全局插件的 npm 包（monorepo）：
 
 ```
 packages/
-├── vision-router/            # @dsh-plugins/vision-router
+├── vision-router/            # @chaoset/vision-router
 │   ├── lib/index.mjs         # host 插件（转述路由 + 压缩 + 配置网关）
 │   ├── lib/config-store.mjs  # 配置持久化（config.json）
 │   ├── lib/remote.mjs        # TypertRemoteService（无装饰器语法的手动标记）
 │   ├── client/client.cjs     # 设置页配置卡片（浏览器端）
 │   └── cordis.patch.yml      # bundle patch（dsh plugin 自动应用）
-├── sandbox-extra-roots/      # @dsh-plugins/sandbox-extra-roots（同上结构）
-└── adaptive-perf/            # @dsh-plugins/adaptive-perf（同上结构）
+├── sandbox-extra-roots/      # @chaoset/sandbox-extra-roots（同上结构）
+└── adaptive-perf/            # @chaoset/adaptive-perf（同上结构）
 ```
 
 ## 开发
@@ -49,6 +49,8 @@ cd ../sandbox-extra-roots && npm publish
 cd ../adaptive-perf && npm publish
 ```
 
+> GitHub Actions 已配置自动发布：推送到 `main` 且 `packages/*` 有变更时，会自动运行测试并发布尚未发布的版本。
+
 ## 安装（npm 生态方式）
 
 推荐使用 DSH 自带的 `dsh plugin` 命令安装到指定 profile。它会初始化 profile、
@@ -57,17 +59,17 @@ cd ../adaptive-perf && npm publish
 
 ```bash
 # 安装到默认 web profile
-dsh plugin --profile web add @dsh-plugins/vision-router
-dsh plugin --profile web add @dsh-plugins/sandbox-extra-roots
-dsh plugin --profile web add @dsh-plugins/adaptive-perf
+dsh plugin --profile web add @chaoset/vision-router
+dsh plugin --profile web add @chaoset/sandbox-extra-roots
+dsh plugin --profile web add @chaoset/adaptive-perf
 
 # 指定其他 profile
-dsh plugin --profile tui add @dsh-plugins/vision-router
+dsh plugin --profile tui add @chaoset/vision-router
 
 # 卸载
-dsh plugin --profile web remove @dsh-plugins/vision-router
-dsh plugin --profile web remove @dsh-plugins/sandbox-extra-roots
-dsh plugin --profile web remove @dsh-plugins/adaptive-perf
+dsh plugin --profile web remove @chaoset/vision-router
+dsh plugin --profile web remove @chaoset/sandbox-extra-roots
+dsh plugin --profile web remove @chaoset/adaptive-perf
 ```
 
 也可以直接用 pnpm 在 profile 目录操作，但 `dsh plugin` 会自动处理 bundle
@@ -75,7 +77,7 @@ dsh plugin --profile web remove @dsh-plugins/adaptive-perf
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add @dsh-plugins/vision-router @dsh-plugins/sandbox-extra-roots @dsh-plugins/adaptive-perf
+pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-perf
 ```
 
 ### 从 npm 安装
@@ -83,9 +85,9 @@ pnpm add @dsh-plugins/vision-router @dsh-plugins/sandbox-extra-roots @dsh-plugin
 包发布到 npm 后，直接使用包名：
 
 ```bash
-dsh plugin --profile web add @dsh-plugins/vision-router
-dsh plugin --profile web add @dsh-plugins/sandbox-extra-roots
-dsh plugin --profile web add @dsh-plugins/adaptive-perf
+dsh plugin --profile web add @chaoset/vision-router
+dsh plugin --profile web add @chaoset/sandbox-extra-roots
+dsh plugin --profile web add @chaoset/adaptive-perf
 ```
 
 ### 从 GitHub 安装
@@ -112,12 +114,12 @@ dsh plugin --profile web add https://github.com/owner/repo/releases/download/v1.
 
 ```bash
 # 使用 npmmirror 镜像安装
-dsh plugin --profile web add @dsh-plugins/vision-router --registry=https://registry.npmmirror.com
-dsh plugin --profile web add @dsh-plugins/sandbox-extra-roots --registry=https://registry.npmmirror.com
-dsh plugin --profile web add @dsh-plugins/adaptive-perf --registry=https://registry.npmmirror.com
+dsh plugin --profile web add @chaoset/vision-router --registry=https://registry.npmmirror.com
+dsh plugin --profile web add @chaoset/sandbox-extra-roots --registry=https://registry.npmmirror.com
+dsh plugin --profile web add @chaoset/adaptive-perf --registry=https://registry.npmmirror.com
 
 # 或者一次性设置 registry
-npm_config_registry=https://registry.npmmirror.com dsh plugin --profile web add @dsh-plugins/vision-router
+npm_config_registry=https://registry.npmmirror.com dsh plugin --profile web add @chaoset/vision-router
 ```
 
 也可以直接修改 profile 或全局 pnpm registry：
@@ -125,7 +127,7 @@ npm_config_registry=https://registry.npmmirror.com dsh plugin --profile web add 
 ```bash
 cd ~/.dsh/profiles/web
 pnpm config set registry https://registry.npmmirror.com
-pnpm add @dsh-plugins/vision-router @dsh-plugins/sandbox-extra-roots @dsh-plugins/adaptive-perf
+pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-perf
 ```
 
 ## 给 AI Agent 的安装指引
@@ -150,9 +152,9 @@ pnpm add @dsh-plugins/vision-router @dsh-plugins/sandbox-extra-roots @dsh-plugin
 
 3. **安装插件**
    ```bash
-   dsh plugin --profile web add @dsh-plugins/vision-router
-   dsh plugin --profile web add @dsh-plugins/sandbox-extra-roots
-   dsh plugin --profile web add @dsh-plugins/adaptive-perf
+   dsh plugin --profile web add @chaoset/vision-router
+   dsh plugin --profile web add @chaoset/sandbox-extra-roots
+   dsh plugin --profile web add @chaoset/adaptive-perf
    ```
    - 如果这些包还没有发布，需要从本地源码安装，直接把包名换成对应路径：
      ```bash
@@ -178,9 +180,9 @@ pnpm add @dsh-plugins/vision-router @dsh-plugins/sandbox-extra-roots @dsh-plugin
 
 6. **卸载**
    ```bash
-   dsh plugin --profile web remove @dsh-plugins/vision-router
-   dsh plugin --profile web remove @dsh-plugins/sandbox-extra-roots
-   dsh plugin --profile web remove @dsh-plugins/adaptive-perf
+   dsh plugin --profile web remove @chaoset/vision-router
+   dsh plugin --profile web remove @chaoset/sandbox-extra-roots
+   dsh plugin --profile web remove @chaoset/adaptive-perf
    ```
 
 > 注：client bundle 依赖 dsh 浏览器端模块（react、dsh-client-ui-slots 等），

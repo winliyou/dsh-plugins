@@ -1,0 +1,81 @@
+name: Publish to npm
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/**'
+      - 'package.json'
+      - 'scripts/**'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+
+jobs:
+  test-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: node scripts/test.mjs
+
+      - name: Detect changed packages
+        id: changed
+        env:
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD -- packages | awk -F/ 'NF >= 2 {print $2}' | sort -u)
+          else
+            CHANGED=$(git diff --name-only "$BEFORE" "$SHA" -- packages | awk -F/ 'NF >= 2 {print $2}' | sort -u)
+          fi
+          echo "changed=$(echo "$CHANGED" | tr '\n' ' ' | sed 's/ $//')" >> "$GITHUB_OUTPUT"
+
+      - name: Publish changed packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          CHANGED="${{ steps.changed.outputs.changed }}"
+          if [ -z "$CHANGED" ]; then
+            echo "No package changes detected, skipping publish."
+            exit 0
+          fi
+
+          for pkg in $CHANGED; do
+            PKG_DIR="packages/$pkg"
+            if [ ! -f "$PKG_DIR/package.json" ]; then
+              echo "Skip $PKG_DIR: not a package directory"
+              continue
+            fi
+
+            PKG_NAME=$(node -p "require('./$PKG_DIR/package.json').name")
+            PKG_VERSION=$(node -p "require('./$PKG_DIR/package.json').version")
+            echo "Checking $PKG_NAME@$PKG_VERSION ..."
+
+            PUBLISHED=$(npm view "$PKG_NAME@$PKG_VERSION" version --registry=https://registry.npmjs.org 2>/dev/null || true)
+            if [ "$PUBLISHED" = "$PKG_VERSION" ]; then
+              echo "$PKG_NAME@$PKG_VERSION already published, skipping."
+              continue
+            fi
+
+            echo "Publishing $PKG_NAME@$PKG_VERSION ..."
+            cd "$PKG_DIR"
+            npm publish --access public --registry=https://registry.npmjs.org
+            cd ../..
+          done

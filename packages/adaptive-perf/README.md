@@ -1,4 +1,4 @@
-# @dsh-plugins/adaptive-perf — DSH 极简性能自适应插件
+# @chaoset/adaptive-perf — DSH 极简性能自适应插件
 
 让 **标准模式（standard）** 与 **PTC 模式（code）** 达到 **极简模式（minimal）**
 级别的高性能，同时保留完整能力——不是静态裁剪，而是**动态自适应**：
@@ -33,13 +33,13 @@
 
 ```bash
 # 安装到默认 web profile
-dsh plugin --profile web add @dsh-plugins/adaptive-perf
+dsh plugin --profile web add @chaoset/adaptive-perf
 
 # 指定其他 profile
-dsh plugin --profile tui add @dsh-plugins/adaptive-perf
+dsh plugin --profile tui add @chaoset/adaptive-perf
 
 # 卸载
-dsh plugin --profile web remove @dsh-plugins/adaptive-perf
+dsh plugin --profile web remove @chaoset/adaptive-perf
 ```
 
 也可以从其他来源安装：
@@ -47,7 +47,7 @@ dsh plugin --profile web remove @dsh-plugins/adaptive-perf
 - **GitHub**：如果该包有独立 Git 仓库或 Release tarball，可用
   `dsh plugin --profile web add github:owner/repo` 或
   `dsh plugin --profile web add https://github.com/owner/repo/releases/download/v1.0.0/adaptive-perf.tgz`
-- **镜像站**：`dsh plugin --profile web add @dsh-plugins/adaptive-perf --registry=https://registry.npmmirror.com`
+- **镜像站**：`dsh plugin --profile web add @chaoset/adaptive-perf --registry=https://registry.npmmirror.com`
 
 更完整的说明见仓库根目录 `README.md` 的「安装来源」。
 

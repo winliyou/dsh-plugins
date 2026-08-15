@@ -1,13 +1,13 @@
-# @dsh-plugins/adaptive-perf bundle patch
+# @chaoset/adaptive-perf bundle patch
 #
 # Installed automatically by:
-#   dsh plugin --profile <name> add @dsh-plugins/adaptive-perf
+#   dsh plugin --profile <name> add @chaoset/adaptive-perf
 #
 # This patch inserts the host plugin row with the default adaptive behavior.
 
 - insert:
     - id: adaptive-perf
-      name: '@dsh-plugins/adaptive-perf'
+      name: '@chaoset/adaptive-perf'
       config:
         enabled: true
         presets: [standard, code]

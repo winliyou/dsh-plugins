@@ -74,7 +74,9 @@ for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf"]) {
   check(`bundle(${name}): files 包含 cordis.patch.yml`, Array.isArray(pkg.files) && pkg.files.includes("cordis.patch.yml"));
   check(`bundle(${name}): exports 暴露 cordis.patch.yml`, pkg.exports?.["./cordis.patch.yml"] === "./cordis.patch.yml");
   check(`bundle(${name}): exports 暴露 package.json（client 发现机制依赖）`, pkg.exports?.["./package.json"] === "./package.json");
-  check(`bundle(${name}): patch 文件存在并插入自身`, patch.includes("- insert:") && patch.includes(`@dsh-plugins/${name}`));
+  const scopedName = `@chaoset/${name}`;
+  check(`bundle(${name}): package name 与 patch 一致`, pkg.name === scopedName);
+  check(`bundle(${name}): patch 文件存在并插入自身`, patch.includes("- insert:") && patch.includes(scopedName));
 }
 
 // ── vision-router ──────────────────────────────────────────────────────

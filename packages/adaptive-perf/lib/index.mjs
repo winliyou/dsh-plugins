@@ -1,5 +1,5 @@
 /**
- * adaptive-perf — 极简性能自适应插件（@dsh-plugins/adaptive-perf）
+ * adaptive-perf — 极简性能自适应插件（@chaoset/adaptive-perf）
  *
  * 目标：让「标准模式（standard）」与「PTC 模式（code）」达到与「极简模式
  * （minimal）」相同级别的高性能。极简模式快的原因（对源码的对照结论）：

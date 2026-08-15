@@ -1,5 +1,5 @@
 /**
- * sandbox-extra-roots — 沙盒额外允许目录插件（@dsh-plugins/sandbox-extra-roots，host 层）
+ * sandbox-extra-roots — 沙盒额外允许目录插件（@chaoset/sandbox-extra-roots，host 层）
  *
  * 目标:在不修改全局安装、不替换任何配置行的情况下,给 dsh 沙盒的
  * workspace-write 模式增加"额外允许写入的目录"列表(工具缓存目录等)。

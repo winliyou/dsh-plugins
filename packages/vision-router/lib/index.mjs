@@ -1,5 +1,5 @@
 /**
- * vision-router — 图片自动降级路由插件（@dsh-plugins/vision-router）
+ * vision-router — 图片自动降级路由插件（@chaoset/vision-router）
  *
  * 当会话模型（如 deepseek-v4-flash 等纯文本模型）收到包含图片的请求时，
  * 自动把图片交给配置的视觉模型（默认 zai-open / glm-4v-flash，智谱官方

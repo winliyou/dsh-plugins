@@ -1,6 +1,6 @@
 {
-  "name": "@dsh-plugins/adaptive-perf",
-  "version": "0.1.0",
+  "name": "@chaoset/adaptive-perf",
+  "version": "0.1.2",
   "description": "DSH host plugin: bring standard / PTC presets to minimal-mode-level performance via runtime-context suppression and adaptive tool-catalog trimming with demand-driven escalation",
   "type": "module",
   "license": "MIT",
@@ -30,11 +30,8 @@
       ]
     }
   },
-  "dependencies": {
+  "optionalDependencies": {
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1"
   },
   "engines": {
     "node": ">=20"
