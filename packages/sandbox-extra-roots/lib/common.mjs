@@ -15,36 +15,42 @@
 
 import { createRequire } from "node:module";
 import { stat } from "node:fs/promises";
-import { dirname, sep } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 
-const requireSelf = createRequire(import.meta.url);
-const HOME = process.env.HOME || "";
+const DSH_HOME = process.env.DSH_HOME?.trim() ? resolve(process.env.DSH_HOME) : join(homedir(), ".dsh");
 const ANCHORS = [
-  `${HOME}/.dsh/profiles/web/package.json`,
-  `${HOME}/.dsh/profiles/tui/package.json`,
-  `${HOME}/.dsh/profiles/headless/package.json`,
+  join(DSH_HOME, "profiles", "web", "package.json"),
+  join(DSH_HOME, "profiles", "tui", "package.json"),
+  join(DSH_HOME, "profiles", "headless", "package.json"),
 ];
 
-/** 加载一个官方包（CJS 命名空间；Node 22+ require(ESM) 与 harness 共享实例）。 */
-function loadPackage(specifier) {
+/** 加载一个官方 ESM 包。优先本包依赖树，失败后从 harness profile 解析文件
+ * URL 再 import——这样 Node 20 早期版本（尚不支持 require(ESM)）也能工作，
+ * 且与 harness 解析到同一 realpath、共享模块实例。 */
+async function loadPackage(specifier) {
   try {
-    return requireSelf(specifier);
+    return await import(specifier);
   } catch {}
   for (const base of ANCHORS) {
     try {
-      return createRequire(base)(specifier);
+      const resolved = createRequire(base).resolve(specifier);
+      return await import(pathToFileURL(resolved).href);
     } catch {}
   }
   throw new Error(`cannot resolve ${specifier} (neither package deps nor harness profiles resolve it)`);
 }
 
-const sandbox = loadPackage("@deepseek-ai/dsh-sandbox");
+const sandbox = await loadPackage("@deepseek-ai/dsh-sandbox");
 
 /** @deepseek-ai/dsh-sandbox 命名空间（canonicalPath / writableRoots）。 */
 export const { canonicalPath, writableRoots } = sandbox;
 
-/** @deepseek-ai/node-addon-landlock-run 命名空间（launcherPath）。 */
-export const landlock = loadPackage("@deepseek-ai/node-addon-landlock-run");
+/** 惰性加载 @deepseek-ai/node-addon-landlock-run（仅 Linux 需要）。 */
+export async function loadLandlock() {
+  return loadPackage("@deepseek-ai/node-addon-landlock-run");
+}
 
 /** 转义一个路径为 SBPL 字符串字面量(与官方实现一致)。 */
 export function sbplString(path) {

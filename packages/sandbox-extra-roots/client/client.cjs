@@ -4,9 +4,8 @@ window.__ModuleLoader__.load({
     var module = { exports: {} };
     var exports = module.exports;
     let react = require("react");
-    let slots = require("@deepseek-ai/dsh-client-ui-slots");
 
-    var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ser_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ser_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ser_header:hover,.ser_card[data-open=true]>.ser_header{background:var(--dsw-alias-interactive-bg-hover)}.ser_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ser_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ser_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ser_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ser_label{font-size:12px;font-weight:500;line-height:18px}.ser_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:var(--ds-font-family-code,monospace)}.ser_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ser_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ser_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ser_save:disabled{opacity:.4;cursor:default}.ser_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.ser_error{color:var(--dsw-alias-state-error-primary)}";
+    var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ser_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ser_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ser_header:hover,.ser_card[data-open=true]>.ser_header{background:var(--dsw-alias-interactive-bg-hover)}.ser_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ser_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ser_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ser_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ser_label{font-size:12px;font-weight:500;line-height:18px}.ser_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:var(--ds-font-family-code,monospace)}.ser_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ser_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ser_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ser_save:disabled{opacity:.4;cursor:default}.ser_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);background:0 0;color:var(--dsw-alias-label-secondary,#666);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px}.ser_discard:disabled{opacity:.4;cursor:default}.ser_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.ser_error{color:var(--dsw-alias-state-error-primary)}";
     var tagId = "@dsh-plugins/sandbox-extra-roots/client.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"" + tagId + "\"]") === null) {
       var tag = document.createElement("style");
@@ -21,6 +20,7 @@ window.__ModuleLoader__.load({
       title: "沙盒额外允许目录（sandbox-extra-roots）",
       hint: "workspace-write 模式下，除官方白名单（工作区根 + /tmp + 平台临时目录）外额外允许写入的目录。每行一个绝对路径。",
       unsaved: "有未保存的修改",
+      discard: "放弃修改",
       saving: "保存中…",
       save: "保存",
       saveFailed: "保存失败",
@@ -32,6 +32,7 @@ window.__ModuleLoader__.load({
       title: "Extra sandbox roots (sandbox-extra-roots)",
       hint: "Extra writable roots under workspace-write mode, on top of the official allow-list (workspace root + /tmp + platform temp dirs). One absolute path per line.",
       unsaved: "Unsaved changes",
+      discard: "Discard",
       saving: "Saving…",
       save: "Save",
       saveFailed: "Save failed",
@@ -54,21 +55,25 @@ window.__ModuleLoader__.load({
           if (cancelled) return;
           setCfg(value);
           setDraft(value);
-        }).catch(() => {
-          if (!cancelled) setStatus({ kind: "error", text: t("loadFailed") });
+        }).catch((error) => {
+          if (!cancelled) setStatus({ kind: "error", text: `${t("loadFailed")}: ${error && error.message || error}` });
         });
         return () => { cancelled = true; };
       }, []);
 
       const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(cfg);
+      const discard = () => {
+        setDraft(cfg);
+        setStatus(null);
+      };
       const save = () => {
         setSaving(true);
         setStatus(null);
         props.setConfig(draft).then(() => {
           setCfg(draft);
           setStatus({ kind: "ok", text: t("saved") });
-        }).catch(() => {
-          setStatus({ kind: "error", text: t("saveFailed") });
+        }).catch((error) => {
+          setStatus({ kind: "error", text: `${t("saveFailed")}: ${error && error.message || error}` });
         }).finally(() => setSaving(false));
       };
 
@@ -78,7 +83,7 @@ window.__ModuleLoader__.load({
         { className: "ser_card", "data-open": open },
         react.createElement(
           "button",
-          { className: "ser_header", onClick: () => setOpen(!open), "aria-expanded": open },
+          { className: "ser_header", type: "button", onClick: () => setOpen(!open), "aria-expanded": open },
           react.createElement("span", { className: "ser_title" }, t("title")),
           dirty ? react.createElement("span", { className: "ser_badge" }, t("unsaved")) : null,
           react.createElement("span", null, open ? "▲" : "▼")
@@ -106,12 +111,17 @@ window.__ModuleLoader__.load({
             { className: "ser_footer" },
             react.createElement(
               "span",
-              { className: "ser_status" + (status !== null && status.kind === "error" ? " ser_error" : "") },
+              { className: "ser_status" + (status !== null && status.kind === "error" ? " ser_error" : ""), role: "status" },
               status !== null ? status.text : ""
             ),
             react.createElement(
               "button",
-              { className: "ser_save", disabled: saving || draft === null || !dirty, onClick: save },
+              { className: "ser_discard", type: "button", disabled: saving || draft === null || !dirty, onClick: discard },
+              t("discard")
+            ),
+            react.createElement(
+              "button",
+              { className: "ser_save", type: "button", disabled: saving || draft === null || !dirty, onClick: save },
               saving ? t("saving") : t("save")
             )
           )

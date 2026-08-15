@@ -7,7 +7,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DSH_PKGS="/Users/liyou/.nvm/versions/node/v26.2.0/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai"
+# 可用环境变量 DSH_PKGS 覆盖；默认从当前 npm 全局根推导，避免硬编码用户/Node 版本。
+if [ -n "${DSH_PKGS:-}" ]; then
+  DSH_PKGS="$(cd "$DSH_PKGS" && pwd)"
+else
+  DSH_PKGS="$(npm root -g 2> /dev/null || true)/@deepseek-ai/dsh/node_modules/@deepseek-ai"
+fi
+if [ ! -d "$DSH_PKGS" ]; then
+  echo "    错误：找不到 DSH 包目录 $DSH_PKGS（可设置 DSH_PKGS 覆盖）" >&2
+  exit 1
+fi
 
 mkdir -p "$ROOT/node_modules/@deepseek-ai"
 for pkg in "$DSH_PKGS"/*; do

@@ -4,10 +4,9 @@ window.__ModuleLoader__.load({
     var module = { exports: {} };
     var exports = module.exports;
     let react = require("react");
-    let slots = require("@deepseek-ai/dsh-client-ui-slots");
 
     // ── 样式（注入 style 标签，模仿官方卡片外观）──────────────────────────
-    var css = ".vr_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.vr_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.vr_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.vr_header:hover,.vr_card[data-open=true]>.vr_header{background:var(--dsw-alias-interactive-bg-hover)}.vr_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.vr_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.vr_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.vr_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.vr_label{font-size:12px;font-weight:500;line-height:18px}.vr_input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:32px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:0 10px;font-size:13px;line-height:20px}.vr_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:60px}.vr_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.vr_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.vr_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.vr_save:disabled{opacity:.4;cursor:default}.vr_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.vr_error{color:var(--dsw-alias-state-error-primary)}";
+    var css = ".vr_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.vr_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.vr_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.vr_header:hover,.vr_card[data-open=true]>.vr_header{background:var(--dsw-alias-interactive-bg-hover)}.vr_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.vr_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.vr_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.vr_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.vr_label{font-size:12px;font-weight:500;line-height:18px}.vr_input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:32px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:0 10px;font-size:13px;line-height:20px}.vr_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:60px}.vr_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.vr_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.vr_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.vr_save:disabled{opacity:.4;cursor:default}.vr_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);background:0 0;color:var(--dsw-alias-label-secondary,#666);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px}.vr_discard:disabled{opacity:.4;cursor:default}.vr_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.vr_error{color:var(--dsw-alias-state-error-primary)}";
     var tagId = "@dsh-plugins/vision-router/client.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"" + tagId + "\"]") === null) {
       var tag = document.createElement("style");
@@ -23,11 +22,13 @@ window.__ModuleLoader__.load({
       title: "识图降级（vision-router）",
       hint: "纯文本模型收到图片时自动调用视觉模型转述。",
       unsaved: "有未保存的修改",
+      discard: "放弃修改",
       saving: "保存中…",
       save: "保存",
       saveFailed: "保存失败",
       saved: "已保存，下次请求生效",
       loadFailed: "读取配置失败",
+      invalidPositiveInt: "请输入正整数",
       visionProvider: "视觉模型提供方",
       visionModel: "视觉模型",
       autoDiscover: "自动发现（配置的模型不可用时）",
@@ -44,11 +45,13 @@ window.__ModuleLoader__.load({
       title: "Image routing (vision-router)",
       hint: "Transcribe images via a vision model when the session model is text-only.",
       unsaved: "Unsaved changes",
+      discard: "Discard",
       saving: "Saving…",
       save: "Save",
       saveFailed: "Save failed",
       saved: "Saved; takes effect on the next request",
       loadFailed: "Failed to load config",
+      invalidPositiveInt: "Enter a positive integer",
       visionProvider: "Vision provider",
       visionModel: "Vision model",
       autoDiscover: "Auto-discover (when configured model is unavailable)",
@@ -83,12 +86,27 @@ window.__ModuleLoader__.load({
       );
     }
     function NumField(props) {
-      return react.createElement(Field, { label: props.label, hint: props.hint },
+      const [text, setText] = react.useState(props.value === null || props.value === void 0 ? "" : String(props.value));
+      react.useEffect(() => {
+        setText(props.value === null || props.value === void 0 ? "" : String(props.value));
+      }, [props.value]);
+      const invalid = text.trim() === "" || !Number.isInteger(Number(text)) || Number(text) <= 0;
+      return react.createElement(Field, {
+        label: props.label,
+        hint: invalid ? `${props.t("invalidPositiveInt")}${props.hint !== void 0 ? ` — ${props.hint}` : ""}` : props.hint
+      },
         react.createElement("input", {
           className: "vr_input",
           type: "number",
-          value: String(props.value),
-          onChange: (e) => props.onChange(Number(e.target.value)),
+          min: "1",
+          step: "1",
+          value: text,
+          onChange: (e) => {
+            const next = e.target.value;
+            setText(next);
+            const nextInvalid = next.trim() === "" || !Number.isInteger(Number(next)) || Number(next) <= 0;
+            props.onChange(nextInvalid ? null : Number(next));
+          },
           disabled: props.disabled === true
         })
       );
@@ -119,21 +137,27 @@ window.__ModuleLoader__.load({
           if (cancelled) return;
           setCfg(value);
           setDraft(value);
-        }).catch(() => {
-          if (!cancelled) setStatus({ kind: "error", text: t("loadFailed") });
+        }).catch((error) => {
+          if (!cancelled) setStatus({ kind: "error", text: `${t("loadFailed")}: ${error && error.message || error}` });
         });
         return () => { cancelled = true; };
       }, []);
 
       const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(cfg);
+      const invalid = draft !== null && ["maxVisionTokens", "compressImageBytes", "compressMaxDimension", "compressTargetBytes", "compressFallbackDimension"]
+        .some((key) => !Number.isInteger(draft[key]) || draft[key] <= 0);
+      const discard = () => {
+        setDraft(cfg);
+        setStatus(null);
+      };
       const save = () => {
         setSaving(true);
         setStatus(null);
         props.setConfig(draft).then(() => {
           setCfg(draft);
           setStatus({ kind: "ok", text: t("saved") });
-        }).catch(() => {
-          setStatus({ kind: "error", text: t("saveFailed") });
+        }).catch((error) => {
+          setStatus({ kind: "error", text: `${t("saveFailed")}: ${error && error.message || error}` });
         }).finally(() => setSaving(false));
       };
 
@@ -144,6 +168,7 @@ window.__ModuleLoader__.load({
           "button",
           {
             className: "vr_header",
+            type: "button",
             onClick: () => setOpen(!open),
             "aria-expanded": open
           },
@@ -176,32 +201,37 @@ window.__ModuleLoader__.load({
             onChange: (v) => setDraft({ ...draft, autoDiscover: v })
           }),
           react.createElement(NumField, {
+            t,
             label: t("maxVisionTokens"),
-            value: draft === null ? 0 : draft.maxVisionTokens,
+            value: draft === null ? null : draft.maxVisionTokens,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, maxVisionTokens: v })
           }),
           react.createElement(NumField, {
+            t,
             label: t("compressImageBytes"),
-            value: draft === null ? 0 : draft.compressImageBytes,
+            value: draft === null ? null : draft.compressImageBytes,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, compressImageBytes: v })
           }),
           react.createElement(NumField, {
+            t,
             label: t("compressMaxDimension"),
-            value: draft === null ? 0 : draft.compressMaxDimension,
+            value: draft === null ? null : draft.compressMaxDimension,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, compressMaxDimension: v })
           }),
           react.createElement(NumField, {
+            t,
             label: t("compressTargetBytes"),
-            value: draft === null ? 0 : draft.compressTargetBytes,
+            value: draft === null ? null : draft.compressTargetBytes,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, compressTargetBytes: v })
           }),
           react.createElement(NumField, {
+            t,
             label: t("compressFallbackDimension"),
-            value: draft === null ? 0 : draft.compressFallbackDimension,
+            value: draft === null ? null : draft.compressFallbackDimension,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, compressFallbackDimension: v })
           }),
@@ -218,12 +248,17 @@ window.__ModuleLoader__.load({
             { className: "vr_footer" },
             react.createElement(
               "span",
-              { className: "vr_status" + (status !== null && status.kind === "error" ? " vr_error" : "") },
+              { className: "vr_status" + (status !== null && status.kind === "error" ? " vr_error" : ""), role: "status" },
               status !== null ? status.text : ""
             ),
             react.createElement(
               "button",
-              { className: "vr_save", disabled: saving || draft === null || !dirty, onClick: save },
+              { className: "vr_discard", type: "button", disabled: saving || draft === null || !dirty, onClick: discard },
+              t("discard")
+            ),
+            react.createElement(
+              "button",
+              { className: "vr_save", type: "button", disabled: saving || draft === null || invalid || !dirty, onClick: save },
               saving ? t("saving") : t("save")
             )
           )

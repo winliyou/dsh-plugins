@@ -7,7 +7,9 @@
 - 拖入对话框的图片 → 自动转述；agent 用 `read_image` 读到的图片 → 自动转述
 - 转述结果按 `sessionId+图片` 缓存，同会话不重复调用
 - 普通文本请求零影响（直接透传，历史图片已缓存时不打扰）
-- 大图自动压缩（字节或像素超限触发；mediaType 按输出字节实际检测）
+- 大图自动压缩（字节或像素超限触发；mediaType 按输出字节实际检测；
+  PNG/WebP/GIF 优先保持原格式）
+- 压缩路径有 64 MiB / 64 MP 硬上限，超大图按原始附件限制拒绝，避免解压炸弹
 - **fail-safe**：插件任何内部错误只记日志并透传，不会拖垮 harness
 
 ## 安装
@@ -15,14 +17,19 @@
 两种模式（任选其一）：
 
 ```bash
-# file:// 模式：不依赖 npm，复制到 ~/.dsh/plugins/vision-router/
+# file:// 模式：不依赖 npm，复制到 $DSH_HOME/plugins/vision-router/
 bash packages/vision-router/install.sh
 
 # npm 模式：装入 profile node_modules，patch 引用包名（需先构建/发布）
 bash packages/vision-router/install.sh --npm
+
+# 指定 profile（默认 web）
+bash packages/vision-router/install.sh --profile tui
 ```
 
-安装后**重启 harness** 生效。卸载：`bash packages/vision-router/uninstall.sh`。
+安装后**重启 harness** 生效。
+卸载：`bash packages/vision-router/uninstall.sh [--profile <name>]`（会自动移除 patch 块、
+file:// 插件本体和 npm/pnpm 安装的包）。
 
 ## 配置
 
@@ -30,7 +37,7 @@ bash packages/vision-router/install.sh --npm
 
 1. 插件内置默认值
 2. `cordis.patch.yml` 中 vision-router 行的 config（安装脚本生成的默认块）
-3. **DSH 设置页 → 插件配置 → 识图降级**（保存到 `~/.dsh/plugins/vision-router/config.json`，
+3. **DSH 设置页 → 插件配置 → 识图降级**（保存到 `$DSH_HOME/plugins/vision-router/config.json`，
    立即热生效，无需重启）
 
 | 字段 | 默认值 | 说明 |

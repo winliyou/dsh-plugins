@@ -30,8 +30,9 @@
  *      ~/.dsh/plugins/sandbox-extra-roots/config.json(设置页 UI,权威)合并。
  */
 
+import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import { canonicalPath, isPathUnder, landlock, seatbeltProfileArgs, writableRoots } from "./common.mjs";
+import { canonicalPath, isPathUnder, loadLandlock, seatbeltProfileArgs } from "./common.mjs";
 import { createConfigStore } from "./config-store.mjs";
 
 // remote 服务（设置页 UI 的配置读写）可选：typert-protocol 不可用时
@@ -59,18 +60,24 @@ const STATE = Symbol("sandbox-extra-roots.state");
 /** 取底层实例(与 vision-router 一致;sandbox/fs 通常就是 raw,防御性写法)。 */
 const ORIGINAL = Symbol.for("cordis.original");
 
-/** Landlock runner 可执行路径(仅在 Linux 上被选中;解析失败时置 null)。 */
-const LANDLOCK_EXEC = (() => {
-  try { return landlock.launcherPath(); } catch { return null; }
-})();
+/** Landlock runner 可执行路径，惰性加载（仅 Linux 且真正进入 apply 时解析）。 */
+let landlockExecPromise = null;
+function getLandlockExec() {
+  if (process.platform !== "linux") return null;
+  landlockExecPromise ??= loadLandlock()
+    .then((landlock) => landlock.launcherPath())
+    .catch(() => null);
+  return landlockExecPromise;
+}
 
-export function apply(ctx, config) {
+export async function apply(ctx, config) {
   // fail-safe:初始化失败只记录,绝不让本插件拖垮 harness(host 层挂载时
   // entry 异常会导致进程启动失败)。
   try {
     const patchConfig = config || {};
     const rawSandbox = ctx.sandbox[ORIGINAL] ?? ctx.sandbox;
     const rawFs = ctx.fs[ORIGINAL] ?? ctx.fs;
+    const landlockExec = await getLandlockExec();
 
     // 共享状态(跨挂载点):计数 + 包装句柄 + 当前生效的额外目录。
     const sandboxState = rawSandbox[STATE] ?? (rawSandbox[STATE] = {
@@ -95,38 +102,8 @@ export function apply(ctx, config) {
     });
     fsState.mounts += 1;
 
-    // 配置存储:patch config 低优先级,config.json(设置页 UI)权威。
-    // 热更新:onUpdate 里同步刷新两个 state 的 extraRoots。
-    const store = createConfigStore({
-      name: "sandbox-extra-roots",
-      defaults: DEFAULT_CONFIG,
-      patchConfig,
-      onUpdate: (merged) => {
-        sandboxState.extraRoots = normalizeRoots({ ...DEFAULT_CONFIG, ...patchConfig, ...merged });
-        fsState.extraRoots = sandboxState.extraRoots;
-      }
-    });
-    const cfg = store.effective();
-
-    // 远程配置服务(设置页 UI 读写；typert 不可用时跳过)
-    if (PluginConfigGateway !== null) {
-      ctx.plugin(PluginConfigGateway, { store, serviceKey: "sandboxExtraRootsConfig" });
-    }
-
-    // 只接受绝对路径:相对路径/空值会破坏词法包含判断,直接拒绝并告警。
-    function normalizeRoots(c) {
-      return (c.extraWritableRoots ?? [])
-        .filter((root) => {
-          if (typeof root === "string" && root.length > 0 && isAbsolute(root)) return true;
-          ctx.logger?.warn?.(`sandbox-extra-roots: ignoring non-absolute extra writable root ${JSON.stringify(root)}`);
-          return false;
-        })
-        .map((root) => canonicalPath(root));
-    }
-    sandboxState.extraRoots = normalizeRoots(cfg);
-    fsState.extraRoots = sandboxState.extraRoots;
-
-    // 卸载计数:每个挂载点(含重复 apply)都登记,最后一次退出才还原。
+    // 卸载计数:在继续初始化之前登记，后续 setup 失败也由本 fiber 负责递减。
+    // 最后一次退出才还原包装。
     ctx.effect(() => () => {
       sandboxState.mounts -= 1;
       if (sandboxState.mounts <= 0) {
@@ -152,11 +129,97 @@ export function apply(ctx, config) {
       }
     });
 
+    // 配置存储:patch config 低优先级,config.json(设置页 UI)权威。
+    // 热更新:onUpdate 里同步刷新两个 state 的 extraRoots。
+    const store = createConfigStore({
+      name: "sandbox-extra-roots",
+      defaults: DEFAULT_CONFIG,
+      patchConfig,
+      validate: validateSandboxConfig,
+      warn: (message) => ctx.logger?.warn?.(`sandbox-extra-roots: ${message}`),
+      onUpdate: (merged) => {
+        sandboxState.extraRoots = normalizeRoots({ ...DEFAULT_CONFIG, ...patchConfig, ...merged });
+        fsState.extraRoots = sandboxState.extraRoots;
+      }
+    });
+    const cfg = store.effective();
+
+    // 远程配置服务(设置页 UI 读写；typert 不可用时跳过)
+    if (PluginConfigGateway !== null) {
+      ctx.plugin(PluginConfigGateway, { store, serviceKey: "sandboxExtraRootsConfig" });
+    }
+
+    // remote.set 严格校验：非法数组/相对路径直接拒绝，UI 能立即看到原因。
+    function validateSandboxConfig(partial) {
+      if (partial === null || typeof partial !== "object" || Array.isArray(partial)) {
+        throw new TypeError("sandbox-extra-roots config must be a plain object");
+      }
+      if (partial.extraWritableRoots !== void 0) {
+        if (!Array.isArray(partial.extraWritableRoots)) {
+          throw new TypeError('sandbox-extra-roots config field "extraWritableRoots" must be an array');
+        }
+        for (const root of partial.extraWritableRoots) {
+          if (typeof root !== "string" || root.length === 0 || !isAbsolute(root)) {
+            throw new TypeError(`sandbox-extra-roots: extra writable root must be a non-empty absolute path: ${JSON.stringify(root)}`);
+          }
+        }
+      }
+    }
+
+    // 只接受绝对路径:相对路径/空值会破坏词法包含判断,直接拒绝并告警。
+    function normalizeRoots(c) {
+      const roots = Array.isArray(c.extraWritableRoots) ? c.extraWritableRoots : [];
+      if (!Array.isArray(c.extraWritableRoots)) {
+        ctx.logger?.warn?.("sandbox-extra-roots: extraWritableRoots must be an array of absolute paths; ignoring current config");
+      }
+      const normalized = roots
+        .filter((root) => {
+          if (typeof root === "string" && root.length > 0 && isAbsolute(root)) return true;
+          ctx.logger?.warn?.(`sandbox-extra-roots: ignoring non-absolute extra writable root ${JSON.stringify(root)}`);
+          return false;
+        })
+        .map((root) => canonicalPath(root));
+      return [...new Set(normalized)];
+    }
+
+    // bwrap/Landlock 的 --bind/--rw 遇到不存在或非目录的 root 会直接启动失败
+    // （Landlock 契约里是 “unopenable grant root”），因此只在执行时授予当前
+    // 真实存在的目录；Seatbelt 可接受尚不存在的 subpath，fs fence 本身也只在
+    // root 存在时才会匹配。目录稍后出现后，下一次 confine 会自动纳入。
+    function existingDirectoryRoots(roots) {
+      const existing = [];
+      for (const root of roots) {
+        let valid = false;
+        try {
+          valid = statSync(root, { throwIfNoEntry: false })?.isDirectory() === true;
+        } catch {
+          valid = false;
+        }
+        if (valid) {
+          existing.push(root);
+          continue;
+        }
+        const key = `missing-root:${root}`;
+        if (!sandboxState.warned.has(key)) {
+          sandboxState.warned.add(key);
+          ctx.logger?.warn?.(`sandbox-extra-roots: extra writable root does not exist or is not a directory; not granting it to bwrap/Landlock: ${root}`);
+        }
+      }
+      return existing;
+    }
+    sandboxState.extraRoots = normalizeRoots(cfg);
+    fsState.extraRoots = sandboxState.extraRoots;
+
     // ── 1. 包装 bash 沙盒的 confine:按 runner 追加额外可写目录 ──
     if (!sandboxState.wrapped) {
       sandboxState.hadOwn = Object.hasOwn(rawSandbox, "confine");
       const originalConfine = rawSandbox.confine;
       if (sandboxState.hadOwn) sandboxState.origConfine = originalConfine;
+      const warnOnce = (key, message) => {
+        if (sandboxState.warned.has(key)) return;
+        sandboxState.warned.add(key);
+        ctx.logger?.warn?.(`sandbox-extra-roots: ${message}`);
+      };
       const installedConfine = function confineWithExtraRoots(argv, policy) {
         const wrapped = originalConfine.call(this, argv, policy);
         if (policy?.mode !== "workspace-write") return wrapped;
@@ -179,33 +242,39 @@ export function apply(ctx, config) {
           return wrapped;
         }
         // bwrap:在 -- 前插入 --bind <root> <root>(后挂载覆盖 --ro-bind / /)。
+        // 只授予当前真实存在的目录，缺失 root 会让 bwrap 启动失败。
         if (a[0] === "bwrap") {
           const sep = a.indexOf("--");
-          if (sep !== -1) {
-            const extra = [];
-            for (const root of roots) extra.push("--bind", root, root);
-            wrapped.argv = [...a.slice(0, sep), ...extra, ...a.slice(sep)];
+          if (sep === -1) {
+            warnOnce("bwrap-separator", "bwrap argv has no -- separator; cannot add extra writable roots");
+            return wrapped;
           }
+          const extra = [];
+          for (const root of existingDirectoryRoots(roots)) extra.push("--bind", root, root);
+          wrapped.argv = [...a.slice(0, sep), ...extra, ...a.slice(sep)];
           return wrapped;
         }
         // Landlock:在 -- 前插入 --rw <root>(runner 原生参数)。
-        if (LANDLOCK_EXEC !== null && a[0] === LANDLOCK_EXEC) {
+        // 同样只授予存在的目录（launcher 把 unopenable grant root 视为失败）。
+        if (landlockExec !== null && a[0] === landlockExec) {
           const sep = a.indexOf("--");
-          if (sep !== -1) {
-            const extra = [];
-            for (const root of roots) extra.push("--rw", root);
-            wrapped.argv = [...a.slice(0, sep), ...extra, ...a.slice(sep)];
+          if (sep === -1) {
+            warnOnce("landlock-separator", "landlock argv has no -- separator; cannot add extra writable roots");
+            return wrapped;
           }
+          const extra = [];
+          for (const root of existingDirectoryRoots(roots)) extra.push("--rw", root);
+          wrapped.argv = [...a.slice(0, sep), ...extra, ...a.slice(sep)];
           return wrapped;
         }
         // Windows ACL runner:argv 层面无法追加额外根目录,仅告警一次。
-        if (a.includes("--workspace")) {
-          if (!sandboxState.warned.has("windows-acl")) {
-            sandboxState.warned.add("windows-acl");
-            ctx.logger?.warn?.("sandbox-extra-roots: windows-acl runner cannot grant extra writable roots; bash-side extra roots are not granted on Windows (the fs fence still grants them)");
-          }
+        // 只检查 runner 参数段（-- 之前），避免误匹配用户命令里的 --workspace。
+        const runnerArgs = a.slice(0, a.indexOf("--") === -1 ? a.length : a.indexOf("--"));
+        if (runnerArgs.includes("--workspace")) {
+          warnOnce("windows-acl", "windows-acl runner cannot grant extra writable roots; bash-side extra roots are not granted on Windows (the fs fence still grants them)");
           return wrapped;
         }
+        warnOnce(`unknown-runner:${a[0]}`, `unknown sandbox runner argv[0] "${a[0]}"; bash-side extra writable roots are not granted`);
         return wrapped;
       };
       rawSandbox.confine = installedConfine;
@@ -219,14 +288,20 @@ export function apply(ctx, config) {
       const originalCheckedTarget = rawFs.checkedTarget;
       if (fsState.hadOwn) fsState.origCheckedTarget = originalCheckedTarget;
       const installedCheckedTarget = async function checkedTargetWithExtraRoots(target, sandboxPolicy) {
-        const policy = sandboxPolicy ?? ctx.sandboxPolicy.resolve();
-        if (policy.mode === "workspace-write") {
+        try {
+          return await originalCheckedTarget.call(this, target, sandboxPolicy);
+        } catch (error) {
+          // 官方白名单拒绝后，再检查是否落在本插件配置的额外根目录内。
+          // 这样官方逻辑永远优先执行，后续 DSH 升级也不会因复制实现而漂移。
+          if (error?.code !== "FS_SANDBOX_DENIED") throw error;
+          const policy = sandboxPolicy ?? ctx.sandboxPolicy.resolve();
+          if (policy.mode !== "workspace-write") throw error;
           const fresh = await this.resolve(target.displayPath);
-          for (const root of [...writableRoots(policy), ...fsState.extraRoots]) {
+          for (const root of fsState.extraRoots) {
             if (await isPathUnder(fresh.targetKey, root)) return fresh;
           }
+          throw error;
         }
-        return originalCheckedTarget.call(this, target, sandboxPolicy);
       };
       rawFs.checkedTarget = installedCheckedTarget;
       fsState.installed = installedCheckedTarget;

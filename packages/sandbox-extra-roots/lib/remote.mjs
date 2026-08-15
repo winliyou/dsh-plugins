@@ -13,28 +13,33 @@
  */
 
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
-const requireSelf = createRequire(import.meta.url);
-
-function loadTypert() {
+// @deepseek-ai/dsh-typert-protocol 是 ESM 包。Node 20 早期版本尚不支持
+// require(ESM)，因此统一用 import() 加载；fallback 时先用 createRequire
+// 解析出实际文件，再以 file URL 导入。
+async function loadTypert() {
   try {
-    return requireSelf("@deepseek-ai/dsh-typert-protocol");
+    return await import("@deepseek-ai/dsh-typert-protocol");
   } catch {}
-  const home = process.env.HOME || "";
+  const dshHome = process.env.DSH_HOME?.trim() ? resolve(process.env.DSH_HOME) : join(homedir(), ".dsh");
   const candidates = [
-    `${home}/.dsh/profiles/web/package.json`,
-    `${home}/.dsh/profiles/tui/package.json`,
-    `${home}/.dsh/profiles/headless/package.json`,
+    join(dshHome, "profiles", "web", "package.json"),
+    join(dshHome, "profiles", "tui", "package.json"),
+    join(dshHome, "profiles", "headless", "package.json"),
   ];
   for (const base of candidates) {
     try {
-      return createRequire(base)("@deepseek-ai/dsh-typert-protocol");
+      const resolved = createRequire(base).resolve("@deepseek-ai/dsh-typert-protocol");
+      return await import(pathToFileURL(resolved).href);
     } catch {}
   }
   throw new Error("typert-protocol is unavailable (neither package deps nor harness profiles resolve it)");
 }
 
-const { Remote, TypertRemoteService } = loadTypert();
+const { Remote, TypertRemoteService } = await loadTypert();
 
 let pending = [];
 

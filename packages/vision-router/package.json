@@ -27,15 +27,19 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "latest"
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6"
   },
   "optionalDependencies": {
     "sharp": "^0.33.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=3.0.0"
+    "@deepseek-ai/cordis": "^4.0.1"
   },
   "engines": {
     "node": ">=20"
+  },
+  "scripts": {
+    "test": "node ../../scripts/test.mjs",
+    "prepublishOnly": "npm test"
   }
 }

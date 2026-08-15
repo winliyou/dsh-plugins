@@ -23,7 +23,10 @@
  * 本文件不依赖任何 dsh 内部包（纯 ESM + ctx.llm），可独立安装。
  */
 
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { createConfigStore } from './config-store.mjs';
 
 // remote 服务（设置页 UI 的配置读写）可选：typert-protocol 不可用时
@@ -64,6 +67,56 @@ const DEFAULT_CONFIG = {
 
 export const config = { ...DEFAULT_CONFIG };
 
+/** 压缩路径的绝对资源上限：超过该上限不再绕过附件服务的原始限制，
+ * 避免把“合理大图压缩”变成解压炸弹/内存 DoS 入口。 */
+const HARD_MAX_SOURCE_IMAGE_BYTES = 64 * 1024 * 1024;
+const HARD_MAX_SOURCE_IMAGE_PIXELS = 64_000_000;
+
+/** 轻量配置校验/归一化：不引入 schema 依赖，但避免 config.json 或 remote.set
+ * 写入错误类型后在转述路径上抛 TypeError。非法字段回退默认值。 */
+function positiveInteger(value, fallback) {
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function normalizeVisionConfig(source) {
+  const raw = source !== null && typeof source === 'object' && !Array.isArray(source) ? source : {};
+  const merged = { ...DEFAULT_CONFIG, ...raw };
+  return {
+    ...merged,
+    visionProvider: typeof merged.visionProvider === 'string' ? merged.visionProvider.trim() : '',
+    visionModel: typeof merged.visionModel === 'string' ? merged.visionModel.trim() : '',
+    autoDiscover: typeof merged.autoDiscover === 'boolean' ? merged.autoDiscover : DEFAULT_CONFIG.autoDiscover,
+    maxVisionTokens: positiveInteger(merged.maxVisionTokens, DEFAULT_CONFIG.maxVisionTokens),
+    prompt: typeof merged.prompt === 'string' && merged.prompt.trim().length > 0 ? merged.prompt : DEFAULT_CONFIG.prompt,
+    compressImageBytes: positiveInteger(merged.compressImageBytes, DEFAULT_CONFIG.compressImageBytes),
+    compressMaxDimension: positiveInteger(merged.compressMaxDimension, DEFAULT_CONFIG.compressMaxDimension),
+    compressTargetBytes: positiveInteger(merged.compressTargetBytes, DEFAULT_CONFIG.compressTargetBytes),
+    compressFallbackDimension: positiveInteger(merged.compressFallbackDimension, DEFAULT_CONFIG.compressFallbackDimension),
+  };
+}
+
+/** remote.set 的严格校验：非法值直接拒绝并返回错误，而不是静默写坏文件。 */
+function validateVisionConfig(partial) {
+  if (partial === null || typeof partial !== 'object' || Array.isArray(partial)) {
+    throw new TypeError('vision-router config must be a plain object');
+  }
+  const stringFields = ['visionProvider', 'visionModel', 'prompt'];
+  for (const key of stringFields) {
+    if (partial[key] !== void 0 && (typeof partial[key] !== 'string' || (key === 'prompt' ? partial[key].trim().length === 0 : false))) {
+      throw new TypeError(`vision-router config field "${key}" must be a non-empty string`);
+    }
+  }
+  if (partial.autoDiscover !== void 0 && typeof partial.autoDiscover !== 'boolean') {
+    throw new TypeError('vision-router config field "autoDiscover" must be a boolean');
+  }
+  const intFields = ['maxVisionTokens', 'compressImageBytes', 'compressMaxDimension', 'compressTargetBytes', 'compressFallbackDimension'];
+  for (const key of intFields) {
+    if (partial[key] !== void 0 && !(Number.isInteger(partial[key]) && partial[key] > 0)) {
+      throw new TypeError(`vision-router config field "${key}" must be a positive integer`);
+    }
+  }
+}
+
 /** 共享状态（挂在底层 llm 实例上，跨挂载点幂等）。 */
 const STATE = Symbol('vision-router.state');
 /** cordis traceable 代理暴露底层实例的全局符号。 */
@@ -75,6 +128,7 @@ const ATTACHMENTS_KEY = Symbol.for('vision-router.attachments');
 function hasImage(content) {
   if (!Array.isArray(content)) return false;
   return content.some((block) => {
+    if (block === null || typeof block !== 'object') return false;
     if (block.type === 'image') return true;
     if (block.type === 'tool-result') return hasImage(block.content);
     return false;
@@ -91,6 +145,7 @@ function collectImages(content, out) {
   if (!Array.isArray(content)) return '';
   let text = '';
   for (const block of content) {
+    if (block === null || typeof block !== 'object') continue;
     if (block.type === 'image') out.push(block);
     else if (block.type === 'text') text += block.text;
     else if (block.type === 'tool-result') collectImages(block.content, out);
@@ -103,9 +158,12 @@ function replaceImages(content, caption) {
   let changed = false;
   const out = [];
   for (const block of content) {
+    if (block === null || typeof block !== 'object') {
+      out.push(block);
+      continue;
+    }
     if (block.type === 'image') {
-      if (!changed) out.push({ type: 'text', text: `【用户直接发送的图片（不是工作区文件），视觉模型对它的分析如下】
-${caption}` });
+      if (!changed) out.push({ type: 'text', text: caption });
       changed = true;
       continue;
     }
@@ -122,12 +180,14 @@ ${caption}` });
 /** 消费一个 chunk 流，拼接文本；error/aborted finish 时抛错（带 signal 时以信号为准）。 */
 async function collectText(iterable, signal) {
   let text = '';
+  let finished = false;
   for await (const chunk of iterable) {
     if (chunk.type === 'text-delta') {
       text += chunk.text;
       continue;
     }
     if (chunk.type !== 'finish' || chunk.reason === void 0) continue;
+    finished = true;
     if (chunk.reason.kind === 'aborted') {
       if (signal !== void 0 && signal.aborted) signal.throwIfAborted();
       throw new Error('vision transcription aborted');
@@ -137,20 +197,20 @@ async function collectText(iterable, signal) {
       throw new Error(`vision transcription failed: ${failure?.message || 'unknown error'} (${failure?.code || 'UNKNOWN'})`);
     }
   }
+  if (!finished) throw new Error('vision transcription stream ended without a terminal finish chunk');
   return text;
 }
 
 /** 终态失败 chunk，与 dsh-llm 的 adapterFailureChunk 形状一致。 */
-function failChunk(error) {
+function failChunk(error, signal) {
+  const aborted = signal?.aborted === true || error?.code === 'ABORTED' || error?.name === 'AbortError';
+  const failure = {
+    message: error?.message || String(error),
+    code: aborted ? 'ABORTED' : 'VISION_ROUTER_FAILED',
+  };
   return {
     type: 'finish',
-    reason: {
-      kind: 'error',
-      failure: {
-        message: error?.message || String(error),
-        code: 'VISION_ROUTER_FAILED',
-      },
-    },
+    reason: aborted ? { kind: 'aborted', failure } : { kind: 'error', failure },
   };
 }
 
@@ -163,12 +223,12 @@ function loadSharp() {
     sharpModule = createRequire(import.meta.url)('sharp');
     return sharpModule;
   } catch {}
-  // 2) harness 依赖树（profile 共享 node_modules）
-  const home = process.env.HOME || '';
+  // 2) harness 依赖树（profile 共享 node_modules；尊重 $DSH_HOME）
+  const dshHome = process.env.DSH_HOME?.trim() ? resolve(process.env.DSH_HOME) : join(homedir(), '.dsh');
   const candidates = [
-    `${home}/.dsh/profiles/web/package.json`,
-    `${home}/.dsh/profiles/tui/package.json`,
-    `${home}/.dsh/profiles/headless/package.json`,
+    join(dshHome, 'profiles', 'web', 'package.json'),
+    join(dshHome, 'profiles', 'tui', 'package.json'),
+    join(dshHome, 'profiles', 'headless', 'package.json'),
   ];
   for (const base of candidates) {
     try {
@@ -195,24 +255,39 @@ export async function compressImage(buffer, mediaType, cfg) {
   const sharp = loadSharp();
   if (sharp === undefined || sharp === null) return null;
   try {
-    const isJpeg = mediaType === 'image/jpeg';
-    const target = sharp(buffer, { failOn: 'none' }).rotate().resize({
+    const animated = mediaType === 'image/gif' || mediaType === 'image/webp';
+    const target = sharp(buffer, { failOn: 'none', animated }).rotate().resize({
       width: cfg.compressMaxDimension,
       height: cfg.compressMaxDimension,
       fit: 'inside',
       withoutEnlargement: true,
     });
-    let out = isJpeg
-      ? await target.jpeg({ quality: 82 }).toBuffer()
-      : await target.png({ compressionLevel: 6 }).toBuffer();
+    // 首选保持原始编码格式：JPEG/PNG/WebP 走原生编码器；GIF 保持动画帧。
+    let out;
+    if (mediaType === 'image/jpeg') {
+      out = await target.jpeg({ quality: 82 }).toBuffer();
+    } else if (mediaType === 'image/webp') {
+      out = await target.webp({ quality: 82 }).toBuffer();
+    } else if (mediaType === 'image/gif') {
+      out = await target.gif().toBuffer();
+    } else {
+      out = await target.png({ compressionLevel: 6 }).toBuffer();
+    }
     if (out.byteLength > cfg.compressTargetBytes) {
-      // 第二轮回退：统一转 JPEG 并进一步缩小
-      out = await sharp(buffer, { failOn: 'none' }).rotate().resize({
+      const fallback = sharp(buffer, { failOn: 'none', animated }).rotate().resize({
         width: cfg.compressFallbackDimension,
         height: cfg.compressFallbackDimension,
         fit: 'inside',
         withoutEnlargement: true,
-      }).jpeg({ quality: 70 }).toBuffer();
+      });
+      if (mediaType === 'image/gif') {
+        // 动图第二轮仍保持 GIF，避免转成静态 JPEG 丢失动画。
+        out = await fallback.gif().toBuffer();
+      } else if (mediaType === 'image/webp') {
+        out = await fallback.webp({ quality: 70 }).toBuffer();
+      } else {
+        out = await fallback.jpeg({ quality: 70 }).toBuffer();
+      }
     }
     if (out.byteLength >= buffer.byteLength) return null;
     return { data: out, mediaType: detectMediaType(out) ?? mediaType };
@@ -222,16 +297,18 @@ export async function compressImage(buffer, mediaType, cfg) {
   }
 }
 
-/** 解码像素数是否超过上限（sharp 只读头部元数据，代价低）。失败返回 false（fail-safe）。 */
-export async function exceedsMaxPixels(buffer, maxPixels) {
+/** 解码像素数是否超过上限（sharp 只读头部元数据，代价低）。
+ * 解析失败时返回 fallback：常规路径 fail-safe 用 false；硬上限检查用 true（拒绝）。 */
+export async function exceedsMaxPixels(buffer, maxPixels, fallback = false) {
   if (maxPixels === void 0 || maxPixels <= 0) return false;
   const sharp = loadSharp();
-  if (sharp === undefined || sharp === null) return false;
+  if (sharp === undefined || sharp === null) return fallback;
   try {
     const meta = await sharp(buffer, { failOn: 'none' }).metadata();
-    return Number.isInteger(meta.width) && Number.isInteger(meta.height) && meta.width * meta.height > maxPixels;
+    if (!Number.isInteger(meta.width) || !Number.isInteger(meta.height)) return fallback;
+    return meta.width * meta.height > maxPixels;
   } catch {
-    return false;
+    return fallback;
   }
 }
 
@@ -269,14 +346,20 @@ function progressChunk(ctx, sessionId, text) {
  * 不用 resolveModelInfo（它可能被本插件或历史挂载的包装增强过，导致误判），
  * 而是直接读模型目录 listModels —— adapter 的目录数据未被增强。
  * 无法确认时视为不支持（保守转述）。 */
-async function targetSupportsImage(ctx, options) {
+async function targetSupportsImage(ctx, state, options) {
+  const cacheKey = `${options.provider}\u0000${options.model}`;
+  const cached = state.targetImageCache.get(cacheKey);
+  if (cached !== void 0) return cached;
+  let supported = false;
   try {
     const models = await ctx.llm.listModels(options.provider);
     const model = models.find((entry) => entry.id === options.model);
-    return model !== void 0 && model.inputModalities !== void 0 && model.inputModalities.includes('image');
+    supported = model !== void 0 && model.inputModalities !== void 0 && model.inputModalities.includes('image');
   } catch {
-    return false;
+    supported = false;
   }
+  state.targetImageCache.set(cacheKey, supported);
+  return supported;
 }
 
 /** 解析视觉模型路由：配置优先，失败时按配置决定自动发现。
@@ -323,7 +406,7 @@ async function resolveVisionModel(ctx, state) {
 async function* routeOnce(ctx, state, options, down) {
   let supportsImage;
   try {
-    supportsImage = await targetSupportsImage(ctx, options);
+    supportsImage = await targetSupportsImage(ctx, state, options);
   } catch {
     supportsImage = false;
   }
@@ -336,13 +419,13 @@ async function* routeOnce(ctx, state, options, down) {
     vision = await resolveVisionModel(ctx, state);
   } catch (error) {
     ctx.logger.error(`vision-router: ${error.message}`);
-    yield failChunk(error);
+    yield failChunk(error, options.signal);
     return;
   }
   const messages = [];
   let changed = false;
   for (const message of options.messages) {
-    if (!hasImage(message.content)) {
+    if (message === null || typeof message !== 'object' || !hasImage(message.content)) {
       messages.push(message);
       continue;
     }
@@ -353,7 +436,7 @@ async function* routeOnce(ctx, state, options, down) {
       messages.push(await transcribeMessage(ctx, state, vision, message, options.sessionId, options.signal));
     } catch (error) {
       ctx.logger.error(`vision-router: transcription failed for ${vision.provider}/${vision.model}: ${error.message}`);
-      yield failChunk(error);
+      yield failChunk(error, options.signal);
       return;
     }
   }
@@ -374,7 +457,18 @@ async function transcribeMessage(ctx, state, vision, message, sessionId, signal)
   if (images.length === 0) return message;
 
   const cache = state.captionCache;
-  const cacheKey = `${sessionId ?? 'anon'}:${images.map((img) => img.attachment.attachmentId).join('|')}`;
+  // 缓存键不能只由图片决定：同一张图配不同用户问题/提示词会得到不同转述，
+  // 只按图片 ID 缓存会让第二个问题错误复用第一个问题的回答。这里把视觉模型
+  // 路由、提示词与消息文本一起纳入摘要。
+  const userText = ownText.trim();
+  const cacheMaterial = JSON.stringify({
+    provider: vision.provider,
+    model: vision.model,
+    prompt: cfg.prompt,
+    userText,
+    imageIds: images.map((img) => img.attachment.attachmentId),
+  });
+  const cacheKey = `${sessionId ?? 'anon'}:${createHash('sha256').update(cacheMaterial).digest('hex')}`;
   const cached = cache.get(cacheKey);
   let caption;
   if (cached !== void 0) {
@@ -382,7 +476,6 @@ async function transcribeMessage(ctx, state, vision, message, sessionId, signal)
   } else {
     // 仅在实际发起转述时显示进度（含失败原因），避免普通文本请求被历史图片打扰。
     progressChunk(ctx, sessionId, '🖼️ 已收到图片，正在分析…');
-    const userText = ownText.trim();
     const prompt = cfg.prompt.replace('{count}', String(images.length));
     const parts = [{ type: 'text', text: userText.length > 0 ? `${prompt}
 
@@ -437,34 +530,20 @@ export function apply(ctx, config) {
       streamWrapped: false,
       /** 转述中的请求（防递归）。 */
       transcribing: new WeakSet(),
-      /** 转述缓存：sessionId:imageIds -> caption，避免同一会话重复转述。 */
+      /** 转述缓存：sessionId:hash -> caption，避免同一会话/同一问题重复转述。 */
       captionCache: new Map(),
       /** autoDiscover 路由缓存（配置键变化自动失效）。 */
       visionModelCache: null,
+      /** 目标模型图片能力缓存（provider/model -> boolean）。 */
+      targetImageCache: new Map(),
       disposers: [],
     });
     state.mounts += 1;
-    state.cfg = { ...DEFAULT_CONFIG, ...(config || {}) };
+    const patchConfig = config !== null && typeof config === 'object' && !Array.isArray(config) ? config : {};
+    state.cfg = normalizeVisionConfig(patchConfig);
 
-    // 配置存储：patch config 为低优先级，config.json（设置页 UI）权威。
-    // onUpdate 把 UI 保存的改动热更新进 state.cfg。
-    const store = createConfigStore({
-      name: 'vision-router',
-      defaults: DEFAULT_CONFIG,
-      patchConfig: config || {},
-      onUpdate: (merged) => {
-        state.cfg = { ...state.cfg, ...merged };
-        state.visionModelCache = null; // 视觉路由可能变化，失效缓存
-      },
-    });
-    state.cfg = store.effective();
-
-    // 远程配置服务（设置页 UI 读写；typert 不可用时跳过）
-    if (PluginConfigGateway !== null) {
-      ctx.plugin(PluginConfigGateway, { store, serviceKey: 'visionRouterConfig' });
-    }
-
-    // 卸载计数：每个挂载点（含重复 apply）都登记，最后一次退出才还原。
+    // 卸载计数：在继续初始化之前登记，后续任何 setup 失败也由本 fiber 负责递减，
+    // 不会泄漏挂载点计数。最后一次退出才还原包装。
     ctx.effect(() => () => {
       state.mounts -= 1;
       if (state.mounts <= 0) {
@@ -480,6 +559,34 @@ export function apply(ctx, config) {
         try { delete raw[STATE]; } catch {}
       }
     });
+
+    // 配置存储：patch config 为低优先级，config.json（设置页 UI）权威。
+    // onUpdate 把 UI 保存的改动热更新进 state.cfg（同样经过归一化）。
+    const store = createConfigStore({
+      name: 'vision-router',
+      defaults: DEFAULT_CONFIG,
+      patchConfig,
+      validate: validateVisionConfig,
+      warn: (message) => ctx.logger?.warn?.(`vision-router: ${message}`),
+      onUpdate: (merged) => {
+        state.cfg = normalizeVisionConfig({ ...patchConfig, ...merged });
+        state.visionModelCache = null; // 视觉路由可能变化，失效缓存
+      },
+    });
+    state.cfg = normalizeVisionConfig(store.effective());
+
+    // 模型目录可能随时注册/注销（HMR、provider 配置变更）。autoDiscover
+    // 缓存的是 provider/model 路由，目录变化后必须失效，否则会一直使用
+    // 已下线的视觉模型。监听器随本插件 fiber 自动销毁。
+    ctx.on?.('llm/adapters-updated', () => {
+      state.visionModelCache = null;
+      state.targetImageCache.clear();
+    });
+
+    // 远程配置服务（设置页 UI 读写；typert 不可用时跳过）
+    if (PluginConfigGateway !== null) {
+      ctx.plugin(PluginConfigGateway, { store, serviceKey: 'visionRouterConfig' });
+    }
 
     // ── 0) 包装 attachments.saveImage：大图/超像素图自动压缩 ──────────────────
     // 与 llm 包装相互独立：每次 apply 都尝试（attachments 后挂载也能补装），
@@ -500,8 +607,16 @@ export function apply(ctx, config) {
             try {
               await origValidate(input);
             } catch (error) {
-              if (error && (error.code === 'IMAGE_TOO_LARGE' || error.code === 'IMAGE_TOO_MANY_PIXELS')) return;
-              throw error;
+              if (!(error && (error.code === 'IMAGE_TOO_LARGE' || error.code === 'IMAGE_TOO_MANY_PIXELS'))) throw error;
+              // 只对“可安全压缩”的大图绕过原始限制；超过绝对硬上限或无法
+              // 可靠读取像素数时保留原始错误（fail closed）。
+              if (error.code === 'IMAGE_TOO_LARGE') {
+                if (input.data.byteLength > HARD_MAX_SOURCE_IMAGE_BYTES) throw error;
+                return;
+              }
+              const overHardPixelLimit = await exceedsMaxPixels(input.data, HARD_MAX_SOURCE_IMAGE_PIXELS, true);
+              if (overHardPixelLimit) throw error;
+              return;
             }
           };
         }
@@ -510,15 +625,21 @@ export function apply(ctx, config) {
           try {
             if (input && input.data) {
               const current = state.cfg;
-              const overBytes = input.data.byteLength > current.compressImageBytes;
-              let overPixels = false;
-              if (!overBytes) {
-                overPixels = await exceedsMaxPixels(input.data, rawAtt.imageLimits?.maxImagePixels);
-              }
-              if (overBytes || overPixels) {
-                const compressed = await compressImage(Buffer.from(input.data), input.mediaType, current);
-                if (compressed !== null) {
-                  input = { ...input, data: compressed.data, mediaType: compressed.mediaType };
+              // 超过绝对硬上限时不进入 sharp，交给原始 saveImage 按服务限制失败。
+              if (input.data.byteLength <= HARD_MAX_SOURCE_IMAGE_BYTES) {
+                const overHardPixels = await exceedsMaxPixels(input.data, HARD_MAX_SOURCE_IMAGE_PIXELS, false);
+                if (!overHardPixels) {
+                  const overBytes = input.data.byteLength > current.compressImageBytes;
+                  let overPixels = false;
+                  if (!overBytes) {
+                    overPixels = await exceedsMaxPixels(input.data, rawAtt.imageLimits?.maxImagePixels);
+                  }
+                  if (overBytes || overPixels) {
+                    const compressed = await compressImage(Buffer.from(input.data), input.mediaType, current);
+                    if (compressed !== null) {
+                      input = { ...input, data: compressed.data, mediaType: compressed.mediaType };
+                    }
+                  }
                 }
               }
             }

@@ -11,20 +11,22 @@
 ## 安装
 
 ```bash
-bash packages/sandbox-extra-roots/install.sh          # file:// 模式
-bash packages/sandbox-extra-roots/install.sh --npm    # npm 模式
+bash packages/sandbox-extra-roots/install.sh              # file:// 模式
+bash packages/sandbox-extra-roots/install.sh --npm        # npm 模式
+bash packages/sandbox-extra-roots/install.sh --profile tui  # 指定 profile
 ```
 
-卸载：`bash packages/sandbox-extra-roots/uninstall.sh`。
+卸载：`bash packages/sandbox-extra-roots/uninstall.sh [--profile <name>]`（会自动移除 patch 块、
+file:// 插件本体和 npm/pnpm 安装的包）。
 
 ## 配置
 
 三种方式（后者覆盖前者）：
 
 1. 内置默认（空列表）
-2. `cordis.patch.yml` 中 sandbox-extra-roots 行的 config（安装脚本生成的默认块）
+2. `cordis.patch.yml` 中 sandbox-extra-roots 行的 config（安装脚本生成**空列表 + 注释示例**，按需显式开启）
 3. **DSH 设置页 → 插件配置 → 沙盒额外允许目录**（保存到
-   `~/.dsh/plugins/sandbox-extra-roots/config.json`，立即热生效）
+   `$DSH_HOME/plugins/sandbox-extra-roots/config.json`，立即热生效）
 
 `extraWritableRoots`：绝对路径数组（设置页里每行一个）。相对路径/空值会被拒绝并告警。
 

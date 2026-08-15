@@ -35,8 +35,7 @@ packages/
 
 ```bash
 bash scripts/link-deps.sh   # 把全局安装的 @deepseek-ai 链接到 node_modules
-node test_core.mjs          # config-store / remote 标记测试
-node test_plugins.mjs       # 两个 host 插件功能回归
+npm test                    # 运行 scripts/test.mjs（config-store / remote / 两个 host 插件回归）
 ```
 
 ## 发布
@@ -52,7 +51,7 @@ cd ../sandbox-extra-roots && npm publish
 # 安装到 dsh profile（npm 模式，patch 引用包名）
 cd ~/.dsh/profiles/web
 npm install @dsh-plugins/vision-router @dsh-plugins/sandbox-extra-roots
-bash ~/.dsh/plugins/<name>/install.sh --npm   # 或手动在 cordis.patch.yml insert 包名
+bash packages/<name>/install.sh --npm --profile web   # 或手动在 cordis.patch.yml insert 包名
 ```
 
 > 注：client bundle 依赖 dsh 浏览器端模块（react、dsh-client-ui-slots 等），
