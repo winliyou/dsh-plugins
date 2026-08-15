@@ -31,8 +31,7 @@
  */
 
 import { isAbsolute } from "node:path";
-import { launcherPath } from "@deepseek-ai/node-addon-landlock-run";
-import { canonicalPath, isPathUnder, seatbeltProfileArgs, writableRoots } from "./common.mjs";
+import { canonicalPath, isPathUnder, landlock, seatbeltProfileArgs, writableRoots } from "./common.mjs";
 import { createConfigStore } from "./config-store.mjs";
 
 // remote 服务（设置页 UI 的配置读写）可选：typert-protocol 不可用时
@@ -62,7 +61,7 @@ const ORIGINAL = Symbol.for("cordis.original");
 
 /** Landlock runner 可执行路径(仅在 Linux 上被选中;解析失败时置 null)。 */
 const LANDLOCK_EXEC = (() => {
-  try { return launcherPath(); } catch { return null; }
+  try { return landlock.launcherPath(); } catch { return null; }
 })();
 
 export function apply(ctx, config) {
