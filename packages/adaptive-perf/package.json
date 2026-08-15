@@ -1,6 +1,6 @@
 {
   "name": "@chaoset/adaptive-perf",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "DSH host plugin: bring standard / PTC presets to minimal-mode-level performance via runtime-context suppression and adaptive tool-catalog trimming with demand-driven escalation",
   "type": "module",
   "license": "MIT",
