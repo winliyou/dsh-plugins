@@ -1,0 +1,13 @@
+# @dsh-plugins/sandbox-extra-roots bundle patch
+#
+# Installed automatically by:
+#   dsh plugin --profile <name> add @dsh-plugins/sandbox-extra-roots
+#
+# This patch inserts the host plugin row with a safe empty default. Enable
+# extra writable roots later via the DSH settings page or profile patch.
+
+- insert:
+    - id: sandbox-extra-roots
+      name: '@dsh-plugins/sandbox-extra-roots'
+      config:
+        extraWritableRoots: []

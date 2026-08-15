@@ -1,0 +1,17 @@
+# @dsh-plugins/vision-router bundle patch
+#
+# Installed automatically by:
+#   dsh plugin --profile <name> add @dsh-plugins/vision-router
+#
+# This patch inserts the host plugin row. The package is also a normal npm
+# dependency of the profile; the `dsh.bundle.patch` manifest field makes DSH
+# treat it as a profile bundle layer.
+
+- insert:
+    - id: vision-router
+      name: '@dsh-plugins/vision-router'
+      config:
+        visionProvider: zai-open
+        visionModel: glm-4v-flash
+        autoDiscover: true
+        maxVisionTokens: 2048

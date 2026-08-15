@@ -7,15 +7,19 @@
   "files": [
     "lib",
     "client",
-    "install.sh",
-    "uninstall.sh",
+    "cordis.patch.yml",
     "README.md"
   ],
   "exports": {
     ".": "./lib/index.mjs",
-    "./client": "./client/client.cjs"
+    "./client": "./client/client.cjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [
@@ -40,5 +44,13 @@
   "scripts": {
     "test": "node ../../scripts/test.mjs",
     "prepublishOnly": "npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/winliyou/dsh-plugins.git",
+    "directory": "packages/sandbox-extra-roots"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

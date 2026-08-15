@@ -1,7 +1,7 @@
 {
-  "name": "@dsh-plugins/vision-router",
+  "name": "@dsh-plugins/adaptive-perf",
   "version": "0.1.0",
-  "description": "DSH host plugin: route image requests to a vision model for transcription when the session model is text-only",
+  "description": "DSH host plugin: bring standard / PTC presets to minimal-mode-level performance via runtime-context suppression and adaptive tool-catalog trimming with demand-driven escalation",
   "type": "module",
   "license": "MIT",
   "files": [
@@ -26,15 +26,12 @@
         "slots",
         "locale",
         "remote",
-        "remote.visionRouterConfig"
+        "remote.adaptivePerfConfig"
       ]
     }
   },
   "dependencies": {
     "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6"
-  },
-  "optionalDependencies": {
-    "sharp": "^0.33.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
@@ -49,7 +46,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/winliyou/dsh-plugins.git",
-    "directory": "packages/vision-router"
+    "directory": "packages/adaptive-perf"
   },
   "publishConfig": {
     "access": "public"

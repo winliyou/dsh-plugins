@@ -41,12 +41,41 @@ const { createConfigStore: createSandboxConfigStore } = await import(path.join(R
 const sandboxStore = createSandboxConfigStore({ name: "sandbox-extra-roots-store-test", defaults: { extraWritableRoots: [] }, patchConfig: {} });
 sandboxStore.set({ extraWritableRoots: ["/tmp/regression"] });
 check("store(sandbox): set 后可重新读取配置", sandboxStore.effective().extraWritableRoots[0] === "/tmp/regression");
-// 两个包共享实现文件，历史上曾发生 config-store 漂移导致配置丢失；强制保持一致。
+// adaptive-perf 的 config-store：嵌套默认配置（families）的持久化与合并。
+const { createConfigStore: createAdaptiveStore } = await import(path.join(ROOT, "packages/adaptive-perf/lib/config-store.mjs"));
+const adaptiveDefaults = {
+  enabled: true,
+  presets: ["standard", "code"],
+  families: { delegation: { enabled: true, tools: ["subagent"], keywords: ["子代理"] } },
+};
+const adaptiveStore = createAdaptiveStore({ name: "adaptive-perf-store-test", defaults: adaptiveDefaults, patchConfig: { presets: ["code"] }, onUpdate: () => {} });
+adaptiveStore.set({ enabled: false });
+check("store(adaptive): 嵌套默认+patch+json 合并", adaptiveStore.effective().enabled === false
+  && adaptiveStore.effective().presets[0] === "code"
+  && adaptiveStore.effective().families.delegation.tools[0] === "subagent");
+// 三个包共享实现文件，历史上曾发生 config-store 漂移导致配置丢失；强制保持一致。
 const visionStoreSrc = fs.readFileSync(path.join(ROOT, "packages/vision-router/lib/config-store.mjs"), "utf8");
 const sandboxStoreSrc = fs.readFileSync(path.join(ROOT, "packages/sandbox-extra-roots/lib/config-store.mjs"), "utf8");
+const adaptiveStoreSrc = fs.readFileSync(path.join(ROOT, "packages/adaptive-perf/lib/config-store.mjs"), "utf8");
 const visionRemoteSrc = fs.readFileSync(path.join(ROOT, "packages/vision-router/lib/remote.mjs"), "utf8");
 const sandboxRemoteSrc = fs.readFileSync(path.join(ROOT, "packages/sandbox-extra-roots/lib/remote.mjs"), "utf8");
-check("shared: config-store/remote 两包保持一致", visionStoreSrc === sandboxStoreSrc && visionRemoteSrc === sandboxRemoteSrc);
+const adaptiveRemoteSrc = fs.readFileSync(path.join(ROOT, "packages/adaptive-perf/lib/remote.mjs"), "utf8");
+check("shared: config-store/remote 三包保持一致",
+  visionStoreSrc === sandboxStoreSrc && sandboxStoreSrc === adaptiveStoreSrc
+  && visionRemoteSrc === sandboxRemoteSrc && sandboxRemoteSrc === adaptiveRemoteSrc);
+
+// ── npm bundle metadata（dsh plugin 自动激活依赖 dsh.bundle.patch）──────
+for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf"]) {
+  const pkgPath = path.join(ROOT, "packages", name, "package.json");
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+  const patchFile = path.join(ROOT, "packages", name, "cordis.patch.yml");
+  const patch = fs.existsSync(patchFile) ? fs.readFileSync(patchFile, "utf8") : "";
+  check(`bundle(${name}): 声明 dsh.bundle.patch`, pkg.dsh?.bundle?.patch === "./cordis.patch.yml");
+  check(`bundle(${name}): files 包含 cordis.patch.yml`, Array.isArray(pkg.files) && pkg.files.includes("cordis.patch.yml"));
+  check(`bundle(${name}): exports 暴露 cordis.patch.yml`, pkg.exports?.["./cordis.patch.yml"] === "./cordis.patch.yml");
+  check(`bundle(${name}): exports 暴露 package.json（client 发现机制依赖）`, pkg.exports?.["./package.json"] === "./package.json");
+  check(`bundle(${name}): patch 文件存在并插入自身`, patch.includes("- insert:") && patch.includes(`@dsh-plugins/${name}`));
+}
 
 // ── vision-router ──────────────────────────────────────────────────────
 const { apply: applyVision } = await import(path.join(ROOT, "packages/vision-router/lib/index.mjs"));
@@ -193,6 +222,149 @@ check("SER: bwrap 只授予存在的额外目录", bindArgs.includes("--bind") &
 process.env.HOME = fakeHome;
 fs.rmSync(fakeHome2, { recursive: true, force: true });
 fs.rmSync(existingExtra, { recursive: true, force: true });
+
+// ── adaptive-perf 自适应引擎（mock ctx 模拟 agent 生命周期）─────────────
+const ap = await import(path.join(ROOT, "packages/adaptive-perf/lib/index.mjs"));
+check("AP: 提取用户文本", ap.extractUserText({ content: [{ type: "text", text: "a" }, { type: "image", attachment: {} }, { type: "text", text: "b" }] }) === "ab");
+check("AP: 关键词命中（大小写不敏感）", ap.matchKeywords("帮我 SUBAGENT 处理", ["subagent"]) === true && ap.matchKeywords("普通消息", ["子代理"]) === false);
+check("AP: 失败文本收集", ap.collectFailureText({ isError: true, error: { code: "UNKNOWN_TOOL", message: 'unknown tool "workflow"' }, content: [] }).includes("workflow"));
+const norm = ap.normalizeConfig({ presets: "standard,code", families: { delegation: { tools: "subagent,subagent_fork", keywords: ["子代理"] } } });
+check("AP: 配置归一化", norm.presets.length === 2 && norm.families.delegation.tools.length === 2 && norm.enabled === true);
+
+// 标准模式工具目录（真实 standard preset 的行注册集）
+const STANDARD_CATALOG = [
+  "bash", "read", "write", "edit", "glob", "grep", "read_image",
+  "job_output", "job_list", "job_kill", "todo_write", "ask_user_question",
+  "web_search", "skill", "exit_plan_mode",
+  "subagent", "subagent_fork", "send_message", "list_agents", "interrupt_agent",
+  "workflow", "ralph", "create_goal", "get_goal", "update_goal",
+];
+const apEvents = {}; // event -> [listeners]
+const apRestrictCalls = []; // { agent, deny }
+const apDisposedCalls = []; // 被调用的 restrict disposer 对应 deny
+const apSuppressCalls = new Set(); // 调用过 suppressRuntimeContext 的 agent
+const apToolSets = new Map(); // agentId -> Set(tool names)
+const apLiveAgents = new Map(); // agentId -> agent（供 agents.list() sweep 使用）
+function makeAgentTools(id) {
+  return {
+    schemas(agent) {
+      return [...(apToolSets.get(id) ?? [])].map((n) => ({ name: n }));
+    },
+    restrict({ deny }) {
+      apRestrictCalls.push({ agent: id, deny: [...deny] });
+      return () => { apDisposedCalls.push({ agent: id, deny: [...deny] }); };
+    },
+  };
+}
+const apAgentPresetsMock = {
+  composedPreset(agentCtx) { return agentCtx.presetId; },
+};
+const apAgentsMock = { list: () => [...apLiveAgents.values()] };
+const apCtx = {
+  logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+  get(name) {
+    if (name === "tools") return {
+      schemas: (agent) => [...(apToolSets.get(agent.id) ?? [])].map((n) => ({ name: n })),
+      restrict: () => () => {},
+    };
+    if (name === "systemPrompt") return {
+      suppressRuntimeContext() { apSuppressCalls.add("sp"); return () => {}; },
+    };
+    if (name === "agentPresets") return apAgentPresetsMock;
+    if (name === "agents") return apAgentsMock;
+    return undefined;
+  },
+  on(event, listener) { (apEvents[event] ??= []).push(listener); },
+  effect(fn) { fn(); },
+  plugin(Cls, cfg) {
+    const saved = this.reflect;
+    this.reflect = { provide: () => {}, props: {} };
+    try { this.gateway = new Cls(this, cfg); } finally { this.reflect = saved; }
+  },
+};
+function apAgent(id, presetId) {
+  apToolSets.set(id, new Set(STANDARD_CATALOG));
+  const agent = {
+    id,
+    ctx: {
+      presetId,
+      tools: makeAgentTools(id),
+      systemPrompt: {
+        suppressRuntimeContext() { apSuppressCalls.add(id); return () => {}; },
+      },
+    },
+  };
+  apLiveAgents.set(id, agent);
+  return agent;
+}
+function apEmit(event, ...args) {
+  for (const listener of apEvents[event] ?? []) listener(...args);
+}
+
+// 引擎启动（默认配置，config.json 不存在 → 默认值）
+ap.apply(apCtx, { presets: ["standard", "code"] });
+const agentStd = apAgent("s-std", "standard");
+apEmit("agent/created", { agent: agentStd });
+const stdDenies = apRestrictCalls.filter((c) => c.agent === "s-std");
+check("AP: 启动即限制 4 个编排族", stdDenies.length === 4
+  && stdDenies.some((c) => c.deny.includes("subagent") && c.deny.includes("send_message") && c.deny.includes("interrupt_agent"))
+  && stdDenies.some((c) => c.deny[0] === "workflow")
+  && stdDenies.some((c) => c.deny[0] === "ralph")
+  && stdDenies.some((c) => c.deny.includes("create_goal") && c.deny.includes("update_goal")));
+check("AP: 核心工具不在任何 deny 里", stdDenies.every((c) => !c.deny.includes("bash") && !c.deny.includes("read") && !c.deny.includes("web_search")));
+check("AP: 运行时上下文已抑制", apSuppressCalls.has("s-std"));
+
+// 非目标 preset 不受影响
+apEmit("agent/created", { agent: apAgent("s-min", "minimal") });
+check("AP: 非目标 preset 零副作用", apRestrictCalls.filter((c) => c.agent === "s-min").length === 0 && !apSuppressCalls.has("s-min"));
+
+// 关键词信号：用户说"子代理" → 放行 delegation 族（其 restrict disposer 被调用）
+apEmit("agent/inbox/inserted", { agent: agentStd, message: { content: [{ type: "text", text: "请用子代理并行处理这两个任务" }] } });
+check("AP: 关键词放行 delegation 族", apDisposedCalls.some((c) => c.agent === "s-std" && c.deny.includes("subagent")));
+const disposedCount = apDisposedCalls.length;
+apEmit("agent/inbox/inserted", { agent: agentStd, message: { content: [{ type: "text", text: "再委托一次" }] } });
+check("AP: 升级单调（重复触发不重复放行）", apDisposedCalls.length === disposedCount && apRestrictCalls.filter((c) => c.agent === "s-std").length === 4);
+
+// 失败信号：PTC 程序调用隐藏工具 workflow 报 UNKNOWN_TOOL → 放行 workflow 族
+apEmit("tools/result",
+  { agent: agentStd },
+  { isError: true, error: { code: "UNKNOWN_TOOL", message: 'unknown tool "workflow": reach it via the SDK' }, content: [] });
+check("AP: 失败信号放行 workflow 族", apDisposedCalls.some((c) => c.agent === "s-std" && c.deny[0] === "workflow"));
+const afterFailure = apDisposedCalls.length;
+
+// 热更新：leanByDefault=false 释放全部剩余限制（ralph/goal 的 disposer 被调用）
+apCtx.gateway.set({ leanByDefault: false });
+check("AP: lean 关闭释放全部剩余限制", apDisposedCalls.length === afterFailure + 2);
+// 热更新：重新开启 lean → 未升级的族（ralph/goal）重新限制，已升级族不重复
+const restrictBeforeReopen = apRestrictCalls.filter((c) => c.agent === "s-std").length;
+apCtx.gateway.set({ leanByDefault: true });
+const reopened = apRestrictCalls.filter((c) => c.agent === "s-std").slice(restrictBeforeReopen);
+check("AP: 重开 lean 只补限制未升级族", reopened.length === 2
+  && reopened.some((c) => c.deny[0] === "ralph")
+  && reopened.some((c) => c.deny.includes("create_goal")));
+// 升级后的族重开 lean 后依然放行（单调性跨配置刷新保持）
+apEmit("agent/inbox/inserted", { agent: agentStd, message: { content: [{ type: "text", text: "用子代理" }] } });
+check("AP: 已升级族跨配置刷新保持放行", apRestrictCalls.filter((c) => c.agent === "s-std").length === restrictBeforeReopen + 2);
+
+// 总开关：关闭释放已接管会话的全部限制；开启后补挂此前创建的会话（sweep 路径）
+const sLate = apAgent("s-late", "standard");
+apEmit("agent/created", { agent: sLate });
+check("AP: 新会话接入 4 族限制", apRestrictCalls.filter((c) => c.agent === "s-late").length === 4);
+const disposedBeforeOff = apDisposedCalls.length;
+apCtx.gateway.set({ enabled: false });
+const offDisposals = apDisposedCalls.slice(disposedBeforeOff);
+check("AP: 总开关关闭释放全部限制", offDisposals.filter((c) => c.agent === "s-late").length === 4
+  && offDisposals.some((c) => c.agent === "s-std" && c.deny.includes("create_goal")));
+const sLate2 = apAgent("s-late2", "code"); // 不触发 agent/created：模拟插件关闭期间创建的会话
+apCtx.gateway.set({ enabled: true });
+check("AP: 重新启用补挂插件关闭期间创建的会话", apRestrictCalls.filter((c) => c.agent === "s-late2").length === 4
+  && apSuppressCalls.has("s-late2"));
+apEmit("agent/disposed", { agent: sLate });
+apEmit("agent/disposed", { agent: sLate2 });
+
+// agent 销毁清理（无异常）
+apEmit("agent/disposed", { agent: agentStd });
+check("AP: 引擎全程运行无异常", apSuppressCalls.has("s-std"));
 
 fs.rmSync(fakeHome, { recursive: true, force: true });
 console.log("RESULT pass=" + pass + " fail=" + fail);
