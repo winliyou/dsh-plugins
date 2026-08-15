@@ -1,6 +1,6 @@
 {
   "name": "@chaoset/vision-router",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "DSH host plugin: route image requests to a vision model for transcription when the session model is text-only",
   "type": "module",
   "license": "MIT",
@@ -31,8 +31,7 @@
     }
   },
   "optionalDependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
-    "sharp": "^0.33.0"
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6"
   },
   "engines": {
     "node": ">=20"
