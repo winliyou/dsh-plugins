@@ -1,0 +1,41 @@
+{
+  "name": "@dsh-plugins/vision-router",
+  "version": "0.1.0",
+  "description": "DSH host plugin: route image requests to a vision model for transcription when the session model is text-only",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "lib",
+    "client",
+    "install.sh",
+    "uninstall.sh",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./lib/index.mjs",
+    "./client": "./client/client.cjs"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "slots",
+        "locale",
+        "remote",
+        "remote.visionRouterConfig"
+      ]
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-typert-protocol": "latest"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.33.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

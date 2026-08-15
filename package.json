@@ -1,0 +1,15 @@
+{
+  "name": "dsh-plugins",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node scripts/test.mjs",
+    "build": "echo 'no build step: host plugins are plain ESM, client bundles are hand-written CommonJS'"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
