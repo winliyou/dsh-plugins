@@ -1,4 +1,6 @@
 {
+  "separate-pull-requests": true,
+  "monorepo-tags": true,
   "packages": {
     "packages/adaptive-perf": {
       "release-type": "node",

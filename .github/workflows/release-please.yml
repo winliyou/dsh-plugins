@@ -28,7 +28,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PRS=$(gh pr list --head "release-please--branches--main" --json number --jq '.[].number' 2>/dev/null || true)
+          PRS=$(gh pr list --json number,headRefName --jq '.[] | select(.headRefName | startswith("release-please--branches--main")) | .number' 2>/dev/null || true)
           if [ -z "$PRS" ]; then
             echo "No release PR found, skip auto-merge."
             exit 0
