@@ -23,3 +23,17 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           command: manifest
+
+      - name: Auto-merge Release Please PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PRS=$(gh pr list --head "release-please--branches--main" --json number --jq '.[].number' 2>/dev/null || true)
+          if [ -z "$PRS" ]; then
+            echo "No release PR found, skip auto-merge."
+            exit 0
+          fi
+          for PR in $PRS; do
+            echo "Enabling auto-merge for PR #$PR"
+            gh pr merge "$PR" --auto --merge
+          done
