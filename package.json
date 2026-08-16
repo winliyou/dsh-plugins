@@ -19,7 +19,7 @@
   ],
   "packageManager": "pnpm@11.22.0",
   "engines": {
-    "node": ">=20.17"
+    "node": ">=22.19.0"
   },
   "scripts": {
     "test": "bash scripts/link-deps.sh && node scripts/test.mjs",

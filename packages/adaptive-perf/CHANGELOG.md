@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/winliyou/dsh-plugins) (2026-08-16)
+
+
+### Bug Fixes
+
+* raise engines.node to >=22.19.0 (node 20 is EOL; aligns with the reference preset baseline and the current LTS floor)
+
 ## [0.3.0](https://github.com/winliyou/dsh-plugins/compare/adaptive-perf-v0.2.2...adaptive-perf-v0.3.0) (2026-08-16)
 
 

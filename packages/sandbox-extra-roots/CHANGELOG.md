@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/winliyou/dsh-plugins) (2026-08-16)
+
+
+### Bug Fixes
+
+* raise engines.node to >=22.19.0 (node 20 is EOL; aligns with the reference preset baseline and the current LTS floor)
+
 ## [0.2.2](https://github.com/winliyou/dsh-plugins/compare/sandbox-extra-roots-v0.2.1...sandbox-extra-roots-v0.2.2) (2026-08-16)
 
 
