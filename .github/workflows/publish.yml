@@ -38,6 +38,13 @@ jobs:
       - name: Run tests
         run: node scripts/test.mjs
 
+      - name: Debug publish env
+        run: |
+          node -e "console.log('NODE_AUTH_TOKEN len:', (process.env.NODE_AUTH_TOKEN || '').length)"
+          node -e "['ACTIONS_ID_TOKEN_REQUEST_URL','ACTIONS_ID_TOKEN_REQUEST_TOKEN'].forEach(k => console.log(k + ':', process.env[k] ? 'set' : 'unset'))"
+          node -e "const fs=require('fs'); const p=process.env.NPM_CONFIG_USERCONFIG || process.env.HOME + '/.npmrc'; console.log('npmrc:', p); if (fs.existsSync(p)) console.log('npmrc keys:', fs.readFileSync(p, 'utf8').split(/\r?\n/).map(l => l.split('=')[0].trim()).filter(Boolean).join(', '))"
+          npm --version
+
       - name: Detect changed packages
         id: changed
         env:
