@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # npm Trusted Publishing (OIDC): publish without a long-lived token
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,9 +38,6 @@ jobs:
       - name: Run tests
         run: node scripts/test.mjs
 
-      - name: Verify npm auth
-        run: npm whoami --registry=https://registry.npmjs.org
-
       - name: Detect changed packages
         id: changed
         env:
@@ -53,8 +52,6 @@ jobs:
           echo "changed=$(echo "$CHANGED" | tr '\n' ' ' | sed 's/ $//')" >> "$GITHUB_OUTPUT"
 
       - name: Publish changed packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           CHANGED="${{ steps.changed.outputs.changed }}"
           if [ -z "$CHANGED" ]; then
@@ -81,6 +78,8 @@ jobs:
 
             echo "Publishing $PKG_NAME@$PKG_VERSION ..."
             cd "$PKG_DIR"
-            npm publish --access public --registry=https://registry.npmjs.org
+            # --provenance: npm Trusted Publishing via GitHub OIDC (see the
+            # package's Trusted Publishing settings on npmjs.com)
+            npm publish --provenance --access public --registry=https://registry.npmjs.org
             cd ../..
           done
