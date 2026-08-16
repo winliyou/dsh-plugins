@@ -36,6 +36,9 @@ jobs:
       - name: Run tests
         run: node scripts/test.mjs
 
+      - name: Verify npm auth
+        run: npm whoami --registry=https://registry.npmjs.org
+
       - name: Detect changed packages
         id: changed
         env:
