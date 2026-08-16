@@ -55,7 +55,13 @@ window.__ModuleLoader__.load({
       bootstrapCompactionTools: "压缩后工作集",
       fieldBootstrapCompactionTools: "compaction/end 之后、再次晋升前额外可用的工具（核心工作集）。逗号分隔。",
       bootstrapMaxTokens: "首轮输出预算封顶（token）",
-      fieldBootstrapMaxTokens: "请求 #1 的 maxTokens 封顶，晋升后自动剥离；0 = 不封顶（opt-in）"
+      fieldBootstrapMaxTokens: "请求 #1 的 maxTokens 封顶，晋升后自动剥离；0 = 不封顶（opt-in）",
+      minimalPromptEnabled: "极简提示词层（语域锚定）",
+      fieldMinimalPromptEnabled: "把系统提示拉回极简语域：屏蔽全局引导段 + 替换 persona。参考实现的完整锚定条件——仅收窄工具不足以翻转思维链风格（let me → let's/i'll/i need）",
+      minimalPromptPersona: "persona 文本",
+      fieldMinimalPromptPersona: "按名替换 deployment:persona；默认与极简模式逐字相同。留空 = 不替换（保留原 persona）",
+      minimalPromptSuppressSections: "屏蔽全局引导段",
+      fieldMinimalPromptSuppressSections: "屏蔽 harness:identity / harness:source / app:web-surface 三个全局段（等同极简 complete persona 的效果；plan-mode 与 PTC 的 SDK 段不受影响）"
     };
     const en = {
       title: "Adaptive performance (adaptive-perf)",
@@ -94,7 +100,13 @@ window.__ModuleLoader__.load({
       bootstrapCompactionTools: "Post-compaction work set",
       fieldBootstrapCompactionTools: "Extra tools available after compaction/end until a new promotion signal (core work set). Comma-separated.",
       bootstrapMaxTokens: "First-request output cap (tokens)",
-      fieldBootstrapMaxTokens: "maxTokens cap for request #1, stripped after promotion; 0 = no cap (opt-in)"
+      fieldBootstrapMaxTokens: "maxTokens cap for request #1, stripped after promotion; 0 = no cap (opt-in)",
+      minimalPromptEnabled: "Minimal prompt layer (register anchor)",
+      fieldMinimalPromptEnabled: "Pull the system prompt back to the minimal register: suppress the global orientation sections and replace the persona. The reference's full anchoring condition — tool narrowing alone does not flip the thinking style (let me → let's/i'll/i need)",
+      minimalPromptPersona: "Persona text",
+      fieldMinimalPromptPersona: "Shadows deployment:persona by name; defaults to the exact minimal-mode text. Empty = keep the original persona",
+      minimalPromptSuppressSections: "Suppress global orientation sections",
+      fieldMinimalPromptSuppressSections: "Shadow harness:identity / harness:source / app:web-surface to empty (same effect as minimal's complete persona; plan-mode and the PTC SDK sections are unaffected)"
     };
 
     // ── 表单字段 ─────────────────────────────────────────────────────────
@@ -316,6 +328,27 @@ window.__ModuleLoader__.load({
               const n = Number(v.trim());
               setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), maxTokens: Number.isSafeInteger(n) && n > 0 ? n : 0 } });
             }
+          }),
+          react.createElement(BoolField, {
+            label: t("minimalPromptEnabled"),
+            hint: t("fieldMinimalPromptEnabled"),
+            value: draft === null ? false : (draft.minimalPrompt && draft.minimalPrompt.enabled === true),
+            disabled: draft === null,
+            onChange: (v) => setDraft({ ...draft, minimalPrompt: { ...(draft.minimalPrompt || {}), enabled: v } })
+          }),
+          react.createElement(BoolField, {
+            label: t("minimalPromptSuppressSections"),
+            hint: t("fieldMinimalPromptSuppressSections"),
+            value: draft === null ? false : (draft.minimalPrompt && draft.minimalPrompt.suppressSections === true),
+            disabled: draft === null || (draft.minimalPrompt && draft.minimalPrompt.enabled === false),
+            onChange: (v) => setDraft({ ...draft, minimalPrompt: { ...(draft.minimalPrompt || {}), suppressSections: v } })
+          }),
+          react.createElement(TextField, {
+            label: t("minimalPromptPersona"),
+            hint: t("fieldMinimalPromptPersona"),
+            value: draft === null ? "" : ((draft.minimalPrompt && draft.minimalPrompt.persona) || ""),
+            disabled: draft === null || (draft.minimalPrompt && draft.minimalPrompt.enabled === false),
+            onChange: (v) => setDraft({ ...draft, minimalPrompt: { ...(draft.minimalPrompt || {}), persona: v } })
           }),
           react.createElement(Field, {
             label: t("families"),

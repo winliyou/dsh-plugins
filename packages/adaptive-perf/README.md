@@ -20,6 +20,17 @@
 - **运行时上下文抑制**：对目标 preset 的会话调用 `suppressRuntimeContext()`
   （与极简模式的 `includeRuntimeContext: false` 同一机制），每次模型请求省掉
   "Current runtime context" 快照文本，**零功能损失**。
+- **极简提示词层（minimalPrompt）**：参考实现的完整锚定条件——首轮轨迹由
+  **Minimal 的完整 system prompt** 决定，只收窄工具 schema 不够（标准/PTC 的
+  系统提示仍带 `harness:identity` / `harness:source` / `app:web-surface` 三个
+  全局引导段与标准 persona，思维链仍是 standard-like 的 "Let me…" 叙述）。本层
+  对目标会话：
+  - 按名阴影屏蔽三个全局引导段（空段在装配时被丢弃，等同极简 `complete`
+    persona 的效果；plan-mode 与 PTC 的 SDK 段不受影响）；
+  - 按名阴影替换 `deployment:persona` 为极简语域 persona（默认与极简模式
+    逐字相同：`You are a helpful software engineer assistant.`）。
+  两处均为 agent 作用域的 prompt 段阴影，仅影响目标会话；**对已恢复/已晋升的
+  旧会话同样生效**（不依赖 bootstrap 阶段）。
 - **工具目录自适应精简**：会话启动时按"工具族"默认隐藏高开销低频工具
   （子代理 / 工作流 / ralph / goal 等编排类），只保留核心编码工具
   （bash / 文件读写编辑 / 检索 / jobs / todo / 提问 / 网页搜索 / 技能 / 计划）。
@@ -36,6 +47,7 @@
 |---|---|---|---|
 | 首轮轨迹（决定后续行为风格） | Minimal 工具对锚定（5/5） | 任何 standard 系 schema 落入 standard-like（11/11） | 请求 #1 收窄到真实 Minimal 工具对，首个持久信号后恢复 |
 | 首轮注入提醒 | 无 skill 目录/AGENTS.md 注入 | 自动注入（在场时锚定 0/9） | 请求 #1 剥离 `skill-catalog` + `agent-instructions` |
+| 系统提示语域（persona + 全局引导段） | 一句话 persona，无任何引导段 | identity/source/web-surface 引导段 + 标准 persona（"Let me…" 叙述来源） | minimalPrompt 层按名阴影屏蔽 3 个全局段 + 替换极简 persona（对旧会话同样生效） |
 | 运行时上下文快照 | 关闭（`includeRuntimeContext: false`） | 每次请求注入文件策略/审批策略等快照 | 同一机制：`suppressRuntimeContext()` |
 | 模型可见工具目录 | 2 个（bash、str_replace_editor） | ~22 个工具 schema 全部进请求 | bootstrap 后默认隐藏 4 个编排类工具族（~11 个工具），按需放行 |
 | PTC SDK 参考段 | 无 | 全部工具的类型+描述渲染进提示 | 随目录缩小（同一 `visible` 视图驱动） |
@@ -89,6 +101,26 @@ dsh plugin --profile web remove @chaoset/adaptive-perf
 | `escalateOnUnknownTool` | `true` | 工具调用失败（UNKNOWN_TOOL）→ 放行该族 |
 | `coreTools` | 核心编码工具 | 展示用：不进入任何限制族 |
 | `families` | 见下 | 工具族：`{ 族名: { enabled, tools, keywords } }` |
+| `bootstrap` | 见下 | 首轮锚定（工具对 / 晋升信号 / 剥离上下文 / 压缩恢复集 / 预算封顶） |
+| `minimalPrompt` | 见下 | 极简提示词层（语域锚定） |
+
+`minimalPrompt`（极简提示词层，0.4.0 新增）：
+
+```json
+{
+  "enabled": true,
+  "persona": "You are a helpful software engineer assistant.",
+  "suppressSections": true
+}
+```
+
+- `persona`：按名阴影替换 `deployment:persona`；默认与极简模式逐字相同，留空
+  （`""`）则不替换。
+- `suppressSections`：屏蔽 `harness:identity` / `harness:source` / `app:web-surface`
+  三个全局引导段（等同极简 `complete` persona 的效果；plan-mode 与 PTC 的
+  SDK 段不受影响）。
+- 生效范围：目标 preset 的全部会话，**包括已恢复/已晋升的旧会话**（不依赖
+  bootstrap 阶段）；配置保存后热生效。
 
 默认工具族（可整族禁用、改名、增删触发词）：
 

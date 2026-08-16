@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0](https://github.com/winliyou/dsh-plugins) (2026-08-16)
+
+
+### Features
+
+* minimal-prompt layer (register anchoring, per dsh-anchored-standard)
+
+The reference's full anchoring condition is the *complete minimal system
+prompt*, not just the tool catalog: tool narrowing alone leaves the global
+orientation sections (harness:identity / harness:source / app:web-surface)
+and the standard persona in the prompt, and the model keeps narrating in the
+standard-like register ("Let me…" thinking chains). The new `minimalPrompt`
+layer shadows those sections to empty per target agent (same effect as
+minimal's `complete` persona; plan-mode and the PTC SDK sections are
+untouched) and shadows `deployment:persona` with the exact minimal-mode text
+("You are a helpful software engineer assistant."), so the assembled system
+prompt for standard / PTC sessions drops to the minimal register from request
+#1 onward — including for resumed/already-promoted sessions, which the
+bootstrap phase never touches. All knobs are configurable and hot-applied
+(`minimalPrompt.enabled` / `.persona` / `.suppressSections`).
+
 ## [0.3.2](https://github.com/winliyou/dsh-plugins) (2026-08-16)
 
 

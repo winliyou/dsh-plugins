@@ -287,6 +287,23 @@ let rejected = false;
 try { ap.validateConfig({ bootstrap: { promoteOn: "bogus" } }); } catch { rejected = true; }
 check("AP: bootstrap 配置校验-非法 promoteOn 拒绝", rejected === true);
 
+// minimalPrompt（极简提示词层）配置归一化与校验
+const mpnorm = ap.normalizeConfig({ minimalPrompt: { persona: "  You are terse.  ", suppressSections: false } });
+check("AP: minimalPrompt 配置归一化", mpnorm.minimalPrompt.enabled === true
+  && mpnorm.minimalPrompt.persona === "You are terse."
+  && mpnorm.minimalPrompt.suppressSections === false);
+const mpdef = ap.normalizeConfig({});
+check("AP: minimalPrompt 默认与极简 persona 相同", mpdef.minimalPrompt.persona === "You are a helpful software engineer assistant."
+  && mpdef.minimalPrompt.suppressSections === true);
+let mpRejected = false;
+try { ap.validateConfig({ minimalPrompt: { persona: 123 } }); } catch { mpRejected = true; }
+check("AP: minimalPrompt 配置校验-非法 persona 拒绝", mpRejected === true);
+check("AP: 阴影段清单完整", ap.SECTION_SHADOWS.length === 3
+  && ap.SECTION_SHADOWS.some(([n]) => n === "harness:identity")
+  && ap.SECTION_SHADOWS.some(([n]) => n === "harness:source")
+  && ap.SECTION_SHADOWS.some(([n]) => n === "app:web-surface")
+  && ap.PERSONA_SECTION_NAME === "deployment:persona");
+
 // 标准模式工具目录（真实 standard preset 的行注册集）
 const STANDARD_CATALOG = [
   "bash", "read", "write", "edit", "glob", "grep", "read_image",
@@ -299,6 +316,8 @@ const apEvents = {}; // event -> [listeners]
 const apRestrictCalls = []; // { agent, deny }
 const apDisposedCalls = []; // 被调用的 restrict disposer 对应 deny
 const apSuppressCalls = new Set(); // 调用过 suppressRuntimeContext 的 agent
+const apSectionCalls = []; // { agent, name, order, text }
+const apSectionDisposed = []; // 被调用的 section disposer（name 记录）
 const apToolSets = new Map(); // agentId -> Set(tool names)
 const apLiveAgents = new Map(); // agentId -> agent（供 agents.list() sweep 使用）
 function makeAgentTools(id) {
@@ -347,6 +366,10 @@ function apAgent(id, presetId) {
       tools: makeAgentTools(id),
       systemPrompt: {
         suppressRuntimeContext() { apSuppressCalls.add(id); return () => {}; },
+        section(section) {
+          apSectionCalls.push({ agent: id, ...section });
+          return () => { apSectionDisposed.push({ agent: id, name: section.name }); };
+        },
       },
     },
   };
@@ -369,10 +392,19 @@ check("AP: 启动即限制 4 个编排族", stdDenies.length === 4
   && stdDenies.some((c) => c.deny.includes("create_goal") && c.deny.includes("update_goal")));
 check("AP: 核心工具不在任何 deny 里", stdDenies.every((c) => !c.deny.includes("bash") && !c.deny.includes("read") && !c.deny.includes("web_search")));
 check("AP: 运行时上下文已抑制", apSuppressCalls.has("s-std"));
+// 极简提示词层：3 个全局引导段屏蔽 + persona 替换（默认与极简逐字相同）
+const stdSections = apSectionCalls.filter((c) => c.agent === "s-std");
+check("AP: 极简提示词层-3 引导段屏蔽 + persona 替换", stdSections.length === 4
+  && stdSections.filter((c) => c.text === "").length === 3
+  && stdSections.some((c) => c.name === "harness:identity" && c.order === -100)
+  && stdSections.some((c) => c.name === "harness:source" && c.order === -99)
+  && stdSections.some((c) => c.name === "app:web-surface" && c.order === -98)
+  && stdSections.some((c) => c.name === "deployment:persona" && c.text === "You are a helpful software engineer assistant."));
 
 // 非目标 preset 不受影响
 apEmit("agent/created", { agent: apAgent("s-min", "minimal") });
-check("AP: 非目标 preset 零副作用", apRestrictCalls.filter((c) => c.agent === "s-min").length === 0 && !apSuppressCalls.has("s-min"));
+check("AP: 非目标 preset 零副作用", apRestrictCalls.filter((c) => c.agent === "s-min").length === 0
+  && !apSuppressCalls.has("s-min") && apSectionCalls.filter((c) => c.agent === "s-min").length === 0);
 
 // 关键词信号：用户说"子代理" → 放行 delegation 族（其 restrict disposer 被调用）
 apEmit("agent/inbox/inserted", { agent: agentStd, message: { content: [{ type: "text", text: "请用子代理并行处理这两个任务" }] } });
@@ -402,6 +434,25 @@ check("AP: 重开 lean 只补限制未升级族", reopened.length === 2
 apEmit("agent/inbox/inserted", { agent: agentStd, message: { content: [{ type: "text", text: "用子代理" }] } });
 check("AP: 已升级族跨配置刷新保持放行", apRestrictCalls.filter((c) => c.agent === "s-std").length === restrictBeforeReopen + 2);
 
+// 极简提示词层热更新（每次配置更新都会对已接管会话重算，用增量断言）
+const mpCallsBefore = apSectionCalls.filter((c) => c.agent === "s-std").length;
+const mpDisposedBefore = apSectionDisposed.filter((c) => c.agent === "s-std").length;
+apCtx.gateway.set({ minimalPrompt: { suppressSections: false } });
+const mpNewCalls = apSectionCalls.filter((c) => c.agent === "s-std").slice(mpCallsBefore);
+const mpNewDisposed = apSectionDisposed.filter((c) => c.agent === "s-std").slice(mpDisposedBefore);
+check("AP: minimalPrompt 热更新-旧阴影释放且仅 persona 保留", mpNewDisposed.length === 4
+  && mpNewCalls.length === 1 && mpNewCalls[0].name === "deployment:persona");
+const mpDisposedBefore2 = apSectionDisposed.filter((c) => c.agent === "s-std").length;
+apCtx.gateway.set({ minimalPrompt: { enabled: false } });
+const mpNewDisposed2 = apSectionDisposed.filter((c) => c.agent === "s-std").slice(mpDisposedBefore2);
+check("AP: minimalPrompt 关闭-全部释放", mpNewDisposed2.length === 1 && mpNewDisposed2[0].name === "deployment:persona");
+const mpCallsBefore3 = apSectionCalls.filter((c) => c.agent === "s-std").length;
+apCtx.gateway.set({ minimalPrompt: { enabled: true, suppressSections: true } });
+const mpNewCalls3 = apSectionCalls.filter((c) => c.agent === "s-std").slice(mpCallsBefore3);
+check("AP: minimalPrompt 重开-4 段恢复", mpNewCalls3.length === 4
+  && mpNewCalls3.filter((c) => c.text === "").length === 3
+  && mpNewCalls3.some((c) => c.name === "deployment:persona"));
+
 // 总开关：关闭释放已接管会话的全部限制；开启后补挂此前创建的会话（sweep 路径）
 const sLate = apAgent("s-late", "standard");
 apEmit("agent/created", { agent: sLate });
@@ -414,9 +465,12 @@ check("AP: 总开关关闭释放全部限制", offDisposals.filter((c) => c.agen
 const sLate2 = apAgent("s-late2", "code"); // 不触发 agent/created：模拟插件关闭期间创建的会话
 apCtx.gateway.set({ enabled: true });
 check("AP: 重新启用补挂插件关闭期间创建的会话", apRestrictCalls.filter((c) => c.agent === "s-late2").length === 4
-  && apSuppressCalls.has("s-late2"));
+  && apSuppressCalls.has("s-late2")
+  && apSectionCalls.filter((c) => c.agent === "s-late2").length === 4);
+const late2DisposedBefore = apSectionDisposed.filter((c) => c.agent === "s-late2").length;
 apEmit("agent/disposed", { agent: sLate });
 apEmit("agent/disposed", { agent: sLate2 });
+check("AP: agent 销毁释放提示词层", apSectionDisposed.filter((c) => c.agent === "s-late2").length === late2DisposedBefore + 4);
 
 // agent 销毁清理（无异常）
 apEmit("agent/disposed", { agent: agentStd });

@@ -143,6 +143,27 @@ export const DEFAULT_CONFIG = {
     /** 请求 #1 的输出预算封顶（token）；0 = 不封顶（opt-in）。 */
     maxTokens: 0,
   },
+  /**
+   * 极简提示词层（语域锚定，参照 dsh-anchored-standard 的完整条件）。
+   *
+   * 参考实现指出：首轮"轨迹"（思维链风格）锚定需要 **Minimal 的完整 system
+   * prompt**——只收窄工具 schema 不够。本层对目标 preset 的会话：
+   *   - suppressSections：按名阴影屏蔽全局引导段（harness:identity、
+   *     harness:source、app:web-surface），空段在装配时被丢弃，等同极简
+   *     complete persona 的效果（plan-mode 段、PTC 的 SDK 段不受影响）；
+   *   - persona：按名阴影替换 deployment:persona 为极简语域的短 persona
+   *     （默认与极简模式逐字相同；留空则不替换）。
+   * 两处都是 agent 作用域的 prompt 段阴影，仅影响目标会话，随会话销毁自动
+   * 释放；对已恢复/已晋升的旧会话同样生效（不依赖 bootstrap 阶段）。
+   */
+  minimalPrompt: {
+    /** 是否启用极简提示词层。 */
+    enabled: true,
+    /** 替换后的 persona 文本；与极简模式相同可完全对齐语域。留空不替换。 */
+    persona: 'You are a helpful software engineer assistant.',
+    /** 屏蔽全局引导段（identity / source / web-surface）。 */
+    suppressSections: true,
+  },
 };
 
 /** 轻量配置校验/归一化：非法字段回退默认值，避免 config.json 或 remote.set
@@ -203,6 +224,15 @@ export function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
     compactionTools: stringListOrEmpty(rawBootstrap.compactionTools, db.compactionTools),
     maxTokens,
   };
+  const rawMP = raw.minimalPrompt !== null && typeof raw.minimalPrompt === 'object' && !Array.isArray(raw.minimalPrompt)
+    ? raw.minimalPrompt
+    : defaults.minimalPrompt;
+  const dm = defaults.minimalPrompt;
+  const minimalPrompt = {
+    enabled: boolValue(rawMP.enabled, dm.enabled),
+    persona: typeof rawMP.persona === 'string' ? rawMP.persona.trim() : dm.persona,
+    suppressSections: boolValue(rawMP.suppressSections, dm.suppressSections),
+  };
   return {
     enabled: boolValue(merged.enabled, defaults.enabled),
     presets: stringList(merged.presets, defaults.presets),
@@ -213,6 +243,7 @@ export function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
     coreTools: stringList(merged.coreTools, defaults.coreTools),
     families,
     bootstrap,
+    minimalPrompt,
   };
 }
 
@@ -270,9 +301,36 @@ export function validateConfig(partial) {
       }
     }
   }
+  if (partial.minimalPrompt !== void 0) {
+    const m = partial.minimalPrompt;
+    if (m === null || typeof m !== 'object' || Array.isArray(m)) {
+      throw new TypeError('adaptive-perf config field "minimalPrompt" must be an object');
+    }
+    if (m.enabled !== void 0 && typeof m.enabled !== 'boolean') {
+      throw new TypeError('adaptive-perf config field "minimalPrompt.enabled" must be a boolean');
+    }
+    if (m.suppressSections !== void 0 && typeof m.suppressSections !== 'boolean') {
+      throw new TypeError('adaptive-perf config field "minimalPrompt.suppressSections" must be a boolean');
+    }
+    if (m.persona !== void 0 && typeof m.persona !== 'string') {
+      throw new TypeError('adaptive-perf config field "minimalPrompt.persona" must be a string');
+    }
+  }
 }
 
 // ── 纯函数（导出便于回归测试）────────────────────────────────────────────
+
+/** 被极简提示词层屏蔽的全局引导段（name, order，与 dsh-app-boot /
+ * dsh-web-app / dsh-system-prompt 的注册一致）。 */
+export const SECTION_SHADOWS = [
+  ['harness:identity', -100],
+  ['harness:source', -99],
+  ['app:web-surface', -98],
+];
+
+/** persona 段的注册名与顺序（dsh-system-prompt 的 PERSONA_SECTION/PERSONA_ORDER）。 */
+export const PERSONA_SECTION_NAME = 'deployment:persona';
+export const PERSONA_SECTION_ORDER = 0;
 
 /** 提取一条用户消息的顶层文本（text 块拼接）。 */
 export function extractUserText(message) {
@@ -459,9 +517,32 @@ export function apply(ctx, config) {
       }
     }
 
+    /** 应用/更新极简提示词层（persona 阴影 + 全局引导段屏蔽）。 */
+    function applyMinimalPrompt(a) {
+      for (const disposer of a.promptDisposers) {
+        try { disposer(); } catch {}
+      }
+      a.promptDisposers = [];
+      if (!cfg.enabled || !cfg.minimalPrompt.enabled) return;
+      const sp = a.agent.ctx.systemPrompt;
+      try {
+        if (cfg.minimalPrompt.suppressSections) {
+          for (const [name, order] of SECTION_SHADOWS) {
+            a.promptDisposers.push(sp.section({ name, order, text: '' }));
+          }
+        }
+        const persona = cfg.minimalPrompt.persona.trim();
+        if (persona.length > 0) {
+          a.promptDisposers.push(sp.section({ name: PERSONA_SECTION_NAME, order: PERSONA_SECTION_ORDER, text: persona }));
+        }
+        info(`agent ${a.agent.id}: minimal prompt layer active`);
+      } catch (error) {
+        warn(`minimalPrompt failed for agent ${a.agent.id}: ${error && error.message || error}`);
+      }
+    }
+
     /** 应用/更新工具族限制（lean 模式）。总开关关闭、族被禁用、已升级、
-     *  已从配置删除的族一律放行。 */
-    function applyFamilies(a) {
+     *  已从配置删除的族一律放行。 */    function applyFamilies(a) {
       if (!cfg.enabled || !cfg.leanByDefault) {
         for (const [id, disposer] of a.familyDisposers) {
           try { disposer(); } catch {}
@@ -521,6 +602,7 @@ export function apply(ctx, config) {
       const a = {
         agent,
         suppressDisposer: null,
+        promptDisposers: [],
         familyDisposers: new Map(),
         bootstrapDisposer: null,
         bootstrapKey: null,
@@ -540,6 +622,7 @@ export function apply(ctx, config) {
       }
       agents.set(agent.id, a);
       applySuppression(a);
+      applyMinimalPrompt(a);
       applyFamilies(a);
       syncBootstrap(a);
       info(`agent ${agent.id}: adaptive-perf active (preset ${String(agentPresets.composedPreset(agent.ctx))})`);
@@ -554,6 +637,10 @@ export function apply(ctx, config) {
       if (a.suppressDisposer !== null) {
         try { a.suppressDisposer(); } catch {}
       }
+      for (const disposer of a.promptDisposers) {
+        try { disposer(); } catch {}
+      }
+      a.promptDisposers = [];
       if (a.bootstrapDisposer !== null) {
         try { a.bootstrapDisposer(); } catch {}
       }
@@ -753,7 +840,9 @@ export function apply(ctx, config) {
         cfg = normalizeConfig({ ...patchConfig, ...merged });
         info('config hot-updated; recomputing restrictions for live agents');
         // 补挂此前创建的会话（例如插件从 disabled 切换为 enabled，或新增了
-        // 目标 preset）：新符合条件的 agent 立即接管。
+        // 目标 preset）：新符合条件的 agent 立即接管（handleAgent 已应用全部
+        // 层，下面的重算只针对此前已接管的 agent，避免同一 onUpdate 内重复）。
+        const existing = new Set(agents.keys());
         if (agentsService !== void 0 && typeof agentsService.list === 'function') {
           try {
             for (const agent of agentsService.list()) handleAgent(agent);
@@ -761,8 +850,11 @@ export function apply(ctx, config) {
             warn(`config-update agent sweep failed: ${error && error.message || error}`);
           }
         }
-        for (const a of agents.values()) {
+        for (const agentId of existing) {
+          const a = agents.get(agentId);
+          if (a === void 0) continue;
           applySuppression(a);
+          applyMinimalPrompt(a);
           applyFamilies(a);
           syncBootstrap(a);
         }
