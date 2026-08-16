@@ -47,6 +47,23 @@ jobs:
           node -e "const fs=require('fs'); const p=process.env.NPM_CONFIG_USERCONFIG || process.env.HOME + '/.npmrc'; console.log('npmrc:', p); if (fs.existsSync(p)) console.log('npmrc keys:', fs.readFileSync(p, 'utf8').split(/\r?\n/).map(l => l.split('=')[0].trim()).filter(Boolean).join(', '))"
           npm --version
 
+      - name: Probe OIDC exchange
+        run: |
+          ID_TOKEN=$(node -e "
+            const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+            url.searchParams.set('audience', 'npm:registry.npmjs.org');
+            fetch(url, { headers: { Authorization: 'Bearer ' + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN } })
+              .then(r => r.json()).then(j => {
+                if (!j.value) { console.error('NO_ID_TOKEN: ' + JSON.stringify(j).slice(0, 300)); process.exit(1) }
+                console.log(j.value);
+              })
+          ")
+          echo "id_token len: ${#ID_TOKEN}"
+          echo "--- exchange response ---"
+          curl -s -X POST -H "Authorization: Bearer ${ID_TOKEN}" -H "Content-Type: application/json" \
+            "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/@chaoset%2fadaptive-perf" \
+            -d '{}' | head -c 1000
+
       - name: Detect changed packages
         id: changed
         env:
