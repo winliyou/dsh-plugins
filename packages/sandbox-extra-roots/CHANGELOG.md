@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/winliyou/dsh-plugins/compare/sandbox-extra-roots-v0.2.0...sandbox-extra-roots-v0.2.1) (2026-08-16)
+
+
+### Bug Fixes
+
+* mount remote config namespaces in client bundles ([a647484](https://github.com/winliyou/dsh-plugins/commit/a64748489ddf003cb29c0527016ea089748e0c7b))
+
 ## [0.2.0](https://github.com/winliyou/dsh-plugins/compare/sandbox-extra-roots-v0.1.2...sandbox-extra-roots-v0.2.0) (2026-08-15)
 
 
