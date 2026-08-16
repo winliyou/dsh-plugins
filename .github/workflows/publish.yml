@@ -34,6 +34,9 @@ jobs:
           # _authToken into .npmrc, and npm then skips the OIDC exchange
           # (Trusted Publishing) and publishes with invalid basic auth.
 
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@11
+
       - name: Install dependencies
         run: npm install
 
