@@ -41,15 +41,31 @@ bash scripts/link-deps.sh   # 把全局安装的 @deepseek-ai 链接到 node_mod
 npm test                    # 运行 scripts/test.mjs（config-store / remote / host 插件回归）
 ```
 
-## 发布
+## 版本管理与发布
+
+**版本号在本地修改**，CI 不会改写版本号：直接编辑各包的 `package.json`
+的 `version` 字段（或 `npm version patch`），提交并推送即可。
+
+```bash
+# 例：发一个 patch 修复
+cd packages/vision-router && npm version patch
+cd ../sandbox-extra-roots && npm version patch
+cd ../adaptive-perf && npm version patch
+git add -A && git commit -m "fix: ..." && git push
+```
+
+GitHub Actions（`.github/workflows/publish.yml`）在推送到 `main` 且
+`packages/*` 有变更时自动运行测试，并**按仓库里已提交的版本号**发布尚未
+发布到 npm 的包（已存在的版本自动跳过，幂等）。它只负责发布，绝不改版本号；
+版本号始终以本地提交为准。
+
+手动发布同样可以：
 
 ```bash
 cd packages/vision-router && npm publish
 cd ../sandbox-extra-roots && npm publish
 cd ../adaptive-perf && npm publish
 ```
-
-> GitHub Actions 已配置自动发布：推送到 `main` 且 `packages/*` 有变更时，会自动运行测试并发布尚未发布的版本。
 
 ## 安装（npm 生态方式）
 
