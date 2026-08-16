@@ -58,7 +58,7 @@ cd ../adaptive-perf && npm publish
 `dsh.profile.bundles`，随后 DSH 会应用包内 `cordis.patch.yml` 完成插件注册。
 
 ```bash
-# 安装到默认 web profile
+# 安装到默认 web profile（0.2.1+ 才包含 web boot 修复，见下文）
 dsh plugin --profile web add @chaoset/vision-router
 dsh plugin --profile web add @chaoset/sandbox-extra-roots
 dsh plugin --profile web add @chaoset/adaptive-perf
@@ -72,12 +72,21 @@ dsh plugin --profile web remove @chaoset/sandbox-extra-roots
 dsh plugin --profile web remove @chaoset/adaptive-perf
 ```
 
-也可以直接用 pnpm 在 profile 目录操作，但 `dsh plugin` 会自动处理 bundle
-激活：
+> **不要只把包名写进 profile 的 `package.json` 就完事。** `dsh plugin add`
+> 在 `pnpm add` 之后还会做一次 bundle 对账：把声明了 `dsh.bundle` 的已安装
+> 依赖追加到 `dsh.profile.bundles`。手动改 `package.json`（或直接跑 `pnpm add`）
+> 只会装依赖，不会注册 host 插件行，web boot 会报
+> `pending (waiting for service: remote.xxxConfig)`。
+> 对账逻辑见 dsh 的 `dsh plugin` 命令（plugin 子命令 = pnpm 转发 + bundles 对账）。
+
+也可以直接用 pnpm 在 profile 目录操作，但必须**手动**把包追加到
+`dsh.profile.bundles`（或把包内 `cordis.patch.yml` 的内容写进 profile 的
+`cordis.patch.yml`）：
 
 ```bash
 cd ~/.dsh/profiles/web
 pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-perf
+# 然后编辑 package.json，把三个包名追加进 dsh.profile.bundles
 ```
 
 ### 从 npm 安装
@@ -187,3 +196,20 @@ pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-p
 
 > 注：client bundle 依赖 dsh 浏览器端模块（react、dsh-client-ui-slots 等），
 > 由 host 的 `__ModuleLoader__` 提供，包内无需声明。
+
+## 为什么 0.2.0 会报 "web boot: … did not activate"（已在 0.2.1 修复）
+
+DSH 客户端的 `remote.<ns>` 服务**不会自动生成**：必须由某个客户端插件用
+`ctx.remote.$mount(contribution)` 显式挂载（官方 `dsh-api-remotes` 就是这么
+做的）。0.2.0 只在 `dsh.client.inject` 里声明了 `remote.visionRouterConfig`
+等命名空间，但没有任何代码挂载它们，于是设置页卡片插件永远
+`pending (waiting for service: remote.xxxConfig)`，web boot 直接失败。
+
+0.2.1 起每个包的 `client/client.cjs` 会先 `await ctx.remote.$mount(...)`
+挂载自己的命名空间，再用 `ctx.get("remote.xxxConfig")` 取回服务（不能把
+命名空间写进 `inject`：它会和自己要等的外部服务形成死锁，属性访问
+`ctx.remote.xxxConfig` 也会被 cordis 以 "without inject" 拒绝）。
+
+排查顺序：`dsh plugin --profile web list` 确认依赖已装 →
+`dsh --profile web --dump-config | grep chaoset` 确认 host 行已进组合树 →
+浏览器打开设置 → 插件 → 插件配置，确认三张卡片能加载配置。

@@ -290,15 +290,55 @@ window.__ModuleLoader__.load({
     }
 
     // ── 插件 apply ───────────────────────────────────────────────────────
-    const inject = ["slots", "locale", "remote", "remote.adaptivePerfConfig"];
-    function apply(ctx) {
+    // DSH 客户端的 remote.<ns> 服务不会自动生成：必须由客户端代码用
+    // ctx.remote.$mount(contribution) 显式挂载（官方 dsh-api-remotes 即如此）。
+    // 若只把 remote.adaptivePerfConfig 写进 inject 而不挂载，命名空间永远
+    // 不存在，客户端插件会一直 pending，web boot 报 "did not activate"。
+    // 因此本插件先挂载自己的命名空间，再注册设置卡片。
+    const inject = ["slots", "locale", "remote"];
+    const passthroughSchema = { parse: (value) => value };
+    const REMOTE_CONTRIBUTION = {
+      package: "@chaoset/adaptive-perf",
+      descriptors: [
+        {
+          id: "@chaoset/adaptive-perf#adaptivePerfConfig/get",
+          service: "adaptivePerfConfig",
+          namespace: "adaptivePerfConfig",
+          method: "get",
+          invocation: { kind: "direct" },
+          parameters: [],
+          result: { mode: "strict", typeSymbol: "adaptivePerfConfig/get:result", schema: passthroughSchema }
+        },
+        {
+          id: "@chaoset/adaptive-perf#adaptivePerfConfig/set",
+          service: "adaptivePerfConfig",
+          namespace: "adaptivePerfConfig",
+          method: "set",
+          invocation: { kind: "direct" },
+          parameters: [{
+            name: "partial",
+            wire: "partial",
+            source: "json",
+            codec: { mode: "strict", typeSymbol: "adaptivePerfConfig/set:partial", schema: passthroughSchema }
+          }],
+          result: { mode: "strict", typeSymbol: "adaptivePerfConfig/set:result", schema: passthroughSchema }
+        }
+      ]
+    };
+    async function apply(ctx) {
       const t = ctx.locale.bind(NS);
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), "adaptive-perf: dictionaries");
-      const getConfig = () => ctx.remote.adaptivePerfConfig.get().then((result) => {
+      // 先挂载命名空间，再用 ctx.get 取回服务：cordis 的属性访问（ctx.remote.X）
+      // 要求 X 出现在 inject 里，而本插件的命名空间由自己挂载，若写进 inject
+      // 会和自己等待的服务形成死锁，因此用 ctx.get（对未声明的服务合法）。
+      await ctx.remote.$mount(REMOTE_CONTRIBUTION);
+      const configService = ctx.get("remote.adaptivePerfConfig");
+      if (configService === void 0) throw new Error("adaptive-perf: remote.adaptivePerfConfig did not materialize after mount");
+      const getConfig = () => configService.get().then((result) => {
         if (!result.ok) throw new Error("adaptivePerfConfig.get failed: " + result.error.code + ": " + result.error.message);
         return result.value.config;
       });
-      const setConfig = (partial) => ctx.remote.adaptivePerfConfig.set(partial).then((result) => {
+      const setConfig = (partial) => configService.set(partial).then((result) => {
         if (!result.ok) throw new Error("adaptivePerfConfig.set failed: " + result.error.code + ": " + result.error.message);
         return result.value;
       });
