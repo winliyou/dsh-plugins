@@ -94,6 +94,6 @@ jobs:
             cd "$PKG_DIR"
             # --provenance: npm Trusted Publishing via GitHub OIDC (see the
             # package's Trusted Publishing settings on npmjs.com)
-            npm publish --provenance --access public --registry=https://registry.npmjs.org
+            npm publish --provenance --access public --registry=https://registry.npmjs.org --loglevel verbose
             cd ../..
           done
