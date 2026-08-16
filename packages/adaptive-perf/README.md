@@ -3,6 +3,20 @@
 让 **标准模式（standard）** 与 **PTC 模式（code）** 达到 **极简模式（minimal）**
 级别的高性能，同时保留完整能力——不是静态裁剪，而是**动态自适应**：
 
+- **首轮锚定（bootstrap）**：决定模型首轮"轨迹"（思维链风格）的是请求 #1 可见的
+  **工具 schema** 与**自动注入的上下文提醒**（参照
+  [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard/)
+  的实测：Minimal 真实工具对在 256000 输出预算下 5/5 锚定、任何 standard 系
+  schema 11/11 落入 standard-like；技能目录在场时锚定完全无法复现 0/9）。因此：
+  - 请求 #1 的工具目录收窄到真实 Minimal 工具对（`bash` + `str_replace_editor`）；
+  - 请求 #1 剥离自动注入上下文（技能目录提醒 `skill-catalog`、AGENTS.md 摘要
+    `agent-instructions`，用户主动的技能手势不过滤）；
+  - 会话出现首个**持久**晋升信号（首个 `tool/call` 或 `assistant/message`，
+    `promoteOn` 可选 `either`/`tool-call`/`assistant-message`）后恢复完整目录；
+    阶段从持久会话事件推导，**resume / reload 不丢状态**；
+  - compaction 会把会话打回"第二次首轮"：`compaction/end` 之后回到受控目录
+    （bootstrap 工具对 + `compactionTools` 核心工作集），直到出现新的晋升信号；
+  - `maxTokens > 0` 时可给请求 #1 封顶输出预算（晋升后自动剥离）。
 - **运行时上下文抑制**：对目标 preset 的会话调用 `suppressRuntimeContext()`
   （与极简模式的 `includeRuntimeContext: false` 同一机制），每次模型请求省掉
   "Current runtime context" 快照文本，**零功能损失**。
@@ -16,12 +30,14 @@
 
 所有开关与工具族可在设置页配置、随时放行；配置保存后**热生效**（无需重启）。
 
-## 为什么极简模式最快（源码对照结论）
+## 为什么极简模式最快（源码对照 + 社区实测结论）
 
 | 维度 | 极简模式 | 标准 / PTC 模式 | 本插件做法 |
 |---|---|---|---|
+| 首轮轨迹（决定后续行为风格） | Minimal 工具对锚定（5/5） | 任何 standard 系 schema 落入 standard-like（11/11） | 请求 #1 收窄到真实 Minimal 工具对，首个持久信号后恢复 |
+| 首轮注入提醒 | 无 skill 目录/AGENTS.md 注入 | 自动注入（在场时锚定 0/9） | 请求 #1 剥离 `skill-catalog` + `agent-instructions` |
 | 运行时上下文快照 | 关闭（`includeRuntimeContext: false`） | 每次请求注入文件策略/审批策略等快照 | 同一机制：`suppressRuntimeContext()` |
-| 模型可见工具目录 | 2 个（bash、str_replace_editor） | ~22 个工具 schema 全部进请求 | 默认隐藏 4 个编排类工具族（~11 个工具），按需放行 |
+| 模型可见工具目录 | 2 个（bash、str_replace_editor） | ~22 个工具 schema 全部进请求 | bootstrap 后默认隐藏 4 个编排类工具族（~11 个工具），按需放行 |
 | PTC SDK 参考段 | 无 | 全部工具的类型+描述渲染进提示 | 随目录缩小（同一 `visible` 视图驱动） |
 
 ## 安装（npm 生态方式）

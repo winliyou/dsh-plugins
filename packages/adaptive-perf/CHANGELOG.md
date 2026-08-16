@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.3.0](https://github.com/winliyou/dsh-plugins/compare/adaptive-perf-v0.2.2...adaptive-perf-v0.3.0) (2026-08-16)
+
+
+### Features
+
+* first-request bootstrap anchoring (inspired by dsh-anchored-standard)
+
+Request #1 for target presets now exposes only the real Minimal tool pair
+(bash + str_replace_editor) and strips auto-injected context
+(skill-catalog reminder, AGENTS.md digest), which anchors the first-request
+trajectory on minimal conditions (the community measurements: the Minimal
+pair anchors 5/5 at the adapter-default budget while every standard-family
+schema falls into standard-like behavior 11/11, and a present skill catalog
+breaks the anchor 0/9). The session promotes after its first durable
+tool/call or assistant/message (promoteOn: either, or tool-call /
+assistant-message) — phase derived from durable session events, resume-safe.
+A compaction resets the phase (epoch-aware): after compaction/end the
+session falls back to the bootstrap pair plus a configurable compactionTools
+work set until a new promotion signal. bootstrap.maxTokens optionally caps
+request #1's output budget and is stripped after promotion.
+
+Wiring uses the harness's public waterfalls: system-prompt/assemble (tool
+catalog narrowing), agent/pre-step (context stripping, prepend-registered so
+the strip is the final transform), agent/request (budget cap), and
+session/event (phase feed). Degrades to the full catalog on any filter
+failure so a plugin bug can never brick a session.
+
 ## [0.2.2](https://github.com/winliyou/dsh-plugins/compare/adaptive-perf-v0.2.1...adaptive-perf-v0.2.2) (2026-08-16)
 
 

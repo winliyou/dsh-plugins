@@ -1,15 +1,29 @@
 {
   "name": "dsh-plugins",
   "private": true,
+  "description": "DSH host 层插件集：vision-router（识图降级）/ sandbox-extra-roots（沙盒额外目录）/ adaptive-perf（极简性能自适应）",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/winliyou/dsh-plugins.git"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "cordis"
+  ],
   "workspaces": [
     "packages/*"
   ],
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=20.17"
+  },
   "scripts": {
     "test": "bash scripts/link-deps.sh && node scripts/test.mjs",
+    "test:ci": "node scripts/test.mjs",
     "build": "echo 'no build step: host plugins are plain ESM, client bundles are hand-written CommonJS'"
-  },
-  "engines": {
-    "node": ">=20"
   }
 }

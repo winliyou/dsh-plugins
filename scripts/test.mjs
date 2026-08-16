@@ -233,6 +233,60 @@ check("AP: 失败文本收集", ap.collectFailureText({ isError: true, error: { 
 const norm = ap.normalizeConfig({ presets: "standard,code", families: { delegation: { tools: "subagent,subagent_fork", keywords: ["子代理"] } } });
 check("AP: 配置归一化", norm.presets.length === 2 && norm.families.delegation.tools.length === 2 && norm.enabled === true);
 
+// ── adaptive-perf 首轮锚定（bootstrap）纯函数 ──────────────────────────
+const PROMOTE = ap.PROMOTE_EVENTS.either;
+check("AP: 阶段扫描-无事件未晋升", ap.scanPhase([], PROMOTE).promoted === false && ap.scanPhase([], PROMOTE).boundary === -1);
+check("AP: 阶段扫描-首个 assistant/message 晋升", ap.scanPhase([{ type: "assistant/message", seq: 1 }], PROMOTE).promoted === true);
+check("AP: 阶段扫描-只认 tool-call 时不认 assistant", ap.scanPhase([{ type: "assistant/message", seq: 1 }], ap.PROMOTE_EVENTS["tool-call"]).promoted === false);
+check("AP: 阶段扫描-compaction 重置纪元", (() => {
+  const p = ap.scanPhase([{ type: "assistant/message", seq: 1 }, { type: "compaction/end", seq: 5 }], PROMOTE);
+  return p.promoted === false && p.boundary === 5;
+})());
+check("AP: 阶段扫描-压缩后新信号再晋升", ap.scanPhase([{ type: "compaction/end", seq: 5 }, { type: "tool/call", seq: 6 }], PROMOTE).promoted === true);
+check("AP: 阶段扫描-压缩前信号不计入新纪元", ap.scanPhase([{ type: "assistant/message", seq: 3 }, { type: "compaction/end", seq: 5 }], PROMOTE).promoted === false);
+const phaseState = new Map([["s1", { ...ap.scanPhase([], PROMOTE), promoteEvents: PROMOTE }]]);
+ap.observePhase(phaseState, "s1", { type: "tool/call", seq: 2 });
+check("AP: 阶段观察-增量晋升", phaseState.get("s1").promoted === true);
+ap.observePhase(phaseState, "s1", { type: "compaction/end", seq: 9 });
+ap.observePhase(phaseState, "s1", { type: "tool/call", seq: 8 });
+check("AP: 阶段观察-压缩后旧序号不晋升", phaseState.get("s1").promoted === false && phaseState.get("s1").boundary === 9);
+ap.observePhase(phaseState, "s1", { type: "assistant/message", seq: 10 });
+check("AP: 阶段观察-压缩后新信号晋升", phaseState.get("s1").promoted === true);
+const fullAsm = { tools: ["bash", "read", "write", "edit", "glob", "grep", "str_replace_editor", "subagent", "workflow"].map((name) => ({ name })) };
+check("AP: 工具过滤-收窄到 bootstrap 对", (() => {
+  const r = ap.filterBootstrapTools(fullAsm, ["bash", "str_replace_editor"]);
+  return r.missing.length === 0 && r.tools.length === 2 && r.tools.every((t) => ["bash", "str_replace_editor"].includes(t.name));
+})());
+check("AP: 工具过滤-缺失工具报 missing 且保留可用集", (() => {
+  const r = ap.filterBootstrapTools(fullAsm, ["bash", "not-a-tool"]);
+  return r.missing.length === 1 && r.missing[0] === "not-a-tool" && r.tools.length === 1;
+})());
+check("AP: 工具过滤-压缩恢复集", (() => {
+  const r = ap.filterBootstrapTools(fullAsm, ["bash", "str_replace_editor", "read", "write"]);
+  return r.missing.length === 0 && r.tools.length === 4;
+})());
+check("AP: 消息过滤-剥离 skill-catalog 保留用户消息", (() => {
+  const msgs = [
+    { role: "user", source: { kind: "skill-catalog" }, content: [{ type: "text", text: "skills" }] },
+    { role: "user", source: { kind: "agent-instructions" }, content: [{ type: "text", text: "agents" }] },
+    { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "real" }] },
+    { role: "user", content: [{ type: "text", text: "plain" }] },
+  ];
+  const kept = ap.filterBootstrapMessages(msgs, new Set(["skill-catalog", "agent-instructions"]));
+  return kept.length === 2 && kept[0].content[0].text === "real";
+})());
+check("AP: 消息过滤-空抑制集原样返回", ap.filterBootstrapMessages([{ content: [] }], new Set()).length === 1);
+check("AP: 预算-未晋升封顶", JSON.stringify(ap.applyBootstrapBudget({ maxTokens: 256000, a: 1 }, false, 1024)) === '{"maxTokens":1024,"a":1}');
+check("AP: 预算-晋升后剥离封顶", JSON.stringify(ap.applyBootstrapBudget({ maxTokens: 1024, a: 1 }, true, 1024)) === '{"a":1}');
+check("AP: 预算-晋升后非封顶值保留", ap.applyBootstrapBudget({ maxTokens: 256000, a: 1 }, true, 1024).maxTokens === 256000);
+const bnorm = ap.normalizeConfig({ bootstrap: { enabled: false, maxTokens: 2048, promoteOn: "tool-call", suppressedContextSources: [] } });
+check("AP: bootstrap 配置归一化", bnorm.bootstrap.enabled === false && bnorm.bootstrap.maxTokens === 2048
+  && bnorm.bootstrap.promoteOn === "tool-call" && bnorm.bootstrap.suppressedContextSources.length === 0
+  && bnorm.bootstrap.tools.includes("bash"));
+let rejected = false;
+try { ap.validateConfig({ bootstrap: { promoteOn: "bogus" } }); } catch { rejected = true; }
+check("AP: bootstrap 配置校验-非法 promoteOn 拒绝", rejected === true);
+
 // 标准模式工具目录（真实 standard preset 的行注册集）
 const STANDARD_CATALOG = [
   "bash", "read", "write", "edit", "glob", "grep", "read_image",

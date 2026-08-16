@@ -9,11 +9,27 @@
  *      tool schema 与（PTC 的）SDK 参考段都随之变小；
  *   3. persona 为 complete 固定提示，无其它全局 prompt 段。
  *
- * 本插件在两个维度上做"动态自适应"（而不是静态裁剪）：
+ * 本插件在三个维度上做"动态自适应"（而不是静态裁剪）：
  *   A. 运行时上下文抑制：对目标 preset 的会话调用
  *      agent.ctx.systemPrompt.suppressRuntimeContext()（与极简模式同一机制），
  *      每次请求省掉快照文本，零功能损失。
- *   B. 工具目录自适应精简：会话启动时按"工具族"默认隐藏高开销低频工具
+ *   B. 首轮锚定（bootstrap，参照 dsh-anchored-standard 的实测结论）：
+ *      决定首轮"轨迹"（模型思维链风格）的是请求 #1 可见的**工具 schema**
+ *      与**自动注入的上下文提醒**，而不是静态目录大小。因此：
+ *        - 请求 #1 的工具目录收窄到真实 Minimal 工具对
+ *          （bash + str_replace_editor）——256000 输出预算下 5/5 锚定，
+ *          而任何 standard 系 schema 11/11 落入 standard-like 轨迹；
+ *        - 请求 #1 剥离自动注入的上下文（技能目录提醒 skill-catalog、
+ *          AGENTS.md 摘要 agent-instructions）——目录在场时锚定完全无法
+ *          复现（0/9）；用户主动的技能手势不过滤；
+ *        - 会话出现首次**持久**晋升信号（首个 tool/call 或 assistant/message，
+ *          promoteOn 可选 either/tool-call/assistant-message）后恢复完整目录；
+ *          阶段从持久会话事件推导，resume/reload 不丢状态；
+ *        - compaction 会把会话打回"第二次首轮"：compaction/end 之后回到
+ *          受控目录（bootstrap 工具对 + compactionTools 核心工作集），直到
+ *          出现新的持久晋升信号（纪元感知）；
+ *        - bootstrap.maxTokens（可选）给请求 #1 封顶输出预算，晋升后剥离。
+ *   C. 工具目录自适应精简：会话启动时按"工具族"默认隐藏高开销低频工具
  *      （子代理 / 工作流 / ralph / goal 等编排类），只保留核心编码工具，
  *      让标准模式的目录逼近极简、PTC 的 SDK 段同步缩小；随后根据两类信号
  *      在会话内"单调升级"放行对应工具族（只升不降，限制请求缓存失效次数）：
@@ -26,9 +42,14 @@
  *   - agent.ctx.systemPrompt.suppressRuntimeContext()  抑制上下文快照
  *   - agent.ctx.tools.schemas(agent)  读取该 agent 当前可见工具（限制交集）
  *   - agent.ctx.tools.restrict({ deny })  按 agent 作用域裁剪继承工具
+ *   - system-prompt/assemble（waterfall） 按会话阶段收窄装配后的工具目录
+ *   - agent/pre-step（waterfall） 剥离自动注入的上下文消息（source.kind）
+ *   - agent/request（waterfall） 首轮输出预算封顶
+ *   - session/event  增量喂入持久事件（晋升 / compaction 纪元）
  *   - agent/created、agent/disposed、agent/inbox/inserted、tools/result 事件
  * 监听器都注册在 host 根作用域（与 dsh-agent-presets 自身同款用法），事件按
- * scope 过滤分发，子作用域派发的事件根监听器可收到。
+ * scope 过滤分发，子作用域派发的事件根监听器可收到；三个 waterfall 均以
+ * prepend 注册保证"最外层"（剥离是最后一道变换）。
  *
  * 配置：cordis.patch.yml 的 config（安装默认）与
  *       ~/.dsh/plugins/adaptive-perf/config.json（设置页 UI，权威）合并，
@@ -56,6 +77,12 @@ export const name = 'adaptive-perf';
  * families：工具族。每族可配 tools（该族工具名，需存在于目标 preset 的目录，
  * 插件运行时按实际可见工具取交集，不会因改名/缺失而崩溃）与 keywords（用户消息
  * 命中任一触发词即放行该族；大小写不敏感，子串匹配）。
+ *
+ * bootstrap：首轮锚定（参照 dsh-anchored-standard 的实测结论）。请求 #1 只暴露
+ * bootstrap.tools（真实 Minimal 工具对），剥离 suppressedContextSources 列出的
+ * 自动注入上下文；首个持久晋升信号（promoteOn）后恢复；compaction/end 之后回到
+ * 受控目录（bootstrap 工具对 + compactionTools）直到新的晋升信号；maxTokens>0
+ * 时给请求 #1 封顶输出预算（晋升后剥离）。
  */
 export const DEFAULT_CONFIG = {
   /** 总开关：关闭后插件对会话不产生任何影响。 */
@@ -99,6 +126,21 @@ export const DEFAULT_CONFIG = {
       keywords: ['长期目标', '跨轮次', '目标追踪', 'goal'],
     },
   },
+  /** 首轮锚定（参照 dsh-anchored-standard）。 */
+  bootstrap: {
+    /** 是否启用首轮锚定。 */
+    enabled: true,
+    /** 请求 #1 可见的工具（真实 Minimal 工具对）。 */
+    tools: ['bash', 'str_replace_editor'],
+    /** 晋升触发：either（默认）/ tool-call / assistant-message。 */
+    promoteOn: 'either',
+    /** 请求 #1 剥离的自动注入上下文 source.kind；[] 关闭剥离。 */
+    suppressedContextSources: ['skill-catalog', 'agent-instructions'],
+    /** compaction/end 之后、再次晋升前可用的额外核心工作集。 */
+    compactionTools: ['read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'ask_user_question'],
+    /** 请求 #1 的输出预算封顶（token）；0 = 不封顶（opt-in）。 */
+    maxTokens: 0,
+  },
 };
 
 /** 轻量配置校验/归一化：非法字段回退默认值，避免 config.json 或 remote.set
@@ -119,6 +161,12 @@ function stringList(value, fallback) {
   return fallback;
 }
 
+/** 与 stringList 相同，但显式空数组保持为空（语义是有意义的配置值）。 */
+function stringListOrEmpty(value, fallback) {
+  if (value === undefined) return fallback;
+  return stringList(value, []);
+}
+
 export function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
   const raw = source !== null && typeof source === 'object' && !Array.isArray(source) ? source : {};
   const merged = { ...defaults, ...raw };
@@ -136,6 +184,23 @@ export function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
       keywords: stringList(candidate.keywords, fam.keywords),
     };
   }
+  const rawBootstrap = raw.bootstrap !== null && typeof raw.bootstrap === 'object' && !Array.isArray(raw.bootstrap)
+    ? raw.bootstrap
+    : defaults.bootstrap;
+  const db = defaults.bootstrap;
+  const promoteOn = rawBootstrap.promoteOn === 'tool-call' || rawBootstrap.promoteOn === 'assistant-message'
+    ? rawBootstrap.promoteOn
+    : rawBootstrap.promoteOn === 'either' ? 'either' : db.promoteOn;
+  const maxTokensRaw = rawBootstrap.maxTokens;
+  const maxTokens = Number.isSafeInteger(maxTokensRaw) && maxTokensRaw > 0 ? maxTokensRaw : 0;
+  const bootstrap = {
+    enabled: boolValue(rawBootstrap.enabled, db.enabled),
+    tools: stringList(rawBootstrap.tools, db.tools),
+    promoteOn,
+    suppressedContextSources: stringListOrEmpty(rawBootstrap.suppressedContextSources, db.suppressedContextSources),
+    compactionTools: stringListOrEmpty(rawBootstrap.compactionTools, db.compactionTools),
+    maxTokens,
+  };
   return {
     enabled: boolValue(merged.enabled, defaults.enabled),
     presets: stringList(merged.presets, defaults.presets),
@@ -145,6 +210,7 @@ export function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
     escalateOnUnknownTool: boolValue(merged.escalateOnUnknownTool, defaults.escalateOnUnknownTool),
     coreTools: stringList(merged.coreTools, defaults.coreTools),
     families,
+    bootstrap,
   };
 }
 
@@ -179,6 +245,26 @@ export function validateConfig(partial) {
         if (fam[key] !== void 0 && !(Array.isArray(fam[key]) && fam[key].every((v) => typeof v === 'string'))) {
           throw new TypeError(`adaptive-perf config family "${id}".${key} must be an array of strings`);
         }
+      }
+    }
+  }
+  if (partial.bootstrap !== void 0) {
+    const b = partial.bootstrap;
+    if (b === null || typeof b !== 'object' || Array.isArray(b)) {
+      throw new TypeError('adaptive-perf config field "bootstrap" must be an object');
+    }
+    if (b.enabled !== void 0 && typeof b.enabled !== 'boolean') {
+      throw new TypeError('adaptive-perf config field "bootstrap.enabled" must be a boolean');
+    }
+    if (b.promoteOn !== void 0 && !['either', 'tool-call', 'assistant-message'].includes(b.promoteOn)) {
+      throw new TypeError('adaptive-perf config field "bootstrap.promoteOn" must be "either" | "tool-call" | "assistant-message"');
+    }
+    if (b.maxTokens !== void 0 && !(Number.isSafeInteger(b.maxTokens) && b.maxTokens >= 0)) {
+      throw new TypeError('adaptive-perf config field "bootstrap.maxTokens" must be a non-negative safe integer');
+    }
+    for (const key of ['tools', 'suppressedContextSources', 'compactionTools']) {
+      if (b[key] !== void 0 && !(Array.isArray(b[key]) && b[key].every((v) => typeof v === 'string'))) {
+        throw new TypeError(`adaptive-perf config field "bootstrap.${key}" must be an array of strings`);
       }
     }
   }
@@ -223,6 +309,89 @@ export function collectFailureText(result) {
     }
   }
   return parts.join('\n');
+}
+
+// ── bootstrap 锚定（参照 dsh-anchored-standard 的实测结论）──────────────
+
+/** promoteOn 配置 → 晋升的持久事件类型集合。 */
+export const PROMOTE_EVENTS = {
+  'tool-call': ['tool/call'],
+  'assistant-message': ['assistant/message'],
+  either: ['tool/call', 'assistant/message'],
+};
+
+/**
+ * 扫描一段持久会话日志，推导 { boundary, promoted } 阶段。
+ * compaction/end 之后需要新的晋升信号（纪元感知）；boundary 为 -1 表示
+ * 尚无压缩。事件无 seq 时按"边界之后"处理（与参考实现一致）。
+ */
+export function scanPhase(events, promoteEvents) {
+  let boundary = -1;
+  let promoted = false;
+  if (Array.isArray(events)) {
+    for (const event of events) {
+      const seq = typeof event?.seq === 'number' ? event.seq : 0;
+      if (event?.type === 'compaction/end') {
+        boundary = seq;
+        promoted = false;
+        continue;
+      }
+      if (promoteEvents.includes(event?.type) && seq > boundary) promoted = true;
+    }
+  }
+  return { boundary, promoted };
+}
+
+/** 增量喂入一个持久事件（仅更新已存在条目；冷会话由 scanPhase 全量推导）。 */
+export function observePhase(state, sessionId, event) {
+  const entry = state.get(sessionId);
+  if (entry === void 0) return;
+  const seq = typeof event?.seq === 'number' ? event.seq : 0;
+  if (event?.type === 'compaction/end') {
+    state.set(sessionId, { boundary: seq, promoted: false, promoteEvents: entry.promoteEvents });
+    return;
+  }
+  if (entry.promoted) return;
+  const promoteEvents = entry.promoteEvents;
+  if (promoteEvents.includes(event?.type) && seq > entry.boundary) {
+    state.set(sessionId, { ...entry, promoted: true });
+  }
+}
+
+/**
+ * 按 keep 集合收窄装配后的工具目录。
+ * @returns { tools, missing } —— missing 非空表示 keep 中的工具在目录里缺失，
+ * 调用方决定是否降级（全目录放行）。
+ */
+export function filterBootstrapTools(assembly, keep) {
+  const keepSet = keep instanceof Set ? keep : new Set(keep);
+  const tools = Array.isArray(assembly?.tools) ? assembly.tools : [];
+  const available = new Set(tools.map((tool) => tool?.name).filter((n) => typeof n === 'string'));
+  const missing = [...keepSet].filter((n) => !available.has(n));
+  return {
+    tools: tools.filter((tool) => keepSet.has(tool.name)),
+    missing,
+  };
+}
+
+/** 按 source.kind 剥离自动注入的上下文消息（保留主动的用户消息）。 */
+export function filterBootstrapMessages(messages, suppressedSources) {
+  if (!Array.isArray(messages) || suppressedSources.size === 0) return messages;
+  const kept = messages.filter((message) => {
+    const kind = message?.source?.kind;
+    return typeof kind !== 'string' || !suppressedSources.has(kind);
+  });
+  return kept.length === messages.length ? messages : kept;
+}
+
+/** 首轮输出预算：未晋升 → 封顶；已晋升 → 若仍带着封顶值则剥离。 */
+export function applyBootstrapBudget(config, promoted, maxTokens) {
+  if (!promoted) return { ...config, maxTokens };
+  if (config?.maxTokens === maxTokens) {
+    const { maxTokens: _drop, ...rest } = config;
+    return rest;
+  }
+  return config;
 }
 
 // ── host 插件 ────────────────────────────────────────────────────────────
@@ -374,8 +543,9 @@ export function apply(ctx, config) {
     /** 释放一个 agent 的全部副作用。 */
     function releaseAgent(agentId) {
       const a = agents.get(agentId);
-      if (a === void 0) return;
       agents.delete(agentId);
+      bootstrapState.delete(agentId);
+      if (a === void 0) return;
       if (a.suppressDisposer !== null) {
         try { a.suppressDisposer(); } catch {}
       }
@@ -428,6 +598,108 @@ export function apply(ctx, config) {
         }
       }
     });
+
+    // ── 首轮锚定（bootstrap，参照 dsh-anchored-standard 的实测结论）─────
+    // 阶段状态：sessionId -> { boundary, promoted, promoteEvents }。冷会话在
+    // handleAgent 时全量扫描持久日志（resume 安全），此后 session/event 增量
+    // 更新。子代理（delegationDepth > 0）恒为已晋升。所有 waterfall 用
+    // prepend 注册，保证本插件是"最外层"变换（剥离是最后一道）。
+    const bootstrapState = new Map();
+    let bootstrapWarned = false;
+    const warnBootstrapOnce = (message) => {
+      if (bootstrapWarned) return;
+      bootstrapWarned = true;
+      warn(message);
+    };
+
+    function bootstrapPhaseOf(agent) {
+      const session = agent !== null && typeof agent === 'object' ? agent.session : void 0;
+      if (session === void 0 || typeof session.id !== 'string') return { boundary: -1, promoted: true };
+      // 子代理首轮即可用工具（与参考实现一致）。
+      if ((session.header?.delegationDepth ?? 0) > 0) return { boundary: -1, promoted: true };
+      let entry = bootstrapState.get(session.id);
+      if (entry === void 0) {
+        entry = {
+          ...scanPhase(session.events, PROMOTE_EVENTS[cfg.bootstrap.promoteOn]),
+          promoteEvents: PROMOTE_EVENTS[cfg.bootstrap.promoteOn],
+        };
+        bootstrapState.set(session.id, entry);
+      }
+      return entry;
+    }
+
+    /** bootstrap 是否对该会话生效（总开关 + 目标 preset + 无会话时放行）。 */
+    function bootstrapActiveFor(agent) {
+      if (!cfg.enabled || !cfg.bootstrap.enabled) return false;
+      if (agent === void 0) return true;
+      return isTarget(agent);
+    }
+
+    // 持久事件增量喂入：晋升信号 / compaction 纪元。
+    ctx.on('session/event', (session, event) => {
+      if (session === null || typeof session !== 'object' || typeof session.id !== 'string') return;
+      observePhase(bootstrapState, session.id, event);
+    });
+
+    // 请求装配时按阶段收窄工具目录。请求 #1（未晋升）：只保留 bootstrap
+    // 工具对（compaction/end 之后额外放行 compactionTools 核心工作集）；
+    // 已晋升：放行（leanByDefault 的族限制仍由 tools.restrict 生效）。
+    ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
+      const resolved = await next();
+      try {
+        const agent = agentsService?.currentInitiator?.() ?? void 0;
+        if (!bootstrapActiveFor(agent)) return resolved;
+        const phase = bootstrapPhaseOf(agent);
+        if (phase.promoted) return resolved;
+        const keep = new Set(cfg.bootstrap.tools);
+        if (phase.boundary >= 0) for (const name of cfg.bootstrap.compactionTools) keep.add(name);
+        const filtered = filterBootstrapTools(resolved, keep);
+        if (filtered.missing.length > 0) {
+          // 目录缺失 bootstrap 工具对：降级为全目录（一次告警），绝不能
+          // 把每个请求都卡死在空目录。
+          warnBootstrapOnce(`bootstrap tools missing from catalog (${JSON.stringify(filtered.missing)}); exposing the full catalog`);
+          return resolved;
+        }
+        return { ...resolved, tools: filtered.tools };
+      } catch (error) {
+        warnBootstrapOnce(`bootstrap tool filter failed, exposing the full catalog: ${String((error && error.message) || error)}`);
+        return resolved;
+      }
+    }, { prepend: true });
+
+    // 首轮剥离自动注入的上下文（技能目录提醒 / AGENTS.md 摘要）。prepend +
+    // 根作用域注册保证是最后一道变换（后注册的注入者无法再补回）。
+    ctx.on('agent/pre-step', async ({ agent }, next) => {
+      const decision = await next();
+      if (decision === null || typeof decision !== 'object' || decision.kind === 'reject') return decision;
+      try {
+        if (!bootstrapActiveFor(agent)) return decision;
+        const phase = bootstrapPhaseOf(agent);
+        if (phase.promoted || cfg.bootstrap.suppressedContextSources.length === 0) return decision;
+        if (!Array.isArray(decision.messages)) return decision;
+        const kept = filterBootstrapMessages(decision.messages, new Set(cfg.bootstrap.suppressedContextSources));
+        return kept === decision.messages ? decision : { ...decision, messages: kept };
+      } catch (error) {
+        // 过滤失败绝不吞掉用户的上下文：原样放行。
+        warnBootstrapOnce(`bootstrap context filter failed, keeping injected context: ${String((error && error.message) || error)}`);
+        return decision;
+      }
+    }, { prepend: true });
+
+    // 可选：请求 #1 输出预算封顶（晋升后剥离，避免封顶沿 header 种子延续）。
+    if (cfg.bootstrap.maxTokens > 0) {
+      ctx.on('agent/request', async ({ agent }, next) => {
+        const resolved = await next();
+        try {
+          if (!bootstrapActiveFor(agent)) return resolved;
+          const phase = bootstrapPhaseOf(agent);
+          return applyBootstrapBudget(resolved, phase.promoted, cfg.bootstrap.maxTokens);
+        } catch (error) {
+          warnBootstrapOnce(`bootstrap budget filter failed: ${String((error && error.message) || error)}`);
+          return resolved;
+        }
+      }, { prepend: true });
+    }
 
     // 已运行会话补挂（插件热重载/重装时）。
     if (agentsService !== void 0 && typeof agentsService.list === 'function') {

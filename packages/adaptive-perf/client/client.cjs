@@ -43,7 +43,19 @@ window.__ModuleLoader__.load({
       families: "工具族（高级）",
       fieldFamilies: "JSON：{ 族名: { enabled, tools: [工具名], keywords: [触发词] } }。保存后热生效。",
       coreTools: "核心工具（永不隐藏）",
-      fieldCoreTools: "展示用：这些工具不进入任何限制族。未列入任何族的工具也默认保留。"
+      fieldCoreTools: "展示用：这些工具不进入任何限制族。未列入任何族的工具也默认保留。",
+      bootstrapEnabled: "首轮锚定（bootstrap）",
+      fieldBootstrapEnabled: "请求 #1 只暴露 Minimal 真实工具对并剥离自动注入上下文，首个持久信号（promoteOn）后恢复——让首轮轨迹锚定极简（参照 dsh-anchored-standard 实测：工具 schema + 注入提醒决定轨迹）",
+      bootstrapTools: "首轮工具",
+      fieldBootstrapTools: "请求 #1 可见的工具（真实 Minimal 对：bash, str_replace_editor）。逗号分隔。",
+      bootstrapPromoteOn: "晋升触发",
+      fieldBootstrapPromoteOn: "either（默认）：首个 tool/call 或 assistant/message 先到者晋升；tool-call / assistant-message 可单独指定",
+      bootstrapSuppressed: "剥离的注入上下文",
+      fieldBootstrapSuppressed: "请求 #1 剥离的自动注入 source.kind（技能目录提醒 skill-catalog、AGENTS.md 摘要 agent-instructions）；逗号分隔，留空=不剥离",
+      bootstrapCompactionTools: "压缩后工作集",
+      fieldBootstrapCompactionTools: "compaction/end 之后、再次晋升前额外可用的工具（核心工作集）。逗号分隔。",
+      bootstrapMaxTokens: "首轮输出预算封顶（token）",
+      fieldBootstrapMaxTokens: "请求 #1 的 maxTokens 封顶，晋升后自动剥离；0 = 不封顶（opt-in）"
     };
     const en = {
       title: "Adaptive performance (adaptive-perf)",
@@ -70,7 +82,19 @@ window.__ModuleLoader__.load({
       families: "Tool families (advanced)",
       fieldFamilies: "JSON: { familyId: { enabled, tools: [names], keywords: [triggers] } }. Hot-applied on save.",
       coreTools: "Core tools (never hidden)",
-      fieldCoreTools: "Informational: these never enter any restriction family. Tools not listed in any family stay visible too."
+      fieldCoreTools: "Informational: these never enter any restriction family. Tools not listed in any family stay visible too.",
+      bootstrapEnabled: "First-request bootstrap",
+      fieldBootstrapEnabled: "Request #1 exposes only the real Minimal tool pair and drops auto-injected context; the first durable signal (promoteOn) restores the catalog — anchors the first-request trajectory to minimal (per dsh-anchored-standard measurements)",
+      bootstrapTools: "Bootstrap tools",
+      fieldBootstrapTools: "Tools visible on request #1 (the real Minimal pair: bash, str_replace_editor). Comma-separated.",
+      bootstrapPromoteOn: "Promotion trigger",
+      fieldBootstrapPromoteOn: "either (default): first tool/call or assistant/message promotes; tool-call / assistant-message select one",
+      bootstrapSuppressed: "Suppressed injected context",
+      fieldBootstrapSuppressed: "Auto-injected source.kinds stripped on request #1 (skill-catalog reminder, agent-instructions digest); comma-separated, empty = strip nothing",
+      bootstrapCompactionTools: "Post-compaction work set",
+      fieldBootstrapCompactionTools: "Extra tools available after compaction/end until a new promotion signal (core work set). Comma-separated.",
+      bootstrapMaxTokens: "First-request output cap (tokens)",
+      fieldBootstrapMaxTokens: "maxTokens cap for request #1, stripped after promotion; 0 = no cap (opt-in)"
     };
 
     // ── 表单字段 ─────────────────────────────────────────────────────────
@@ -247,6 +271,51 @@ window.__ModuleLoader__.load({
             value: draft === null ? false : draft.escalateOnUnknownTool,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, escalateOnUnknownTool: v })
+          }),
+          react.createElement(BoolField, {
+            label: t("bootstrapEnabled"),
+            hint: t("fieldBootstrapEnabled"),
+            value: draft === null ? false : !!draft.bootstrap && draft.bootstrap.enabled,
+            disabled: draft === null,
+            onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), enabled: v } })
+          }),
+          react.createElement(TextField, {
+            label: t("bootstrapTools"),
+            hint: t("fieldBootstrapTools"),
+            value: draft === null ? "" : ((draft.bootstrap && draft.bootstrap.tools) || []).join(", "),
+            disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
+            onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), tools: v.split(/[,，\s]+/).filter((x) => x.length > 0) } })
+          }),
+          react.createElement(TextField, {
+            label: t("bootstrapPromoteOn"),
+            hint: t("fieldBootstrapPromoteOn"),
+            value: draft === null ? "" : (draft.bootstrap && draft.bootstrap.promoteOn) || "either",
+            disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
+            onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), promoteOn: (v.trim() || "either") } })
+          }),
+          react.createElement(TextField, {
+            label: t("bootstrapSuppressed"),
+            hint: t("fieldBootstrapSuppressed"),
+            value: draft === null ? "" : ((draft.bootstrap && draft.bootstrap.suppressedContextSources) || []).join(", "),
+            disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
+            onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), suppressedContextSources: v.split(/[,，\s]+/).filter((x) => x.length > 0) } })
+          }),
+          react.createElement(TextField, {
+            label: t("bootstrapCompactionTools"),
+            hint: t("fieldBootstrapCompactionTools"),
+            value: draft === null ? "" : ((draft.bootstrap && draft.bootstrap.compactionTools) || []).join(", "),
+            disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
+            onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), compactionTools: v.split(/[,，\s]+/).filter((x) => x.length > 0) } })
+          }),
+          react.createElement(TextField, {
+            label: t("bootstrapMaxTokens"),
+            hint: t("fieldBootstrapMaxTokens"),
+            value: draft === null ? "" : String((draft.bootstrap && draft.bootstrap.maxTokens) || 0),
+            disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
+            onChange: (v) => {
+              const n = Number(v.trim());
+              setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), maxTokens: Number.isSafeInteger(n) && n > 0 ? n : 0 } });
+            }
           }),
           react.createElement(Field, {
             label: t("families"),

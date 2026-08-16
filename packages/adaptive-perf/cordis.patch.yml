@@ -15,3 +15,12 @@
         leanByDefault: true
         escalateOnKeyword: true
         escalateOnUnknownTool: true
+        # 首轮锚定（参照 dsh-anchored-standard 实测）：请求 #1 只暴露 Minimal
+        # 真实工具对并剥离自动注入上下文，首个持久信号后恢复完整目录。
+        bootstrap:
+          enabled: true
+          tools: [bash, str_replace_editor]
+          promoteOn: either
+          suppressedContextSources: [skill-catalog, agent-instructions]
+          compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
+          maxTokens: 0
