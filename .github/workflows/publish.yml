@@ -30,6 +30,10 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
+          # The repo pins packageManager (pnpm) for local/corepack use, but CI
+          # installs with npm; disable setup-node's package-manager cache or it
+          # tries to invoke pnpm, which is not installed on the runner.
+          package-manager-cache: false
           # No registry-url here: it would make setup-node write a bogus
           # _authToken into .npmrc, and npm then skips the OIDC exchange
           # (Trusted Publishing) and publishes with invalid basic auth.
