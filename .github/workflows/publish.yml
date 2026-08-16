@@ -43,8 +43,13 @@ jobs:
         env:
           BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
+          IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+          if [ "$IS_DISPATCH" = "true" ]; then
+            # Manual trigger: every package is a candidate; publishing skips
+            # versions that already exist on the registry.
+            CHANGED=$(ls packages | tr '\n' ' ' | sed 's/ $//')
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
             CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD -- packages | awk -F/ 'NF >= 2 {print $2}' | sort -u)
           else
             CHANGED=$(git diff --name-only "$BEFORE" "$SHA" -- packages | awk -F/ 'NF >= 2 {print $2}' | sort -u)
