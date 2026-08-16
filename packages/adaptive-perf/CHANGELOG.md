@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.2](https://github.com/winliyou/dsh-plugins) (2026-08-16)
+
+
+### Bug Fixes
+
+* bootstrap tool narrowing now uses tools.restrict instead of filtering assembly.tools
+
+In PTC/code mode the assembled tool catalog contains only run_code, so
+filtering it down to the Minimal pair always hit the fail-safe and the
+first request kept the full SDK (verified live: the model still saw 15
+tools). tools.restrict drives both the API catalog and the PTC SDK
+reference section (the same mechanism the family trimming uses), so the
+bootstrap phase now temporarily denies everything except
+run_code + the Minimal pair (plus the post-compaction work set) and
+lifts the restriction on the first durable promotion signal. Verified
+live: on request #1 the model reports run_code as the only direct tool
+and the SDK declarations contain only the Minimal pair.
+
 ## [0.3.1](https://github.com/winliyou/dsh-plugins) (2026-08-16)
 
 

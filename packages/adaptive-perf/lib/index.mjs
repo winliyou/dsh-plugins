@@ -42,7 +42,9 @@
  *   - agent.ctx.systemPrompt.suppressRuntimeContext()  抑制上下文快照
  *   - agent.ctx.tools.schemas(agent)  读取该 agent 当前可见工具（限制交集）
  *   - agent.ctx.tools.restrict({ deny })  按 agent 作用域裁剪继承工具
- *   - system-prompt/assemble（waterfall） 按会话阶段收窄装配后的工具目录
+ *   - system-prompt/assemble（waterfall） 请求装配（早期实现；bootstrap 目录
+ *       收窄改用 tools.restrict——PTC 模式下 assembly.tools 只有 run_code，
+ *       过滤会降级失效，而 restrict 同时驱动 API 目录与 PTC SDK 参考段）
  *   - agent/pre-step（waterfall） 剥离自动注入的上下文消息（source.kind）
  *   - agent/request（waterfall） 首轮输出预算封顶
  *   - session/event  增量喂入持久事件（晋升 / compaction 纪元）
@@ -520,6 +522,8 @@ export function apply(ctx, config) {
         agent,
         suppressDisposer: null,
         familyDisposers: new Map(),
+        bootstrapDisposer: null,
+        bootstrapKey: null,
         escalated: new Set(),
         visibleNames: new Set(),
       };
@@ -537,6 +541,7 @@ export function apply(ctx, config) {
       agents.set(agent.id, a);
       applySuppression(a);
       applyFamilies(a);
+      syncBootstrap(a);
       info(`agent ${agent.id}: adaptive-perf active (preset ${String(agentPresets.composedPreset(agent.ctx))})`);
     }
 
@@ -548,6 +553,9 @@ export function apply(ctx, config) {
       if (a === void 0) return;
       if (a.suppressDisposer !== null) {
         try { a.suppressDisposer(); } catch {}
+      }
+      if (a.bootstrapDisposer !== null) {
+        try { a.bootstrapDisposer(); } catch {}
       }
       for (const disposer of a.familyDisposers.values()) {
         try { disposer(); } catch {}
@@ -635,37 +643,60 @@ export function apply(ctx, config) {
       return isTarget(agent);
     }
 
-    // 持久事件增量喂入：晋升信号 / compaction 纪元。
+    /**
+     * bootstrap 阶段的保留工具集：bootstrap 工具对 + PTC 的直接调用工具
+     * （run_code）+ compaction 后恢复期的工作集。已晋升返回 null。
+     *
+     * 注意：不能靠过滤 system-prompt/assemble 的 assembly.tools 来实现——
+     * PTC 模式下 assembly.tools 只有 [run_code]，Minimal 工具对不在其中，
+     * 过滤会触发降级（实测首轮模型仍看到 15 个工具）。正确做法是
+     * tools.restrict（与族限制同一机制）：它同时驱动 API 目录和 PTC 的
+     * SDK 参考段，且天然保留 run_code（不在 deny 里）。
+     */
+    function bootstrapKeepSet(a) {
+      const phase = bootstrapPhaseOf(a.agent);
+      if (phase.promoted) return null;
+      const keep = new Set(cfg.bootstrap.tools);
+      if (a.visibleNames.has('run_code')) keep.add('run_code');
+      if (phase.boundary >= 0) for (const name of cfg.bootstrap.compactionTools) keep.add(name);
+      return keep;
+    }
+
+    /** 按当前阶段同步 bootstrap 的临时 restrict（幂等；仅阶段/配置变化时重挂）。 */
+    function syncBootstrap(a) {
+      const keep = bootstrapKeepSet(a);
+      const key = keep === null ? null : [...keep].sort().join(',');
+      if (key === a.bootstrapKey) return;
+      if (a.bootstrapDisposer !== null) {
+        try { a.bootstrapDisposer(); } catch {}
+        a.bootstrapDisposer = null;
+        a.bootstrapKey = null;
+      }
+      if (keep === null) return;
+      const deny = [...a.visibleNames].filter((name) => !keep.has(name));
+      if (deny.length === 0) return;
+      try {
+        a.bootstrapDisposer = a.agent.ctx.tools.restrict({ deny });
+        a.bootstrapKey = key;
+        info(`agent ${a.agent.id}: bootstrap restrict deny=${deny.length} keep=[${[...keep].join(',')}]`);
+      } catch (error) {
+        warn(`bootstrap restrict failed for agent ${a.agent.id}: ${String((error && error.message) || error)}`);
+      }
+    }
+
+    // 持久事件增量喂入：晋升信号 / compaction 纪元；阶段变化时同步 bootstrap 限制。
     ctx.on('session/event', (session, event) => {
       if (session === null || typeof session !== 'object' || typeof session.id !== 'string') return;
+      const before = bootstrapState.get(session.id);
       observePhase(bootstrapState, session.id, event);
-    });
-
-    // 请求装配时按阶段收窄工具目录。请求 #1（未晋升）：只保留 bootstrap
-    // 工具对（compaction/end 之后额外放行 compactionTools 核心工作集）；
-    // 已晋升：放行（leanByDefault 的族限制仍由 tools.restrict 生效）。
-    ctx.on('system-prompt/assemble', async (assembly, _context, next) => {
-      const resolved = await next();
-      try {
-        const agent = agentsService?.currentInitiator?.() ?? void 0;
-        if (!bootstrapActiveFor(agent)) return resolved;
-        const phase = bootstrapPhaseOf(agent);
-        if (phase.promoted) return resolved;
-        const keep = new Set(cfg.bootstrap.tools);
-        if (phase.boundary >= 0) for (const name of cfg.bootstrap.compactionTools) keep.add(name);
-        const filtered = filterBootstrapTools(resolved, keep);
-        if (filtered.missing.length > 0) {
-          // 目录缺失 bootstrap 工具对：降级为全目录（一次告警），绝不能
-          // 把每个请求都卡死在空目录。
-          warnBootstrapOnce(`bootstrap tools missing from catalog (${JSON.stringify(filtered.missing)}); exposing the full catalog`);
-          return resolved;
+      const a = agents.get(session.id);
+      if (a !== void 0) {
+        const after = bootstrapState.get(session.id);
+        if (before === void 0 || after === void 0 || before.promoted !== after.promoted || before.boundary !== after.boundary) {
+          syncBootstrap(a);
         }
-        return { ...resolved, tools: filtered.tools };
-      } catch (error) {
-        warnBootstrapOnce(`bootstrap tool filter failed, exposing the full catalog: ${String((error && error.message) || error)}`);
-        return resolved;
       }
-    }, { prepend: true });
+    });
 
     // 首轮剥离自动注入的上下文（技能目录提醒 / AGENTS.md 摘要）。prepend +
     // 根作用域注册保证是最后一道变换（后注册的注入者无法再补回）。
@@ -733,6 +764,7 @@ export function apply(ctx, config) {
         for (const a of agents.values()) {
           applySuppression(a);
           applyFamilies(a);
+          syncBootstrap(a);
         }
       },
     });
