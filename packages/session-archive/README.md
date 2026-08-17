@@ -10,8 +10,9 @@ web 侧边栏底部新增 **归档** 面板（🗂）：
 - **一次多选批量操作**：
   - **恢复归档**（unarchive）：把勾选的会话移回会话树，恢复其在原工作区的
     位置（归档时保留的 slot 会计不被破坏）。
-  - **彻底删除**（delete）：删除勾选会话的持久化文件与归档记录。删除为
+  - **彻底删除**（delete）：删除勾选会话的持久化文件与会话目录。删除为
     两段式确认（第一次点击进入确认态，4 秒内再次点击执行），避免误删。
+    删除后该会话在侧边栏对话列表与归档面板中都不会再出现。
 - 工具条提供**全选**、已选计数；**运行中**（live）的会话显示黄色徽标且
   禁止勾选删除（请先停止会话）；列表随会话树变化自动可刷新（⟳）。
 
@@ -34,11 +35,16 @@ dsh plugin --profile web add @chaoset/session-archive
   文本消息（`user/message` / `assistant/message` 的 text 块），不做任何
   写入/修复。
 - **删除**：live 会话拒绝；每个会话删除持久化文件与会话目录（`locate()`
-  定位）；最后从归档集合移除。归档集合没有官方移除 API，插件复用 registry
-  自身的串行化写入通道（`enqueueOperation → requireState → setState`，
-  与 `archiveSession` 同一路径）；若内部形状变化会自动降级为"仅删文件"，
-  归档列表按文件存在性过滤，功能不受影响。
-- **恢复**：仅从归档集合移除 id，会话数据不动，恢复后回到原工作区位置。
+  定位）。删除后**保留**该会话在归档集合中的 ghost id：宿主的
+  `archiveSession` 不停止内存会话，若把 id 移出归档集合，仍挂在内存中的
+  会话会因"不再归档"而立刻重新出现在侧边栏对话列表（效果等同"恢复"）；
+  保留 ghost id 后由 `list()` 的存在性过滤隐藏，面板与侧边栏都不再显示。
+  归档集合没有官方写入 API，插件复用 registry 自身的串行化写入通道
+  （`enqueueOperation → requireState → setState`，与 `archiveSession` 同一
+  路径）；若内部形状变化会自动降级为"仅删文件"，归档列表按文件存在性
+  过滤，功能不受影响。
+- **恢复**：仅从归档集合移除**仍存在持久化文件**的会话 id，会话数据不动，
+  恢复后回到原工作区位置；文件已删的已删除会话拒绝恢复（防"复活"）。
 
 ## Remote API（`ctx.remote.sessionArchive`）
 
@@ -47,6 +53,10 @@ dsh plugin --profile web add @chaoset/session-archive
 | `list()` | — | `{ items: ArchiveRow[] }` |
 | `detail(sessionId)` | 会话 id | `{ sessionId, header, title, messageCount, messages, live }` |
 | `delete(sessionIds[])` | id 数组 | `{ deleted, failed, removedFromArchive }` |
+
+> `delete` 的 `removedFromArchive` 恒为 0：删除保留归档 ghost id（见上），
+> 侧边栏不会重新显示已删除的会话；`unarchive` 的 `removedFromArchive` 为
+> 实际从归档集合移除的 id 数。
 | `unarchive(sessionIds[])` | id 数组 | `{ restored, removedFromArchive }` |
 
 `ArchiveRow`：`{ sessionId, title, cwd, createdAt, updatedAt, size, live }`。

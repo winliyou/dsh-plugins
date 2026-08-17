@@ -987,7 +987,9 @@ const archiveRegistry = {
 };
 const headers = [];
 const persistenceMock = {
-  list: async () => [...headers],
+  // 与真实 JSONL 后端一致：list() 扫描文件系统，文件已删的会话不再出现。
+  list: async () => headers.filter((h) =>
+    fs.existsSync(path.join(saRoot, "--proj--", h.id, "session.jsonl"))),
   locate: (meta) => ({ kind: "jsonl", path: path.join(saRoot, "--proj--", meta.id, "session.jsonl") }),
   readFrom: async (id) => {
     const header = headers.find((h) => h.id === id);
@@ -1040,15 +1042,23 @@ check("SA: busy 兜底拒绝删除（内存+新 mtime）", delBusy.deleted.lengt
 sessions.delete("s1");
 
 const delResult = await archiveHost.deleteArchived(["s1", "s-ghost"]);
-check("SA: 批量删除归档会话", delResult.deleted.includes("s1") && delResult.deleted.includes("s-ghost")
-  && !fs.existsSync(path.join(saRoot, "--proj--", "s1"))
-  && !registryState.archivedSessionIds.includes("s1"));
-check("SA: 删除更新归档集合", registryState.archivedSessionIds.length === 1 && registryState.archivedSessionIds[0] === "s2");
+check("SA: 批量删除归档会话（删除文件）", delResult.deleted.includes("s1") && delResult.deleted.includes("s-ghost")
+  && !fs.existsSync(path.join(saRoot, "--proj--", "s1")));
+check("SA: 删除后保留归档 ghost id（侧边栏不再显示内存会话）",
+  registryState.archivedSessionIds.includes("s1")
+  && registryState.archivedSessionIds.includes("s-ghost")
+  && delResult.removedFromArchive === 0);
+check("SA: 删除后 list 不再显示（存在性过滤）",
+  !(await archiveHost.list()).items.some((i) => i.sessionId === "s1"));
 
 const unResult = await archiveHost.unarchive(["s2"]);
 check("SA: 恢复归档不动文件", unResult.restored.includes("s2")
   && fs.existsSync(path.join(saRoot, "--proj--", "s2", "session.jsonl"))
   && !registryState.archivedSessionIds.includes("s2"));
+
+const ghostUnResult = await archiveHost.unarchive(["s-ghost"]);
+check("SA: ghost 归档 id 拒绝恢复（不复活已删除会话）",
+  ghostUnResult.restored.length === 0 && registryState.archivedSessionIds.includes("s-ghost"));
 
 // 降级路径：registry 无写入通道时删除仅清文件，列表按存在性过滤
 const degraded = createArchiveHost({ ...saCtx, workspaceRegistry: { archivedSessionIds: ["s2"] } }, archiveCfg);

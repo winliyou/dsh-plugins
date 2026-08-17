@@ -14,10 +14,19 @@
  *   2. detail(id)   — readFrom(id, 0) 只读取会话事件：标题 + 文本消息
  *                     （user/assistant），供面板"查看"展开。
  *   3. delete(ids)  — 批量彻底删除：live 会话拒绝；逐个删除持久化文件
- *                     （locate() 定位）+ 会话目录；最后从归档集合移除。
- *   4. unarchive(ids) — 批量恢复：仅从归档集合移除（会话数据不动）。
+ *                     （locate() 定位）+ 会话目录。删除后**保留**该会话在
+ *                     归档集合中的 ghost id（不调用移除）：宿主的
+ *                     archiveSession 只改归档注册表、不停止内存会话，web
+ *                     客户端重连还会把旧 tab 恢复进内存——删除时若把 id
+ *                     移出归档集合，仍挂在内存里的会话会因"不再归档"而
+ *                     立刻重新出现在侧边栏对话列表（效果等同"恢复"）。
+ *                     保留 ghost id 后由 list() 的存在性过滤隐藏，归档面板
+ *                     与侧边栏都不会再显示该会话。
+ *   4. unarchive(ids) — 批量恢复：仅从归档集合移除**仍存在持久化文件**的
+ *                     会话 id（文件已删的 ghost id 拒绝恢复，防止已彻底
+ *                     删除的会话"复活"回侧边栏）；会话数据不动。
  *
- * 归档集合（workspaceRegistry.archivedSessionIds）的移除没有官方 API，
+ * 归档集合（workspaceRegistry.archivedSessionIds）的写入没有官方 API，
  * 这里复用 registry 自身的串行化写入通道（enqueueOperation → requireState
  * → setState，与 archiveSession 相同的路径）；若 registry 内部形状变化，
  * 自动降级为"仅删文件"，归档列表会以存在性过滤幽灵 id，功能仍正确。
@@ -123,7 +132,7 @@ export function createArchiveHost(ctx, cfg) {
   const isBusy = (sessionId, file) =>
     file !== null && ctx.sessions.get(sessionId) !== undefined && Date.now() - file.mtimeMs < 60_000;
 
-  /** 从归档集合移除若干 id（恢复/删除共用），返回实际移除的 id。 */
+  /** 从归档集合移除若干 id（恢复用；删除不调用——见 deleteArchived），返回实际移除的 id。 */
   async function removeFromArchiveSet(ids) {
     const set = new Set(ids);
     const canWrite =
@@ -224,7 +233,11 @@ export function createArchiveHost(ctx, cfg) {
 
     /**
      * 批量彻底删除归档会话。live 会话拒绝（先停止再删）；每个会话删除
-     * 持久化文件与会话目录；最后从归档集合移除并返回结果明细。
+     * 持久化文件与会话目录。删除后**不**从归档集合移除 id（保留 ghost id）：
+     * 归档不停止内存会话，一旦把 id 移出归档集合，侧边栏（以"不在归档
+     * 集合中"作为显示条件）会立刻把仍在内存中的会话重新显示出来，等同
+     * "恢复"。ghost id 由 list() 的存在性过滤隐藏，面板与侧边栏均不再
+     * 显示该会话；`removedFromArchive` 因此恒为 0。
      */
     async deleteArchived(sessionIds) {
       const unique = [...new Set(sessionIds)];
@@ -238,7 +251,7 @@ export function createArchiveHost(ctx, cfg) {
         const headers = await persistence.list();
         const header = headers.find((item) => item.id === sessionId);
         if (header === undefined) {
-          // 会话文件已不存在：仅清理归档记录（幂等删除）。
+          // 会话文件已不存在：幂等删除（ghost id 保留在归档集合中）。
           deleted.push(sessionId);
           continue;
         }
@@ -259,14 +272,26 @@ export function createArchiveHost(ctx, cfg) {
           failed.push({ sessionId, reason: error && error.message ? String(error.message) : 'delete-failed' });
         }
       }
-      const removedIds = deleted.length > 0 ? await removeFromArchiveSet(deleted) : [];
-      return { deleted, failed, removedFromArchive: removedIds.length };
+      return { deleted, failed, removedFromArchive: 0 };
     },
 
-    /** 批量恢复归档会话（仅从归档集合移除，会话数据不动）。 */
+    /**
+     * 批量恢复归档会话（仅从归档集合移除，会话数据不动）。只恢复仍存在
+     * 持久化文件的会话：文件已删的 ghost id（已彻底删除的会话）拒绝恢复，
+     * 避免删除后的会话再次出现在侧边栏对话列表。
+     */
     async unarchive(sessionIds) {
       const unique = [...new Set(sessionIds)];
-      const restored = await removeFromArchiveSet(unique);
+      const headers = await persistence.list();
+      const restorable = [];
+      for (const sessionId of unique) {
+        const header = headers.find((item) => item.id === sessionId);
+        if (header === undefined) continue; // 持久化记录已删：拒绝恢复
+        const file = await fileInfo(header);
+        if (file === null) continue;        // 有记录无文件：拒绝恢复
+        restorable.push(sessionId);
+      }
+      const restored = await removeFromArchiveSet(restorable);
       return { restored, removedFromArchive: restored.length };
     },
   };
