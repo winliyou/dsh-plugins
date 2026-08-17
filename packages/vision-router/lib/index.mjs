@@ -129,7 +129,7 @@ function hasImage(content) {
   if (!Array.isArray(content)) return false;
   return content.some((block) => {
     if (block === null || typeof block !== 'object') return false;
-    if (block.type === 'image') return true;
+    if (isImageBlock(block)) return true;
     if (block.type === 'tool-result') return hasImage(block.content);
     return false;
   });
@@ -140,13 +140,22 @@ function messagesHaveImage(messages) {
   return Array.isArray(messages) && messages.some((message) => message !== null && typeof message === 'object' && hasImage(message.content));
 }
 
+/** 判断一个内容块是否为图片块（兼容 DSH 的 image 与部分客户端粘贴产生的 file 块）。 */
+function isImageBlock(block) {
+  if (block === null || typeof block !== 'object') return false;
+  if (block.type === 'image') return true;
+  if (block.type !== 'file') return false;
+  const mediaType = typeof block.mediaType === 'string' ? block.mediaType : block.mimeType;
+  return typeof mediaType === 'string' && mediaType.startsWith('image/');
+}
+
 /** 递归收集图片块，返回该条消息的文本（只取顶层 text 块拼接）。 */
 function collectImages(content, out) {
   if (!Array.isArray(content)) return '';
   let text = '';
   for (const block of content) {
     if (block === null || typeof block !== 'object') continue;
-    if (block.type === 'image') out.push(block);
+    if (isImageBlock(block)) out.push(block);
     else if (block.type === 'text') text += block.text;
     else if (block.type === 'tool-result') collectImages(block.content, out);
   }
@@ -162,7 +171,7 @@ function replaceImages(content, caption) {
       out.push(block);
       continue;
     }
-    if (block.type === 'image') {
+    if (isImageBlock(block)) {
       if (!changed) out.push({ type: 'text', text: caption });
       changed = true;
       continue;
@@ -449,12 +458,88 @@ async function* routeOnce(ctx, state, options, down) {
   yield* down(routed);
 }
 
+/** 取一个图片块的稳定标识，用于转述缓存；兼容 attachment ref 与粘贴产生的 raw data。 */
+function imageStableId(image) {
+  const att = image && image.attachment;
+  if (att !== null && typeof att === 'object') {
+    if (typeof att.attachmentId === 'string' && att.attachmentId.length > 0) return att.attachmentId;
+    if (typeof att.id === 'string' && att.id.length > 0) return att.id;
+  }
+  if (image && typeof image.data === 'string' && image.data.length > 0) {
+    return `${image.mediaType || 'image'}:${createHash('sha256').update(image.data).digest('hex')}`;
+  }
+  if (image && typeof image === 'object') {
+    try { return JSON.stringify(image); } catch { return String(Math.random()); }
+  }
+  return String(image);
+}
+
+/** 解码可能带 data URL 前缀的 base64 图片数据。 */
+function decodeBase64Image(value) {
+  let base64 = value;
+  if (base64.startsWith('data:')) {
+    const comma = base64.indexOf(',');
+    if (comma !== -1) base64 = base64.slice(comma + 1);
+  }
+  return Uint8Array.from(Buffer.from(base64, 'base64'));
+}
+
+/** 把粘贴/上传产生的 raw image 块补成 DSH 视觉模型需要的 attachment 形式。 */
+async function normalizeImageBlock(ctx, image) {
+  if (image === null || typeof image !== 'object') return image;
+  try {
+    const att = image.attachment;
+    if (att !== null && typeof att === 'object') {
+      if (typeof att.attachmentId === 'string' && att.attachmentId.length > 0) {
+        return image.type === 'file' ? { ...image, type: 'image' } : image;
+      }
+      if (typeof att.id === 'string' && att.id.length > 0) {
+        return { ...image, type: 'image', attachment: { ...att, attachmentId: att.id } };
+      }
+    }
+    const mediaType = typeof image.mediaType === 'string' ? image.mediaType : (image.type === 'file' && typeof image.mimeType === 'string' ? image.mimeType : '');
+    const hasRaw = image.data !== void 0 || image.bytes !== void 0;
+    if (mediaType.startsWith('image/') && hasRaw) {
+      const attService = typeof ctx.get === 'function' ? ctx.get('attachments') : ctx.attachments;
+      if (attService !== void 0 && typeof attService.saveImage === 'function') {
+        let data;
+        if (typeof image.data === 'string') {
+          data = decodeBase64Image(image.data);
+        } else if (image.data instanceof Uint8Array) {
+          data = image.data;
+        } else if (image.data instanceof ArrayBuffer) {
+          data = new Uint8Array(image.data);
+        } else if (typeof image.bytes === 'string') {
+          data = decodeBase64Image(image.bytes);
+        } else if (image.bytes instanceof Uint8Array) {
+          data = image.bytes;
+        }
+        if (data !== void 0) {
+          const saved = await attService.saveImage({
+            data,
+            mediaType,
+            ...(typeof image.name === 'string' && image.name.length > 0 ? { name: image.name } : {}),
+          });
+          return { ...image, type: 'image', attachment: saved, data: void 0, bytes: void 0 };
+        }
+      }
+    }
+    if (image.type === 'file' && mediaType.startsWith('image/')) {
+      return { ...image, type: 'image' };
+    }
+  } catch (error) {
+    try { ctx.logger?.warn?.(`vision-router: normalize image block failed: ${error && error.message || error}`); } catch {}
+  }
+  return image;
+}
+
 /** 转述一条含图消息，返回图片被替换为文本后的新消息。 */
 async function transcribeMessage(ctx, state, vision, message, sessionId, signal) {
   const cfg = state.cfg;
   const images = [];
   const ownText = collectImages(message.content, images);
   if (images.length === 0) return message;
+  const normalizedImages = await Promise.all(images.map((img) => normalizeImageBlock(ctx, img)));
 
   const cache = state.captionCache;
   // 缓存键不能只由图片决定：同一张图配不同用户问题/提示词会得到不同转述，
@@ -466,7 +551,7 @@ async function transcribeMessage(ctx, state, vision, message, sessionId, signal)
     model: vision.model,
     prompt: cfg.prompt,
     userText,
-    imageIds: images.map((img) => img.attachment.attachmentId),
+    imageIds: normalizedImages.map(imageStableId),
   });
   const cacheKey = `${sessionId ?? 'anon'}:${createHash('sha256').update(cacheMaterial).digest('hex')}`;
   const cached = cache.get(cacheKey);
@@ -476,10 +561,10 @@ async function transcribeMessage(ctx, state, vision, message, sessionId, signal)
   } else {
     // 仅在实际发起转述时显示进度（含失败原因），避免普通文本请求被历史图片打扰。
     progressChunk(ctx, sessionId, '🖼️ 已收到图片，正在分析…');
-    const prompt = cfg.prompt.replace('{count}', String(images.length));
+    const prompt = cfg.prompt.replace('{count}', String(normalizedImages.length));
     const parts = [{ type: 'text', text: userText.length > 0 ? `${prompt}
 
-用户针对这些图片的说明：${userText}` : prompt }, ...images];
+用户针对这些图片的说明：${userText}` : prompt }, ...normalizedImages];
     const visionOptions = {
       provider: vision.provider,
       model: vision.model,

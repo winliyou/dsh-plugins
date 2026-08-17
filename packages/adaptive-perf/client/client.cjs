@@ -40,12 +40,20 @@ window.__ModuleLoader__.load({
       fieldEscalateOnKeyword: "用户消息命中工具族触发词（如“子代理”）时，该会话放行对应工具族",
       escalateOnUnknownTool: "失败自动放行",
       fieldEscalateOnUnknownTool: "PTC 程序调用被隐藏工具报 UNKNOWN_TOOL 时自动放行对应族",
+      suppressInjectedContext: "常驻抑制注入上下文",
+      fieldSuppressInjectedContext: "整个会话剥离技能目录提醒（skill-catalog）与 AGENTS.md 摘要（agent-instructions），不再在晋升后恢复——替代品是 skill_search/skill_load 按需发现与一次性 instruction-hint（参照 dsh-anchored-standard：注入在场即使后置也扰动轨迹）",
+      skillDiscovery: "技能按需发现",
+      fieldSkillDiscovery: "晋升后常驻 skill_search / skill_load 两个小工具，替代 ~9KB 的 <available_skills> 目录注入",
+      instructionHint: "指令文件一次性提示",
+      fieldInstructionHint: "晋升后注入一次“指令文件存在，需要时自读”的短提示（探测项目链 AGENTS.md/CLAUDE.md 与 $DSH_HOME/AGENTS.md），替代全文摘要",
       families: "工具族（高级）",
       fieldFamilies: "JSON：{ 族名: { enabled, tools: [工具名], keywords: [触发词] } }。保存后热生效。",
       coreTools: "核心工具（永不隐藏）",
       fieldCoreTools: "展示用：这些工具不进入任何限制族。未列入任何族的工具也默认保留。",
       bootstrapEnabled: "首轮锚定（bootstrap）",
       fieldBootstrapEnabled: "请求 #1 只暴露 Minimal 真实工具对并剥离自动注入上下文，首个持久信号（promoteOn）后恢复——让首轮轨迹锚定极简（参照 dsh-anchored-standard 实测：工具 schema + 注入提醒决定轨迹）",
+      bootstrapRealPair: "挂载真实 Minimal 工具对",
+      fieldBootstrapRealPair: "把官方 minimal preset 同款插件（持久 PTY bash + str_replace_editor）挂进会话作用域，按名阴影 standard 的 sandboxed bash——schema 与 Minimal 逐字相同才能锚定（issue #11：任何 standard 系 schema 11/11 落入 standard-like）；依赖官方插件包，缺失时自动降级",
       bootstrapTools: "首轮工具",
       fieldBootstrapTools: "请求 #1 可见的工具（真实 Minimal 对：bash, str_replace_editor）。逗号分隔。",
       bootstrapPromoteOn: "晋升触发",
@@ -54,6 +62,8 @@ window.__ModuleLoader__.load({
       fieldBootstrapSuppressed: "请求 #1 剥离的自动注入 source.kind（技能目录提醒 skill-catalog、AGENTS.md 摘要 agent-instructions）；逗号分隔，留空=不剥离",
       bootstrapCompactionTools: "压缩后工作集",
       fieldBootstrapCompactionTools: "compaction/end 之后、再次晋升前额外可用的工具（核心工作集）。逗号分隔。",
+      bootstrapDiscoveryTools: "晋升后常驻发现工具",
+      fieldBootstrapDiscoveryTools: "晋升后保留在 resident 目录里的按需发现工具（如 dev_tool_search）；逗号分隔。",
       bootstrapMaxTokens: "首轮输出预算封顶（token）",
       fieldBootstrapMaxTokens: "请求 #1 的 maxTokens 封顶，晋升后自动剥离；0 = 不封顶（opt-in）",
       minimalPromptEnabled: "极简提示词层（语域锚定）",
@@ -85,12 +95,20 @@ window.__ModuleLoader__.load({
       fieldEscalateOnKeyword: "A user message matching a family's trigger words re-enables that family for the session",
       escalateOnUnknownTool: "Failure escalation",
       fieldEscalateOnUnknownTool: "A PTC program calling a hidden tool (UNKNOWN_TOOL) re-enables that family",
+      suppressInjectedContext: "Always suppress injected context",
+      fieldSuppressInjectedContext: "Strip the skill-catalog reminder and the AGENTS.md digest from every request, not just request #1 — replaced by on-demand skill_search/skill_load and a one-shot instruction hint (per dsh-anchored-standard: the injections perturb the trajectory even after promotion)",
+      skillDiscovery: "On-demand skill discovery",
+      fieldSkillDiscovery: "Keep skill_search / skill_load resident after promotion as the replacement for the ~9KB <available_skills> catalog injection",
+      instructionHint: "One-shot instruction hint",
+      fieldInstructionHint: "After promotion, inject ONCE a short hint that instruction files exist and should be read when relevant (probes the project chain AGENTS.md/CLAUDE.md and $DSH_HOME/AGENTS.md), instead of dumping their content",
       families: "Tool families (advanced)",
       fieldFamilies: "JSON: { familyId: { enabled, tools: [names], keywords: [triggers] } }. Hot-applied on save.",
       coreTools: "Core tools (never hidden)",
       fieldCoreTools: "Informational: these never enter any restriction family. Tools not listed in any family stay visible too.",
       bootstrapEnabled: "First-request bootstrap",
       fieldBootstrapEnabled: "Request #1 exposes only the real Minimal tool pair and drops auto-injected context; the first durable signal (promoteOn) restores the catalog — anchors the first-request trajectory to minimal (per dsh-anchored-standard measurements)",
+      bootstrapRealPair: "Mount the real Minimal tool pair",
+      fieldBootstrapRealPair: "Mount the official minimal-preset plugins (persistent PTY bash + str_replace_editor) into the session scope, shadowing the standard sandboxed bash by name — only byte-identical schemas anchor (issue #11: every standard-family schema fell standard-like 11/11); degrades gracefully when the official packages are missing",
       bootstrapTools: "Bootstrap tools",
       fieldBootstrapTools: "Tools visible on request #1 (the real Minimal pair: bash, str_replace_editor). Comma-separated.",
       bootstrapPromoteOn: "Promotion trigger",
@@ -99,6 +117,8 @@ window.__ModuleLoader__.load({
       fieldBootstrapSuppressed: "Auto-injected source.kinds stripped on request #1 (skill-catalog reminder, agent-instructions digest); comma-separated, empty = strip nothing",
       bootstrapCompactionTools: "Post-compaction work set",
       fieldBootstrapCompactionTools: "Extra tools available after compaction/end until a new promotion signal (core work set). Comma-separated.",
+      bootstrapDiscoveryTools: "Resident discovery tools",
+      fieldBootstrapDiscoveryTools: "On-demand discovery tools kept in the resident catalog after promotion (e.g. dev_tool_search). Comma-separated.",
       bootstrapMaxTokens: "First-request output cap (tokens)",
       fieldBootstrapMaxTokens: "maxTokens cap for request #1, stripped after promotion; 0 = no cap (opt-in)",
       minimalPromptEnabled: "Minimal prompt layer (register anchor)",
@@ -285,11 +305,39 @@ window.__ModuleLoader__.load({
             onChange: (v) => setDraft({ ...draft, escalateOnUnknownTool: v })
           }),
           react.createElement(BoolField, {
+            label: t("suppressInjectedContext"),
+            hint: t("fieldSuppressInjectedContext"),
+            value: draft === null ? false : draft.suppressInjectedContext,
+            disabled: draft === null,
+            onChange: (v) => setDraft({ ...draft, suppressInjectedContext: v })
+          }),
+          react.createElement(BoolField, {
+            label: t("skillDiscovery"),
+            hint: t("fieldSkillDiscovery"),
+            value: draft === null ? false : draft.skillDiscovery,
+            disabled: draft === null,
+            onChange: (v) => setDraft({ ...draft, skillDiscovery: v })
+          }),
+          react.createElement(BoolField, {
+            label: t("instructionHint"),
+            hint: t("fieldInstructionHint"),
+            value: draft === null ? false : draft.instructionHint,
+            disabled: draft === null,
+            onChange: (v) => setDraft({ ...draft, instructionHint: v })
+          }),
+          react.createElement(BoolField, {
             label: t("bootstrapEnabled"),
             hint: t("fieldBootstrapEnabled"),
             value: draft === null ? false : !!draft.bootstrap && draft.bootstrap.enabled,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), enabled: v } })
+          }),
+          react.createElement(BoolField, {
+            label: t("bootstrapRealPair"),
+            hint: t("fieldBootstrapRealPair"),
+            value: draft === null ? false : !!draft.bootstrap && draft.bootstrap.realPair,
+            disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
+            onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), realPair: v } })
           }),
           react.createElement(TextField, {
             label: t("bootstrapTools"),
@@ -318,6 +366,13 @@ window.__ModuleLoader__.load({
             value: draft === null ? "" : ((draft.bootstrap && draft.bootstrap.compactionTools) || []).join(", "),
             disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
             onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), compactionTools: v.split(/[,，\s]+/).filter((x) => x.length > 0) } })
+          }),
+          react.createElement(TextField, {
+            label: t("bootstrapDiscoveryTools"),
+            hint: t("fieldBootstrapDiscoveryTools"),
+            value: draft === null ? "" : ((draft.bootstrap && draft.bootstrap.discoveryTools) || []).join(", "),
+            disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
+            onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), discoveryTools: v.split(/[,，\s]+/).filter((x) => x.length > 0) } })
           }),
           react.createElement(TextField, {
             label: t("bootstrapMaxTokens"),

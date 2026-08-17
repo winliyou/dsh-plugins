@@ -15,12 +15,22 @@
         leanByDefault: true
         escalateOnKeyword: true
         escalateOnUnknownTool: true
-        # 首轮锚定（参照 dsh-anchored-standard 实测）：请求 #1 只暴露 Minimal
-        # 真实工具对并剥离自动注入上下文，首个持久信号后恢复完整目录。
+        # 常驻上下文抑制（参照 dsh-anchored-standard）：整个会话剥离技能目录
+        # 提醒与 AGENTS.md 摘要注入，替代品是 skill_search/skill_load 按需
+        # 发现与 instruction-hint 一次性提示。
+        suppressInjectedContext: true
+        skillDiscovery: true
+        instructionHint: true
+        # 首轮锚定（参照 dsh-anchored-standard issue #11）：请求 #1 只暴露
+        # 真实 Minimal 工具对（realPair 挂载官方 minimal preset 同款插件，
+        # schema 与 Minimal 逐字相同）并剥离自动注入上下文，首个持久信号后
+        # 进入 resident 目录（工具对 + 发现工具 + 已解锁工具）。
         bootstrap:
           enabled: true
+          realPair: true
           tools: [bash, str_replace_editor]
           promoteOn: either
           suppressedContextSources: [skill-catalog, agent-instructions]
           compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
+          discoveryTools: [dev_tool_search, skill_search, skill_load]
           maxTokens: 0

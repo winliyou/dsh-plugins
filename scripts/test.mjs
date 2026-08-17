@@ -141,6 +141,10 @@ const reAsk = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9
 ] };
 for await (const c of llmMock.streamWithRegistration(reAsk)) {}
 check("VR: 同一图片+不同问题不误用缓存", calls.transcription === 2);
+const rawPasteBlock = { type: "image", mediaType: "image/png", data: "aGVsbG8=", name: "clipboard.png" };
+const rawPaste = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [rawPasteBlock] }] };
+for await (const c of llmMock.streamWithRegistration(rawPaste)) {}
+check("VR: 粘贴 raw image 块不崩溃并转述", calls.transcription === 3 && calls.downstream[1].messages[0].content[0].type === "text");
 check("VR: remote 网关注册", ctx.gateway !== undefined && ctx.gateway.get().config.visionProvider === "zai-open");
 let invalidRejected = false;
 try { ctx.gateway.set({ maxVisionTokens: -1 }); } catch { invalidRejected = true; }
@@ -304,6 +308,84 @@ check("AP: 阴影段清单完整", ap.SECTION_SHADOWS.length === 3
   && ap.SECTION_SHADOWS.some(([n]) => n === "app:web-surface")
   && ap.PERSONA_SECTION_NAME === "deployment:persona");
 
+// ── 0.5.0：常驻上下文抑制 / 技能发现 / 指令提示 / 真实工具对配置 ──────
+const v5def = ap.normalizeConfig({});
+check("AP: 0.5.0 默认配置", v5def.suppressInjectedContext === true && v5def.skillDiscovery === true
+  && v5def.instructionHint === true && v5def.bootstrap.realPair === true
+  && v5def.bootstrap.discoveryTools.includes("dev_tool_search")
+  && v5def.bootstrap.discoveryTools.includes("skill_search")
+  && v5def.bootstrap.discoveryTools.includes("skill_load"));
+const v5norm = ap.normalizeConfig({ suppressInjectedContext: false, skillDiscovery: false, instructionHint: false, bootstrap: { realPair: false } });
+check("AP: 0.5.0 配置归一化", v5norm.suppressInjectedContext === false && v5norm.skillDiscovery === false
+  && v5norm.instructionHint === false && v5norm.bootstrap.realPair === false);
+let v5Rejected = false;
+try { ap.validateConfig({ suppressInjectedContext: "yes" }); } catch { v5Rejected = true; }
+let v5Rejected2 = false;
+try { ap.validateConfig({ bootstrap: { realPair: 1 } }); } catch { v5Rejected2 = true; }
+check("AP: 0.5.0 配置校验-非法值拒绝", v5Rejected === true && v5Rejected2 === true);
+
+// ── 0.5.0：真实 Minimal 工具对 / 指令探测 / 发现工具纯函数 ─────────────
+check("AP: Minimal bash 描述与官方逐字一致", ap.MINIMAL_BASH_DESCRIPTION.startsWith("Run commands in a bash shell")
+  && ap.MINIMAL_BASH_DESCRIPTION.includes("* State is persistent across command calls and discussions with the user.")
+  && ap.MINIMAL_BASH_DESCRIPTION.includes("sed -n 10,25p"));
+const stubModules = {
+  terminal: { name: "dsh-terminal" },
+  terminalBash: { name: "dsh-terminal-bash" },
+  bashPersistent: { name: "dsh-tool-bash-persistent" },
+  fsLocal: { name: "dsh-fs-local" },
+  strReplaceEditor: { name: "dsh-tool-str-replace-editor" },
+};
+const loaded = await ap.loadRealPairModules((spec) => Promise.resolve(stubModules[Object.keys(ap.REAL_PAIR_SPECS).find((k) => ap.REAL_PAIR_SPECS[k] === spec)]));
+check("AP: loadRealPairModules-成功路径", loaded !== null && loaded.bashPersistent.name === "dsh-tool-bash-persistent");
+const failed = await ap.loadRealPairModules(() => Promise.reject(new Error("no such package")));
+check("AP: loadRealPairModules-缺失包整体降级", failed === null);
+const mounts = ap.realPairMounts(stubModules, "/work");
+check("AP: realPairMounts-顺序与配置", mounts.length === 5
+  && mounts[0].module.name === "dsh-terminal"
+  && mounts[2].module.name === "dsh-tool-bash-persistent"
+  && mounts[2].config.description === ap.MINIMAL_BASH_DESCRIPTION
+  && mounts[3].config.cwd === "/work"
+  && mounts[4].config.maxOutputChars === 16000);
+const mountedPlugins = [];
+const mountAgent = { ctx: { plugin(mod, cfg) { mountedPlugins.push({ name: mod.name, cfg }); return { dispose() {} }; } } };
+const disposers = ap.mountRealPair(mountAgent, mounts, () => {});
+check("AP: mountRealPair-逐模块挂载", mountedPlugins.length === 5 && disposers.length === 5);
+check("AP: mountRealPair-无 plugin 的 agent 安全跳过", ap.mountRealPair({ ctx: {} }, mounts, () => {}).length === 0);
+
+const hintFs = {
+  resolve: async (target) => target,
+  stat: async (target) => (target.includes("AGENTS.md") || target.includes("CLAUDE.md") ? { type: "file" } : { type: "dir" }),
+};
+const probe = await ap.probeInstructionFiles(hintFs, "/proj", "/home/.dsh", undefined);
+check("AP: instruction-hint 探测项目链与用户全局", probe !== null && probe.projectFiles.includes("AGENTS.md") && probe.userGlobalFiles.includes("AGENTS.md"));
+check("AP: instruction-hint 无 cwd 不探测", await ap.probeInstructionFiles(hintFs, undefined, "/home/.dsh", undefined) === null);
+check("AP: instruction-hint 无 fs 不探测", await ap.probeInstructionFiles(undefined, "/proj", "/home/.dsh", undefined) === null);
+
+const strippedMsgs = ap.stripSuppressedMessages(
+  [{ source: { kind: "skill-catalog" }, content: [] }, { source: { kind: "user" }, content: [] }],
+  new Set(["skill-catalog"]));
+check("AP: stripSuppressedMessages-按 kind 剥离", strippedMsgs.length === 1 && strippedMsgs[0].source.kind === "user");
+check("AP: stripSuppressedMessages-空集原样", ap.stripSuppressedMessages([{ content: [] }], new Set()).length === 1);
+
+const searchCalls = [];
+const skillSearch = ap.createSkillSearch({ skillsOf: () => ({ list: async (lookup) => { searchCalls.push(lookup); return [{ name: "pdf-tools", description: "PDF 处理" }]; } }) });
+const searchOut = await skillSearch.execute({ query: "pdf" }, { agent: { session: { header: { cwd: "/x" } } } });
+check("AP: skill_search 按关键词返回摘要", searchOut.text.includes("pdf-tools") && searchCalls.length === 1);
+const injectCalls = [];
+const skillLoad = ap.createSkillLoad({ skillsOf: () => ({ get: async (name) => ({ name, content: "full instructions" }) }) });
+const loadOut = await skillLoad.execute({ name: "pdf-tools" }, { agent: { session: { header: { cwd: "/x" } }, inject: (msg) => injectCalls.push(msg) } });
+check("AP: skill_load 注入完整说明", loadOut.text.includes("loaded") && injectCalls.length === 1
+  && injectCalls[0].source.kind === "skill-invocation" && injectCalls[0].content[0].text === "full instructions");
+const unlockedNames = [];
+const devToolPure = ap.createDevToolSearch({
+  schemasOf: () => [{ name: "read" }, { name: "web_search" }],
+  onUnlock: async (names) => { unlockedNames.push(...names); },
+});
+const devOut = await devToolPure.execute({ query: "web", toolNames: ["read", "nope"] }, { agent: { id: "x" } });
+check("AP: dev_tool_search 解锁与搜索", devOut.text.includes("Unlocked for the next request: read")
+  && devOut.text.includes("Not found in catalog: nope") && devOut.text.includes("web_search")
+  && unlockedNames.includes("read"));
+
 // 标准模式工具目录（真实 standard preset 的行注册集）
 const STANDARD_CATALOG = [
   "bash", "read", "write", "edit", "glob", "grep", "read_image",
@@ -315,6 +397,9 @@ const STANDARD_CATALOG = [
 const apEvents = {}; // event -> [listeners]
 const apRestrictCalls = []; // { agent, deny }
 const apDisposedCalls = []; // 被调用的 restrict disposer 对应 deny
+const apToolRegistrations = []; // { agent, name } 注册的 agent 作用域工具
+const apToolDisposals = []; // { agent, name } 释放的 agent 作用域工具
+const apToolDefs = new Map(); // "agent:name" -> tool definition
 const apSuppressCalls = new Set(); // 调用过 suppressRuntimeContext 的 agent
 const apSectionCalls = []; // { agent, name, order, text }
 const apSectionDisposed = []; // 被调用的 section disposer（name 记录）
@@ -329,12 +414,26 @@ function makeAgentTools(id) {
       apRestrictCalls.push({ agent: id, deny: [...deny] });
       return () => { apDisposedCalls.push({ agent: id, deny: [...deny] }); };
     },
+    register(definition) {
+      apToolRegistrations.push({ agent: id, name: definition.name });
+      apToolDefs.set(`${id}:${definition.name}`, definition);
+      return () => { apToolDisposals.push({ agent: id, name: definition.name }); };
+    },
   };
 }
 const apAgentPresetsMock = {
   composedPreset(agentCtx) { return agentCtx.presetId; },
 };
 const apAgentsMock = { list: () => [...apLiveAgents.values()] };
+// 0.5.0：instruction-hint 探测与 skill 发现工具的宿主服务桩
+const apSkillsMock = {
+  list: async () => [{ name: "pdf-tools", description: "PDF 处理" }],
+  get: async (name) => ({ name, content: "full instructions" }),
+};
+const apFsMock = {
+  resolve: async (target) => target,
+  stat: async (target) => (target.includes("AGENTS.md") || target.includes("CLAUDE.md") ? { type: "file" } : { type: "dir" }),
+};
 const apCtx = {
   logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
   get(name) {
@@ -347,6 +446,8 @@ const apCtx = {
     };
     if (name === "agentPresets") return apAgentPresetsMock;
     if (name === "agents") return apAgentsMock;
+    if (name === "skills") return apSkillsMock;
+    if (name === "fs") return apFsMock;
     return undefined;
   },
   on(event, listener) { (apEvents[event] ??= []).push(listener); },
@@ -357,7 +458,7 @@ const apCtx = {
     try { this.gateway = new Cls(this, cfg); } finally { this.reflect = saved; }
   },
 };
-function apAgent(id, presetId) {
+function apAgent(id, presetId, session) {
   apToolSets.set(id, new Set(STANDARD_CATALOG));
   const agent = {
     id,
@@ -373,6 +474,7 @@ function apAgent(id, presetId) {
       },
     },
   };
+  if (session !== void 0) agent.session = session;
   apLiveAgents.set(id, agent);
   return agent;
 }
@@ -380,8 +482,9 @@ function apEmit(event, ...args) {
   for (const listener of apEvents[event] ?? []) listener(...args);
 }
 
-// 引擎启动（默认配置，config.json 不存在 → 默认值）
-ap.apply(apCtx, { presets: ["standard", "code"] });
+// 引擎启动（默认配置，config.json 不存在 → 默认值）。
+// realPairModules: null 注入 = 官方包缺失的降级路径（测试环境无 @deepseek-ai 包）。
+await ap.apply(apCtx, { presets: ["standard", "code"] }, { realPairModules: null });
 const agentStd = apAgent("s-std", "standard");
 apEmit("agent/created", { agent: agentStd });
 const stdDenies = apRestrictCalls.filter((c) => c.agent === "s-std");
@@ -475,6 +578,213 @@ check("AP: agent 销毁释放提示词层", apSectionDisposed.filter((c) => c.ag
 // agent 销毁清理（无异常）
 apEmit("agent/disposed", { agent: agentStd });
 check("AP: 引擎全程运行无异常", apSuppressCalls.has("s-std"));
+
+// ── dsh-anchored-standard resident catalog（晋升后不 dump 完整目录）────
+const residentSession = {
+  id: "s-res",
+  header: { cwd: "/tmp/res", delegationDepth: 0 },
+  events: [{ type: "assistant/message", seq: 1 }],
+};
+const agentResident = apAgent("s-res", "standard", residentSession);
+apEmit("agent/created", { agent: agentResident });
+check("AP: 晋升后注册 dev_tool_search", apToolRegistrations.some((r) => r.agent === "s-res" && r.name === "dev_tool_search"));
+const resRestrictCalls = apRestrictCalls.filter((c) => c.agent === "s-res");
+const resBootstrap = resRestrictCalls.find((c) => c.deny.includes("read") && c.deny.includes("web_search"));
+check("AP: 晋升后保留 resident 目录而非完整目录", resBootstrap !== void 0
+  && !resBootstrap.deny.includes("bash")
+  && !resBootstrap.deny.includes("str_replace_editor")
+  && resBootstrap.deny.includes("read")
+  && resBootstrap.deny.includes("subagent"));
+const devTool = apToolDefs.get("s-res:dev_tool_search");
+const beforeUnlockRestrict = apRestrictCalls.filter((c) => c.agent === "s-res").length;
+if (devTool !== void 0) {
+  const out = await devTool.execute({ query: "", toolNames: ["read"] }, { agent: agentResident });
+  check("AP: dev_tool_search 解锁返回文本", typeof out.text === "string" && out.text.includes("Unlocked"));
+} else {
+  check("AP: dev_tool_search 解锁返回文本", false);
+}
+const unlockRestrictCalls = apRestrictCalls.filter((c) => c.agent === "s-res").slice(beforeUnlockRestrict);
+check("AP: dev_tool_search 解锁后 read 进入 resident", unlockRestrictCalls.length > 0
+  && unlockRestrictCalls.some((c) => !c.deny.includes("read") && c.deny.includes("web_search")));
+apEmit("agent/disposed", { agent: agentResident });
+check("AP: agent 销毁释放 dev_tool_search", apToolDisposals.some((d) => d.agent === "s-res" && d.name === "dev_tool_search"));
+const agentBoot = apAgent("s-boot", "standard", { id: "s-boot", header: {}, events: [] });
+apEmit("agent/created", { agent: agentBoot });
+check("AP: bootstrap 阶段不注册 dev_tool_search", !apToolRegistrations.some((r) => r.agent === "s-boot" && r.name === "dev_tool_search"));
+apEmit("agent/disposed", { agent: agentBoot });
+
+// ── 0.5.0：常驻上下文抑制 + instruction-hint + 技能发现（引擎路径）────
+const ctxSession = { id: "s-ctx", header: { cwd: "/ctx" }, events: [{ type: "assistant/message", seq: 1 }] };
+const ctxAgent = apAgent("s-ctx", "standard", ctxSession);
+apEmit("agent/created", { agent: ctxAgent });
+check("AP: 晋升后注册发现工具三件套", ["dev_tool_search", "skill_search", "skill_load"].every((n) =>
+  apToolRegistrations.some((r) => r.agent === "s-ctx" && r.name === n)));
+const preStep = apEvents["agent/pre-step"][0];
+const injectedMsgs = [
+  { role: "user", source: { kind: "skill-catalog" }, content: [{ type: "text", text: "skills" }] },
+  { role: "user", source: { kind: "agent-instructions" }, content: [{ type: "text", text: "agents" }] },
+  { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "real" }] },
+];
+const stepRes = await preStep({ agent: ctxAgent, signal: undefined }, async () => ({ kind: "continue", messages: injectedMsgs }));
+const stepKinds = stepRes.messages.map((m) => m.source && m.source.kind);
+check("AP: 常驻抑制-晋升后仍剥离注入", stepKinds.includes("user") && !stepKinds.includes("skill-catalog") && !stepKinds.includes("agent-instructions"));
+check("AP: instruction-hint 晋升后注入一次", stepKinds.filter((k) => k === "instruction-hint").length === 1
+  && stepRes.messages.some((m) => m.source.kind === "instruction-hint" && m.content[0].text.includes("AGENTS.md")));
+const stepRes2 = await preStep({ agent: ctxAgent, signal: undefined }, async () => ({ kind: "continue", messages: [] }));
+check("AP: instruction-hint 不重复注入", stepRes2.messages.every((m) => m.source.kind !== "instruction-hint"));
+const skillSearchDef = apToolDefs.get("s-ctx:skill_search");
+const skillSearchOut = skillSearchDef === void 0 ? null : await skillSearchDef.execute({ query: "pdf" }, { agent: ctxAgent });
+check("AP: skill_search 引擎路径", skillSearchOut !== null && skillSearchOut.text.includes("pdf-tools"));
+const ctxInjects = [];
+ctxAgent.inject = (msg) => ctxInjects.push(msg);
+const skillLoadDef = apToolDefs.get("s-ctx:skill_load");
+const skillLoadOut = skillLoadDef === void 0 ? null : await skillLoadDef.execute({ name: "pdf-tools" }, { agent: ctxAgent });
+check("AP: skill_load 引擎路径注入", skillLoadOut !== null && ctxInjects.length === 1 && ctxInjects[0].source.kind === "skill-invocation");
+// 常驻抑制关闭 → 晋升后恢复注入（instruction-hint 仍只一次）
+apCtx.gateway.set({ suppressInjectedContext: false });
+const stepRes3 = await preStep({ agent: ctxAgent, signal: undefined }, async () => ({ kind: "continue", messages: injectedMsgs }));
+const stepKinds3 = stepRes3.messages.map((m) => m.source && m.source.kind);
+check("AP: 常驻抑制关闭-晋升后恢复注入", stepKinds3.includes("skill-catalog") && !stepKinds3.includes("instruction-hint"));
+apCtx.gateway.set({ suppressInjectedContext: true });
+// bootstrap 阶段：剥离生效且无 instruction-hint（未晋升）
+const boot2 = apAgent("s-boot2", "standard", { id: "s-boot2", header: {}, events: [] });
+apEmit("agent/created", { agent: boot2 });
+const bootRes = await preStep({ agent: boot2, signal: undefined }, async () => ({ kind: "continue", messages: injectedMsgs }));
+const bootKinds = bootRes.messages.map((m) => m.source && m.source.kind);
+check("AP: bootstrap 阶段剥离注入且无提示", bootKinds.length === 1 && bootKinds[0] === "user");
+apEmit("agent/disposed", { agent: boot2 });
+apEmit("agent/disposed", { agent: ctxAgent });
+check("AP: 0.5.0 会话销毁释放发现工具", ["dev_tool_search", "skill_search", "skill_load"].every((n) =>
+  apToolDisposals.some((d) => d.agent === "s-ctx" && d.name === n)));
+
+// ── 0.5.0：真实工具对挂载（stub 模块注入，独立 ctx）───────────────────
+const rpEvents = {};
+const apMounted = []; // { agent, module, config }
+const apFiberDisposed = [];
+const apCtx2 = {
+  logger: apCtx.logger,
+  get(name) {
+    if (name === "tools") return { schemas: (a) => [...(apToolSets.get(a.id) ?? [])].map((n) => ({ name: n })), restrict: () => () => {} };
+    if (name === "systemPrompt") return { suppressRuntimeContext() { return () => {}; } };
+    if (name === "agentPresets") return apAgentPresetsMock;
+    if (name === "agents") return apAgentsMock;
+    if (name === "skills") return apSkillsMock;
+    if (name === "fs") return apFsMock;
+    return undefined;
+  },
+  on(event, listener) { (rpEvents[event] ??= []).push(listener); },
+  effect(fn) { fn(); },
+  plugin(Cls, cfg) {
+    const saved = this.reflect;
+    this.reflect = { provide: () => {}, props: {} };
+    try { this.gateway = new Cls(this, cfg); } finally { this.reflect = saved; }
+  },
+};
+await ap.apply(apCtx2, { presets: ["standard"] }, { realPairModules: stubModules });
+const agentRp = apAgent("s-rp", "standard", { id: "s-rp", header: { cwd: "/rp" }, events: [] });
+agentRp.ctx.plugin = (mod, cfg) => {
+  apMounted.push({ agent: agentRp.id, module: mod.name, config: cfg });
+  return { dispose: () => apFiberDisposed.push(agentRp.id) };
+};
+for (const listener of rpEvents["agent/created"] ?? []) listener({ agent: agentRp });
+check("AP: realPair 挂载 5 个官方插件", apMounted.length === 5
+  && apMounted.some((m) => m.module === "dsh-tool-bash-persistent" && m.config.description === ap.MINIMAL_BASH_DESCRIPTION)
+  && apMounted.some((m) => m.module === "dsh-tool-str-replace-editor")
+  && apMounted.some((m) => m.module === "dsh-terminal"));
+check("AP: realPair 阴影 tool:bash 引导段", apSectionCalls.some((c) => c.agent === "s-rp" && c.name === "tool:bash" && c.text === ""));
+const mountedBefore = apFiberDisposed.length;
+apCtx2.gateway.set({ bootstrap: { realPair: false } });
+check("AP: realPair 热更新关闭后卸载", apFiberDisposed.length === mountedBefore + apMounted.length);
+for (const listener of rpEvents["agent/disposed"] ?? []) listener({ agent: agentRp });
+
+
+// ── session-archive（归档管理：列表/查看/批量删除/恢复）─────────────────
+const { createArchiveHost } = await import(path.join(ROOT, "packages/session-archive/lib/index.mjs"));
+const archiveCfg = { detailMaxMessages: 50, messagePreviewChars: 500, titleReadConcurrency: 2 };
+const saRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sa-"));
+const writeSession = (id, cwd, events) => {
+  const dir = path.join(saRoot, "--proj--", id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "session.jsonl"), JSON.stringify(events));
+  return dir;
+};
+const sessions = new Map();
+const registryState = { initialized: true, workspaceIds: ["w1"], archivedSessionIds: ["s1", "s2", "s-ghost"] };
+const archiveRegistry = {
+  archivedSessionIds: registryState.archivedSessionIds,
+  enqueueOperation: async (operation) => { await operation(); },
+  requireState: () => registryState,
+  setState: (next) => { Object.assign(registryState, next); },
+};
+const headers = [];
+const persistenceMock = {
+  list: async () => [...headers],
+  locate: (meta) => ({ kind: "jsonl", path: path.join(saRoot, "--proj--", meta.id, "session.jsonl") }),
+  readFrom: async (id) => {
+    const header = headers.find((h) => h.id === id);
+    if (header === void 0) throw new Error("no such session " + id);
+    const events = JSON.parse(fs.readFileSync(path.join(saRoot, "--proj--", id, "session.jsonl"), "utf8"));
+    return { meta: header, events };
+  },
+};
+const saCtx = {
+  workspaceRegistry: archiveRegistry,
+  sessionPersistence: persistenceMock,
+  sessions: { get: (id) => sessions.get(id) },
+};
+writeSession("s1", "/proj/a", [
+  { type: "session/title", seq: 1, time: 1000, data: { title: "第一个归档会话", messageSeqs: [2] } },
+  { type: "user/message", seq: 2, time: 1000, data: { id: "m1", role: "user", content: [{ type: "text", text: "你好" }] } },
+  { type: "assistant/message", seq: 3, time: 2000, data: { id: "m2", role: "assistant", content: [{ type: "text", text: "你好！有什么可以帮你？" }] } },
+]);
+writeSession("s2", "/proj/b", [
+  { type: "user/message", seq: 1, time: 3000, data: { id: "m3", role: "user", content: [{ type: "text", text: "没有标题的会话" }] } },
+]);
+headers.push({ id: "s1", cwd: "/proj/a", createdAt: 1000, version: 0 });
+headers.push({ id: "s2", cwd: "/proj/b", createdAt: 3000, version: 0 });
+headers.push({ id: "s3", cwd: "/proj/c", createdAt: 4000, version: 0 });
+const archiveHost = createArchiveHost(saCtx, archiveCfg);
+
+const listResult = await archiveHost.list();
+check("SA: list 过滤幽灵归档 id", listResult.items.length === 2 && !listResult.items.some((i) => i.sessionId === "s-ghost"));
+check("SA: list 不显示未归档会话", !listResult.items.some((i) => i.sessionId === "s3"));
+check("SA: list 折叠标题", listResult.items.find((i) => i.sessionId === "s1").title === "第一个归档会话"
+  && listResult.items.find((i) => i.sessionId === "s2").title === null);
+check("SA: list 带文件元信息", listResult.items.every((i) => i.size > 0 && i.updatedAt > 0 && i.live === false));
+
+sessions.set("s1", {});
+const listLive = await archiveHost.list();
+check("SA: list 标记 live 会话", listLive.items.find((i) => i.sessionId === "s1").live === true);
+sessions.delete("s1");
+
+const detailResult = await archiveHost.detail("s1");
+check("SA: detail 提取标题与消息", detailResult.title === "第一个归档会话"
+  && detailResult.messages.length === 2
+  && detailResult.messages[0].role === "user"
+  && detailResult.messages[1].text.includes("可以帮你"));
+
+sessions.set("s1", {});
+const delLive = await archiveHost.deleteArchived(["s1"]);
+sessions.delete("s1");
+check("SA: 删除拒绝 live 会话", delLive.deleted.length === 0 && delLive.failed[0].reason === "live");
+
+const delResult = await archiveHost.deleteArchived(["s1", "s-ghost"]);
+check("SA: 批量删除归档会话", delResult.deleted.includes("s1") && delResult.deleted.includes("s-ghost")
+  && !fs.existsSync(path.join(saRoot, "--proj--", "s1"))
+  && !registryState.archivedSessionIds.includes("s1"));
+check("SA: 删除更新归档集合", registryState.archivedSessionIds.length === 1 && registryState.archivedSessionIds[0] === "s2");
+
+const unResult = await archiveHost.unarchive(["s2"]);
+check("SA: 恢复归档不动文件", unResult.restored.includes("s2")
+  && fs.existsSync(path.join(saRoot, "--proj--", "s2", "session.jsonl"))
+  && !registryState.archivedSessionIds.includes("s2"));
+
+// 降级路径：registry 无写入通道时删除仅清文件，列表按存在性过滤
+const degraded = createArchiveHost({ ...saCtx, workspaceRegistry: { archivedSessionIds: ["s2"] } }, archiveCfg);
+const degList = await degraded.list();
+check("SA: 降级 registry 仍能列出（存在性过滤）", degList.items.length === 1 && degList.items[0].sessionId === "s2");
+
+fs.rmSync(saRoot, { recursive: true, force: true });
 
 fs.rmSync(fakeHome, { recursive: true, force: true });
 console.log("RESULT pass=" + pass + " fail=" + fail);

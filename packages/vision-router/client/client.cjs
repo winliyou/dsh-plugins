@@ -65,6 +65,50 @@ window.__ModuleLoader__.load({
       fieldVisionModel: "Must declare image input (e.g. glm-4v-flash)"
     };
 
+    // ── 粘贴图片增强 ────────────────────────────────────────────────────
+    // DSH 自带输入框在部分版本/场景（如新会话 hero）不会把剪贴板图片加入草稿。
+    // 这里在现有会话的输入区挂一个不可见节点，用捕获阶段处理 paste，主动把
+    // 剪贴板图片转为 DSH 草稿附件；成功时阻止默认/冒泡，避免重复添加。
+    function PasteImageEnhancer(props) {
+      const rootRef = react.useRef(null);
+      react.useEffect(() => {
+        const root = rootRef.current;
+        if (root === null) return;
+        const card = root.closest("[data-composer-card]");
+        const textarea = card === null ? null : card.querySelector("textarea");
+        if (textarea === null) return;
+        const conversation = props.conversation;
+        const sessionId = props.session && props.session.sessionId;
+        if (conversation === void 0 || sessionId === void 0) return;
+        const onPaste = (event) => {
+          const items = Array.from(event.clipboardData && event.clipboardData.items ? event.clipboardData.items : []);
+          const files = items
+            .filter((item) => item.kind === "file")
+            .map((item) => item.getAsFile())
+            .filter((file) => file !== null);
+          if (files.length === 0) return;
+          // 如果剪贴板同时带有文本，交给 DSH 原生逻辑一并处理，避免吞掉文字。
+          const text = event.clipboardData && typeof event.clipboardData.getData === "function" ? event.clipboardData.getData("text/plain") : "";
+          if (text !== "") return;
+          try {
+            const images = conversation.createDraftImages(files);
+            const shell = conversation.input.shell(sessionId);
+            if (!shell.addImages(images.map((image) => image.id))) {
+              conversation.releaseDraftImages(images);
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+          } catch (error) {
+            // 交给 DSH 自带逻辑处理/提示，这里不吞掉用户体验。
+          }
+        };
+        textarea.addEventListener("paste", onPaste, true);
+        return () => textarea.removeEventListener("paste", onPaste, true);
+      }, [props.conversation, props.session]);
+      return react.createElement("span", { ref: rootRef, style: { display: "none" } });
+    }
+
     // ── 表单字段 ─────────────────────────────────────────────────────────
     function Field(props) {
       return react.createElement(
@@ -326,6 +370,14 @@ window.__ModuleLoader__.load({
         locale: NS,
         inject: () => ({ getConfig, setConfig })
       }, VisionRouterCard));
+      // 让剪贴板图片能进入会话草稿（对 DSH 自带 paste 未覆盖的场景做补充）。
+      ctx.slots.inject("conversation.input.right", () => ctx.slots.register({
+        name: "conversation.input.right",
+        id: "vision-router-paste",
+        order: 100,
+        locale: NS,
+        inject: () => ({ conversation: ctx.get("conversation") })
+      }, PasteImageEnhancer));
     }
 
     exports.apply = apply;

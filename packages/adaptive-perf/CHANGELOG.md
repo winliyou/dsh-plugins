@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.5.0](https://github.com/winliyou/dsh-plugins) (2026-08-16)
+
+
+### Features
+
+* real Minimal tool pair on request #1 (`bootstrap.realPair`)
+
+The bootstrap phase previously only *narrowed* the standard/PTC catalog, so
+request #1 still exposed the sandboxed standard `bash` schema (and no
+`str_replace_editor` at all — the standard preset does not mount it).
+Per dsh-anchored-standard issue #11 the first-request trajectory is decided
+by the *byte-identical* tool schema: the real Minimal pair anchors 5/5 while
+every standard-family schema (including sandboxed bash) falls standard-like
+11/11. The plugin now mounts the official minimal-preset plugins — the
+persistent PTY bash (`@deepseek-ai/dsh-tool-bash-persistent` over
+`dsh-terminal` + `dsh-terminal-bash`, with the exact minimal description)
+and `str_replace_editor` over the bare local fs (`dsh-fs-local`) — into each
+target agent's scoped tool layer, where scoped registrations shadow the
+inherited sandboxed `bash` by name and own-layer registrations are exempt
+from restrictions. The `tool:bash` guidance section is shadowed to empty at
+the same time. The packages are optionalDependencies; when they cannot be
+resolved (or on Windows, where the PTY backend is unavailable) the plugin
+degrades to the previous catalog-only behavior with a warning.
+
+* permanent injected-context suppression (`suppressInjectedContext`)
+
+The skill-catalog reminder and the AGENTS.md digest were previously stripped
+only on request #1 and re-injected after promotion. The reference implementation
+removes both injections entirely: even post-promotion they perturb the
+trajectory and cost thousands of tokens per request. With
+`suppressInjectedContext: true` (default) the strip now applies to every
+request of the session; `skill_search` / `skill_load` (resident after
+promotion, gated by `skillDiscovery`) replace the ~9KB catalog dump, and the
+new one-shot `instruction-hint` (`instructionHint`, default on) tells the
+model once per session that instruction files exist and should be read when
+relevant, instead of embedding their content. User-initiated skill gestures
+(`skill-invocation`) are never filtered.
+
+* resident discovery set now includes skill_search / skill_load
+
+`bootstrap.discoveryTools` defaults to `[dev_tool_search, skill_search,
+skill_load]` so the promoted catalog keeps the on-demand discovery surface of
+the reference's resident set; skills stay reachable while the catalog
+injection stays off.
+
 ## [0.4.0](https://github.com/winliyou/dsh-plugins) (2026-08-16)
 
 

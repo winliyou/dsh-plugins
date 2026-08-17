@@ -1,0 +1,14 @@
+# @chaoset/session-archive bundle patch
+#
+# Installed automatically by:
+#   dsh plugin --profile <name> add @chaoset/session-archive
+#
+# This patch inserts the host plugin row. The package is also a normal npm
+# dependency of the profile; the `dsh.bundle.patch` manifest field makes DSH
+# treat it as a profile bundle layer. The web client part (sidebar archive
+# panel) activates automatically once the bundle is installed.
+
+- insert:
+    - id: session-archive
+      name: '@chaoset/session-archive'
+      config: {}

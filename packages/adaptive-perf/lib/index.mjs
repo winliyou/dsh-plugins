@@ -7,32 +7,46 @@
  *      "Current runtime context" 快照（文件策略 / 审批策略等动态段）；
  *   2. 工具目录极小（只有 bash + str_replace_editor）—— 每个请求的
  *      tool schema 与（PTC 的）SDK 参考段都随之变小；
- *   3. persona 为 complete 固定提示，无其它全局 prompt 段。
+ *   3. persona 为 complete 固定提示，无其它全局 prompt 段；
+ *   4. 不挂 skill 目录提醒（~9KB）与 AGENTS.md 摘要注入。
  *
- * 本插件在三个维度上做"动态自适应"（而不是静态裁剪）：
+ * 本插件在多个维度上做"动态自适应"（而不是静态裁剪），全部参照
+ * dsh-anchored-standard（https://github.com/xiaobright/dsh-anchored-standard）
+ * 的实测结论：
  *   A. 运行时上下文抑制：对目标 preset 的会话调用
  *      agent.ctx.systemPrompt.suppressRuntimeContext()（与极简模式同一机制），
  *      每次请求省掉快照文本，零功能损失。
- *   B. 首轮锚定（bootstrap，参照 dsh-anchored-standard 的实测结论）：
- *      决定首轮"轨迹"（模型思维链风格）的是请求 #1 可见的**工具 schema**
- *      与**自动注入的上下文提醒**，而不是静态目录大小。因此：
- *        - 请求 #1 的工具目录收窄到真实 Minimal 工具对
- *          （bash + str_replace_editor）——256000 输出预算下 5/5 锚定，
- *          而任何 standard 系 schema 11/11 落入 standard-like 轨迹；
- *        - 请求 #1 剥离自动注入的上下文（技能目录提醒 skill-catalog、
- *          AGENTS.md 摘要 agent-instructions）——目录在场时锚定完全无法
- *          复现（0/9）；用户主动的技能手势不过滤；
- *        - 会话出现首次**持久**晋升信号（首个 tool/call 或 assistant/message，
- *          promoteOn 可选 either/tool-call/assistant-message）后恢复完整目录；
- *          阶段从持久会话事件推导，resume/reload 不丢状态；
- *        - compaction 会把会话打回"第二次首轮"：compaction/end 之后回到
- *          受控目录（bootstrap 工具对 + compactionTools 核心工作集），直到
- *          出现新的持久晋升信号（纪元感知）；
- *        - bootstrap.maxTokens（可选）给请求 #1 封顶输出预算，晋升后剥离。
- *   C. 工具目录自适应精简：会话启动时按"工具族"默认隐藏高开销低频工具
+ *   B. 真实 Minimal 工具对（bootstrap.realPair，0.5.0 新增）：首轮"轨迹"
+ *      （模型思维链风格）由请求 #1 可见的**工具 schema** 决定，且只有与
+ *      Minimal 逐字相同的 schema 才能锚定（issue #11：真实工具对 5/5 锚定，
+ *      任何 standard 系 schema——包括 sandboxed bash/read——11/11 落入
+ *      standard-like）。仅收窄目录不够：standard/code preset 根本没有
+ *      str_replace_editor，其 bash 也是 sandboxed schema。因此本插件把
+ *      Minimal 的**真实工具对**（持久 PTY bash + str_replace_editor，官方
+ *      minimal preset 同一批插件、同一份描述）挂进 agent 作用域工具层
+ *      （scoped registration 按名阴影继承工具），首轮目录 = 真实工具对；
+ *      PTC 的 SDK 参考段同样按可见目录渲染，同步缩小。
+ *   C. 首轮锚定（bootstrap）：请求 #1 只暴露真实工具对，剥离自动注入上下文
+ *      （技能目录提醒 skill-catalog、AGENTS.md 摘要 agent-instructions；
+ *      用户主动的技能手势不过滤）；首个**持久**晋升信号（首个 tool/call 或
+ *      assistant/message，promoteOn 可选 either/tool-call/assistant-message）
+ *      后进入 **resident 目录**：工具对 + 常驻发现工具（dev_tool_search /
+ *      skill_search / skill_load）+ 已解锁工具，而不是一次性 dump 完整
+ *      Standard 目录（避免 post-promotion regression）；阶段从持久会话事件
+ *      推导，resume/reload 不丢状态；compaction/end 之后回到受控目录
+ *      （工具对 + compactionTools）直到新的晋升信号（纪元感知）；
+ *      bootstrap.maxTokens（可选）给请求 #1 封顶输出预算，晋升后剥离。
+ *   D. 常驻上下文抑制（suppressInjectedContext，0.5.0 新增）：技能目录提醒
+ *      与 AGENTS.md 摘要**不再在晋升后恢复**——参考实现实测它们即使在后置
+ *      阶段也扰动轨迹且每个请求多耗数千 token。替代品：
+ *        - skill_search / skill_load：按需发现并注入单个技能的完整说明
+ *          （晋升后常驻，替代 ~9KB 的 <available_skills> 注入）；
+ *        - instruction-hint：晋升后只注入**一次**的短提示——"这些指令文件
+ *          存在，需要时自己读"，而不是每请求 dump 全文（文件探测走宿主 fs，
+ *          探测失败不注入，绝不抛错）。
+ *   E. 工具目录自适应精简：会话启动时按"工具族"默认隐藏高开销低频工具
  *      （子代理 / 工作流 / ralph / goal 等编排类），只保留核心编码工具，
- *      让标准模式的目录逼近极简、PTC 的 SDK 段同步缩小；随后根据两类信号
- *      在会话内"单调升级"放行对应工具族（只升不降，限制请求缓存失效次数）：
+ *      随后根据两类信号在会话内"单调升级"放行对应工具族（只升不降）：
  *        - 关键词信号：用户消息命中某工具族的触发词（如"子代理"）→ 放行该族；
  *        - 失败信号：PTC 的 run_code 程序调用被隐藏工具报 UNKNOWN_TOOL
  *          （tools/result 失败文本含工具名）→ 放行该族，下次程序即可调用。
@@ -40,24 +54,28 @@
  * 实现全部使用 dsh 公开服务契约（Inspect 确认）：
  *   - ctx.agentPresets.composedPreset(agent.ctx)  读取会话所属 preset
  *   - agent.ctx.systemPrompt.suppressRuntimeContext()  抑制上下文快照
+ *   - agent.ctx.systemPrompt.section()  按名阴影 prompt 段（persona/引导段）
  *   - agent.ctx.tools.schemas(agent)  读取该 agent 当前可见工具（限制交集）
  *   - agent.ctx.tools.restrict({ deny })  按 agent 作用域裁剪继承工具
- *   - system-prompt/assemble（waterfall） 请求装配（早期实现；bootstrap 目录
- *       收窄改用 tools.restrict——PTC 模式下 assembly.tools 只有 run_code，
- *       过滤会降级失效，而 restrict 同时驱动 API 目录与 PTC SDK 参考段）
- *   - agent/pre-step（waterfall） 剥离自动注入的上下文消息（source.kind）
+ *   - agent.ctx.tools.register()  在 agent 作用域注册工具（按名阴影继承工具，
+ *       自身层注册不受 restrict 影响——view() 对 own layer 豁免）
+ *   - agent.ctx.plugin()  挂载官方 minimal preset 同款插件（持久 bash /
+ *       str_replace_editor / 其依赖的 terminals 与本地 fs）
+ *   - agent/pre-step（waterfall） 剥离自动注入上下文 + 注入 instruction-hint
  *   - agent/request（waterfall） 首轮输出预算封顶
  *   - session/event  增量喂入持久事件（晋升 / compaction 纪元）
  *   - agent/created、agent/disposed、agent/inbox/inserted、tools/result 事件
  * 监听器都注册在 host 根作用域（与 dsh-agent-presets 自身同款用法），事件按
- * scope 过滤分发，子作用域派发的事件根监听器可收到；三个 waterfall 均以
+ * scope 过滤分发，子作用域派发的事件根监听器可收到；两个 waterfall 均以
  * prepend 注册保证"最外层"（剥离是最后一道变换）。
  *
  * 配置：cordis.patch.yml 的 config（安装默认）与
  *       ~/.dsh/plugins/adaptive-perf/config.json（设置页 UI，权威）合并，
  *       保存后热生效（新会话立即生效；已运行会话按新配置重算限制）。
  *
- * 本文件不依赖任何 dsh 内部包（纯 ESM + ctx 服务），可独立安装。
+ * 依赖：真实工具对需要官方插件包（@deepseek-ai/dsh-terminal 等，声明为
+ * optionalDependencies）。它们不可用时本插件自动降级（告警 + 退回旧行为：
+ * 只收窄目录、不替换 schema），绝不拖垮 harness。
  */
 
 import { createConfigStore } from './config-store.mjs';
@@ -99,6 +117,17 @@ export const DEFAULT_CONFIG = {
   escalateOnKeyword: true,
   /** 工具调用失败（UNKNOWN_TOOL 文本含隐藏工具名）时自动放行该族。 */
   escalateOnUnknownTool: true,
+  /**
+   * 常驻上下文抑制（0.5.0）：true = 整个会话剥离自动注入上下文
+   * （skill-catalog 技能目录提醒、agent-instructions AGENTS.md 摘要），
+   * 不再像旧版那样在晋升后恢复——替代品是 skill_search/skill_load 按需发现
+   * 与 instruction-hint 一次性提示。false = 只在 bootstrap（请求 #1）剥离。
+   */
+  suppressInjectedContext: true,
+  /** 晋升后常驻 skill_search / skill_load 两个按需技能发现工具。 */
+  skillDiscovery: true,
+  /** 晋升后注入一次"指令文件存在，需要时自读"的短提示（替代全文注入）。 */
+  instructionHint: true,
   /** 核心编码工具（不进入任何限制族；此处仅作文档展示）。 */
   coreTools: [
     'bash', 'read', 'write', 'edit', 'glob', 'grep', 'read_image',
@@ -132,6 +161,13 @@ export const DEFAULT_CONFIG = {
   bootstrap: {
     /** 是否启用首轮锚定。 */
     enabled: true,
+    /**
+     * 是否挂载真实 Minimal 工具对（0.5.0）：把官方 minimal preset 的持久
+     * PTY bash + str_replace_editor 挂进 agent 作用域（按名阴影 standard 的
+     * sandboxed bash），使请求 #1 的 schema 与 Minimal 逐字相同。依赖
+     * @deepseek-ai 官方插件包，不可用时自动降级为旧行为（仅收窄目录）。
+     */
+    realPair: true,
     /** 请求 #1 可见的工具（真实 Minimal 工具对）。 */
     tools: ['bash', 'str_replace_editor'],
     /** 晋升触发：either（默认）/ tool-call / assistant-message。 */
@@ -140,6 +176,8 @@ export const DEFAULT_CONFIG = {
     suppressedContextSources: ['skill-catalog', 'agent-instructions'],
     /** compaction/end 之后、再次晋升前可用的额外核心工作集。 */
     compactionTools: ['read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'ask_user_question'],
+    /** 晋升后常驻的按需发现工具（dsh-anchored-standard 的 resident discovery set）。 */
+    discoveryTools: ['dev_tool_search', 'skill_search', 'skill_load'],
     /** 请求 #1 的输出预算封顶（token）；0 = 不封顶（opt-in）。 */
     maxTokens: 0,
   },
@@ -218,10 +256,12 @@ export function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
   const maxTokens = Number.isSafeInteger(maxTokensRaw) && maxTokensRaw > 0 ? maxTokensRaw : 0;
   const bootstrap = {
     enabled: boolValue(rawBootstrap.enabled, db.enabled),
+    realPair: boolValue(rawBootstrap.realPair, db.realPair),
     tools: stringList(rawBootstrap.tools, db.tools),
     promoteOn,
     suppressedContextSources: stringListOrEmpty(rawBootstrap.suppressedContextSources, db.suppressedContextSources),
     compactionTools: stringListOrEmpty(rawBootstrap.compactionTools, db.compactionTools),
+    discoveryTools: stringListOrEmpty(rawBootstrap.discoveryTools, db.discoveryTools),
     maxTokens,
   };
   const rawMP = raw.minimalPrompt !== null && typeof raw.minimalPrompt === 'object' && !Array.isArray(raw.minimalPrompt)
@@ -240,6 +280,9 @@ export function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
     leanByDefault: boolValue(merged.leanByDefault, defaults.leanByDefault),
     escalateOnKeyword: boolValue(merged.escalateOnKeyword, defaults.escalateOnKeyword),
     escalateOnUnknownTool: boolValue(merged.escalateOnUnknownTool, defaults.escalateOnUnknownTool),
+    suppressInjectedContext: boolValue(merged.suppressInjectedContext, defaults.suppressInjectedContext),
+    skillDiscovery: boolValue(merged.skillDiscovery, defaults.skillDiscovery),
+    instructionHint: boolValue(merged.instructionHint, defaults.instructionHint),
     coreTools: stringList(merged.coreTools, defaults.coreTools),
     families,
     bootstrap,
@@ -252,7 +295,8 @@ export function validateConfig(partial) {
   if (partial === null || typeof partial !== 'object' || Array.isArray(partial)) {
     throw new TypeError('adaptive-perf config must be a plain object');
   }
-  const boolFields = ['enabled', 'suppressRuntimeContext', 'leanByDefault', 'escalateOnKeyword', 'escalateOnUnknownTool'];
+  const boolFields = ['enabled', 'suppressRuntimeContext', 'leanByDefault', 'escalateOnKeyword', 'escalateOnUnknownTool',
+    'suppressInjectedContext', 'skillDiscovery', 'instructionHint'];
   for (const key of boolFields) {
     if (partial[key] !== void 0 && typeof partial[key] !== 'boolean') {
       throw new TypeError(`adaptive-perf config field "${key}" must be a boolean`);
@@ -289,13 +333,16 @@ export function validateConfig(partial) {
     if (b.enabled !== void 0 && typeof b.enabled !== 'boolean') {
       throw new TypeError('adaptive-perf config field "bootstrap.enabled" must be a boolean');
     }
+    if (b.realPair !== void 0 && typeof b.realPair !== 'boolean') {
+      throw new TypeError('adaptive-perf config field "bootstrap.realPair" must be a boolean');
+    }
     if (b.promoteOn !== void 0 && !['either', 'tool-call', 'assistant-message'].includes(b.promoteOn)) {
       throw new TypeError('adaptive-perf config field "bootstrap.promoteOn" must be "either" | "tool-call" | "assistant-message"');
     }
     if (b.maxTokens !== void 0 && !(Number.isSafeInteger(b.maxTokens) && b.maxTokens >= 0)) {
       throw new TypeError('adaptive-perf config field "bootstrap.maxTokens" must be a non-negative safe integer');
     }
-    for (const key of ['tools', 'suppressedContextSources', 'compactionTools']) {
+    for (const key of ['tools', 'suppressedContextSources', 'compactionTools', 'discoveryTools']) {
       if (b[key] !== void 0 && !(Array.isArray(b[key]) && b[key].every((v) => typeof v === 'string'))) {
         throw new TypeError(`adaptive-perf config field "bootstrap.${key}" must be an array of strings`);
       }
@@ -369,6 +416,416 @@ export function collectFailureText(result) {
     }
   }
   return parts.join('\n');
+}
+
+// ── 真实 Minimal 工具对（0.5.0，参照 dsh-anchored-standard issue #11）──────
+
+/**
+ * 官方 minimal preset 的持久 bash 工具描述，逐字一致。schema（参数）由
+ * @deepseek-ai/dsh-tool-bash-persistent 提供，与 minimal preset 挂的是同一
+ * 个包；描述在这里显式传入，保证与 minimal 的 agent.cordis.yml 完全一致。
+ */
+export const MINIMAL_BASH_DESCRIPTION = [
+  'Run commands in a bash shell',
+  '* When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.',
+  "* You don't have access to the internet via this tool.",
+  '* You do have access to a mirror of common linux and python packages via apt and pip.',
+  '* State is persistent across command calls and discussions with the user.',
+  "* To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.",
+  '* Please avoid commands that may produce a very large amount of output.',
+  "* Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.",
+].join('\n');
+
+/**
+ * 被真实工具对按名阴影的工具引导段：standard 的 sandboxed bash 注册了
+ * `tool:bash`（order 105）引导段，挂载真实工具对后该文本已与可见工具不符，
+ * 按名阴影为空段（装配时丢弃）。
+ */
+export const TOOL_GUIDANCE_SHADOWS = [
+  ['tool:bash', 105],
+];
+
+/** 真实工具对挂载所需的官方插件包说明符（声明在 optionalDependencies）。 */
+export const REAL_PAIR_SPECS = {
+  terminal: '@deepseek-ai/dsh-terminal',
+  terminalBash: '@deepseek-ai/dsh-terminal-bash',
+  bashPersistent: '@deepseek-ai/dsh-tool-bash-persistent',
+  fsLocal: '@deepseek-ai/dsh-fs-local',
+  strReplaceEditor: '@deepseek-ai/dsh-tool-str-replace-editor',
+};
+
+/**
+ * 加载真实 Minimal 工具对所需模块。任一包不可用即整体返回 null（调用方
+ * 降级为旧行为），绝不抛出。
+ * @param importFn - 测试可注入的 import 实现（默认动态 import）。
+ */
+export async function loadRealPairModules(importFn) {
+  const dynamicImport = importFn ?? ((spec) => import(spec));
+  const modules = {};
+  for (const [key, spec] of Object.entries(REAL_PAIR_SPECS)) {
+    try {
+      const mod = await dynamicImport(spec);
+      modules[key] = mod?.default ?? mod;
+    } catch {
+      modules[key] = null;
+    }
+  }
+  if (Object.keys(REAL_PAIR_SPECS).some((key) => modules[key] === null)) return null;
+  return modules;
+}
+
+/**
+ * 计算真实工具对的挂载清单（纯函数，便于测试）：
+ * 顺序 = 依赖在前（terminals → backend → bash；fs → editor）。
+ * @param modules - loadRealPairModules 的结果。
+ * @param cwd - str_replace_editor 本地 fs 的工作目录（会话 cwd）。
+ */
+export function realPairMounts(modules, cwd) {
+  if (modules === null || modules === void 0) return [];
+  const resolvedCwd = typeof cwd === 'string' && cwd.length > 0
+    ? cwd
+    : (process.env.DSH_CWD && process.env.DSH_CWD.trim().length > 0 ? process.env.DSH_CWD : process.cwd());
+  return [
+    { module: modules.terminal, config: {} },
+    { module: modules.terminalBash, config: { timeoutMs: 300000 } },
+    { module: modules.bashPersistent, config: { timeoutMs: 300000, description: MINIMAL_BASH_DESCRIPTION } },
+    { module: modules.fsLocal, config: { cwd: resolvedCwd } },
+    { module: modules.strReplaceEditor, config: { maxOutputChars: 16000 } },
+  ];
+}
+
+/**
+ * 在 agent 作用域挂载真实工具对（scoped registration 按名阴影继承工具）。
+ * 每个挂载是一个独立 fiber，dispose 时全部副作用（工具/schema/服务）撤销。
+ * @param agent - 目标 agent（其 ctx 必须带 scope 标签）。
+ * @param mounts - realPairMounts 的结果。
+ * @param warn - 日志回调。
+ * @returns 可释放的 disposer 列表。
+ */
+export function mountRealPair(agent, mounts, warn) {
+  const disposers = [];
+  if (agent === null || typeof agent !== 'object' || typeof agent.ctx?.plugin !== 'function') return disposers;
+  for (const mount of mounts) {
+    if (mount?.module === null || mount?.module === void 0) continue;
+    try {
+      const fiber = agent.ctx.plugin(mount.module, mount.config ?? {});
+      disposers.push(() => {
+        try { fiber.dispose(); } catch {}
+      });
+    } catch (error) {
+      warn?.(`mountRealPair failed for ${String(mount.module?.name ?? 'module')}: ${String((error && error.message) || error)}`);
+    }
+  }
+  return disposers;
+}
+
+// ── instruction-hint（0.5.0，参照 dsh-anchored-standard）──────────────────
+
+/** 项目链候选指令文件名（探测顺序）与用户全局候选。 */
+export const INSTRUCTION_PROJECT_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md'];
+export const INSTRUCTION_USER_CANDIDATE = 'AGENTS.md';
+
+/** 平台无关的路径拼接（与参考实现一致）。 */
+export function joinPath(dir, segment) {
+  if (dir.endsWith('/') || dir.endsWith('\\')) return dir + segment;
+  const sep = dir.includes('\\') ? '\\' : '/';
+  return dir + sep + segment;
+}
+
+/** 绝对 POSIX/Windows 路径的父目录。 */
+export function parentPath(path) {
+  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (idx <= 0) return path;
+  const parent = path.slice(0, idx);
+  return parent.length === 0 ? path : parent;
+}
+
+/** 从 cwd 向上找项目根（含 .git/.hg/.svn 标记的最近祖先）。 */
+export async function findProjectRoot(fs, cwd, signal) {
+  let current = cwd;
+  for (;;) {
+    for (const marker of ['.git', '.hg', '.svn']) {
+      try {
+        const target = await fs.resolve(joinPath(current, marker), { cwd, signal });
+        const info = await fs.stat(target, signal);
+        if (info !== void 0) return current;
+      } catch {
+        // 探测失败 = 标记不存在，继续。
+      }
+    }
+    const parent = parentPath(current);
+    if (parent === current || parent.length === 0) return cwd;
+    current = parent;
+  }
+}
+
+/** 列出某目录下存在的候选指令文件。 */
+export async function presentInDir(fs, dir, candidates, signal) {
+  const found = [];
+  for (const candidate of candidates) {
+    try {
+      const target = await fs.resolve(joinPath(dir, candidate), { cwd: dir, signal });
+      const info = await fs.stat(target, signal);
+      if (info !== void 0 && info.type === 'file') found.push(candidate);
+    } catch {
+      // 不存在/不可读——跳过。
+    }
+  }
+  return found;
+}
+
+/**
+ * 探测会话的指令文件（项目链 + $DSH_HOME/AGENTS.md）。任何失败都返回
+ * null/空集——提示注入绝不能让会话受损。
+ * @returns { projectFiles, root, userGlobalFiles } 或 null（无 fs / 无 cwd）。
+ */
+export async function probeInstructionFiles(fs, cwd, dshHome, signal) {
+  if (fs === null || fs === void 0 || typeof cwd !== 'string' || cwd.length === 0) return null;
+  const projectFiles = [];
+  let root = cwd;
+  try {
+    root = await findProjectRoot(fs, cwd, signal);
+    projectFiles.push(...await presentInDir(fs, root, INSTRUCTION_PROJECT_CANDIDATES, signal));
+  } catch {
+    // 项目链探测失败——忽略，仍报告用户全局文件。
+  }
+  const userGlobalFiles = [];
+  if (typeof dshHome === 'string' && dshHome.length > 0) {
+    try {
+      userGlobalFiles.push(...await presentInDir(fs, dshHome, [INSTRUCTION_USER_CANDIDATE], signal));
+    } catch {
+      // 不可读——忽略。
+    }
+  }
+  if (projectFiles.length === 0 && userGlobalFiles.length === 0) return null;
+  return { projectFiles, root, userGlobalFiles };
+}
+
+// ── 按需发现工具（resident discovery set，参照 dsh-anchored-standard）─────
+
+/**
+ * 从 agent/pre-step 的 decision.messages 剥离指定 source.kind 的消息。
+ * 保留原数组引用（未变化时）便于调用方判断。
+ */
+export function stripSuppressedMessages(messages, suppressedSources) {
+  if (!Array.isArray(messages) || suppressedSources.size === 0) return messages;
+  const kept = messages.filter((message) => {
+    const kind = message?.source?.kind;
+    return typeof kind !== 'string' || !suppressedSources.has(kind);
+  });
+  return kept.length === messages.length ? messages : kept;
+}
+
+/**
+ * dev_tool_search：搜索完整可见目录并按名解锁工具（解锁结果下一请求生效，
+ * 经 syncBootstrap 重算 deny 集；解锁记录写入 a.unlocked，resume-safe 由
+ * loadUnlockedFromEvents 从持久事件恢复）。
+ */
+export function createDevToolSearch({ schemasOf, onUnlock, catalogHint }) {
+  const hint = catalogHint ?? [
+    'This session starts with a minimal resident set: bash, str_replace_editor.',
+    'Everything else is unlocked on demand through this tool.',
+  ].join('\n');
+  return {
+    name: 'dev_tool_search',
+    description: [
+      'Discover and unlock tools that are NOT currently available.',
+      '',
+      hint,
+      '',
+      'If the current task needs internet, delegation, workflows, goals, images, background jobs, or multi-agent coordination, call dev_tool_search FIRST — do not try to work around them with bash.',
+      '',
+      'Usage: pass `query` to search the catalog (returns matching tool names + descriptions), then pass `toolNames` with exact names to unlock them. Unlocked tools appear from the next request on and stay unlocked for the session.',
+    ].join('\n'),
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'search keywords (e.g. "web", "subagent")' },
+        toolNames: { type: 'array', description: 'exact tool names to unlock', items: { type: 'string' } },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } }, required: ['text'] },
+      render: (_a, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute(args, exec) {
+      const query = args !== null && typeof args === 'object' && typeof args.query === 'string' ? args.query.trim() : '';
+      const unlock = args !== null && typeof args === 'object' && Array.isArray(args.toolNames)
+        ? args.toolNames.filter((name) => typeof name === 'string' && name.length > 0)
+        : [];
+      const lines = [];
+      if (unlock.length > 0) {
+        let available = new Set();
+        try {
+          const schemas = typeof schemasOf === 'function' ? (schemasOf(exec) ?? []) : [];
+          for (const schema of schemas) {
+            if (schema !== null && typeof schema === 'object' && typeof schema.name === 'string') available.add(schema.name);
+          }
+        } catch {}
+        const ok = unlock.filter((name) => available.has(name));
+        if (ok.length > 0 && typeof onUnlock === 'function') {
+          try { await onUnlock(ok, exec); } catch {}
+        }
+        if (ok.length > 0) lines.push(`Unlocked for the next request: ${ok.join(', ')}`);
+        const missing = unlock.filter((name) => !available.has(name));
+        if (missing.length > 0) lines.push(`Not found in catalog: ${missing.join(', ')}`);
+      }
+      if (query.length === 0 && unlock.length === 0) {
+        lines.push('Provide `query` to search the catalog, or `toolNames` to unlock tools.');
+        return { text: lines.join('\n') };
+      }
+      if (query.length === 0) {
+        return { text: lines.join('\n') || 'Nothing to do.' };
+      }
+      try {
+        const schemas = typeof schemasOf === 'function' ? (schemasOf(exec) ?? []) : [];
+        const wanted = query.toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean);
+        const matches = schemas
+          .filter((schema) => {
+            if (schema === null || typeof schema !== 'object') return false;
+            const haystack = `${schema.name || ''} ${schema.description || ''}`.toLowerCase();
+            return wanted.every((token) => haystack.includes(token));
+          })
+          .slice(0, 25);
+        if (matches.length === 0) {
+          lines.push(`No tools match "${query}".`);
+        } else {
+          lines.push(`Matching tools (${matches.length}):`);
+          for (const schema of matches) {
+            const desc = String(schema.description || '').split('\n')[0].slice(0, 90);
+            lines.push(`- ${schema.name}: ${desc}`);
+          }
+          lines.push('Unlock with dev_tool_search({"toolNames": ["<exact name>"]}).');
+        }
+      } catch (error) {
+        lines.push(`catalog search unavailable: ${String((error && error.message) || error)}`);
+      }
+      return { text: lines.join('\n') };
+    },
+  };
+}
+
+/**
+ * skill_search：按关键词搜索可用技能（仅摘要，替代 ~9KB 目录注入）。
+ * skillsOf 返回宿主 skills 服务（调用期解析）。
+ */
+export function createSkillSearch({ skillsOf }) {
+  const tokens = (text) => (text || '').toLowerCase().split(/[^a-z0-9_-]+/).filter(Boolean);
+  return {
+    name: 'skill_search',
+    description: 'Search the available skills by keyword and return matching skill names with short descriptions. This session keeps NO skill catalog in the prompt — if a task looks like it matches a skill (document conversion, image processing, game reviews, markdown, PDF, spreadsheets, …), call skill_search FIRST to find it, then skill_load to activate it. Do NOT assume skill names from memory.',
+    parameters: {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'search keywords (e.g. "pdf", "obsidian", "game review")' } },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } }, required: ['text'] },
+      render: (_a, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute(args, exec) {
+      const wanted = tokens(args?.query);
+      try {
+        const skills = skillsOf();
+        if (skills === void 0 || typeof skills.list !== 'function') {
+          return { text: 'skill_search unavailable: skills service is not mounted.' };
+        }
+        const agent = exec?.agent;
+        const lookup = {
+          scope: agent,
+          cwd: agent?.session?.header?.cwd,
+          signal: exec?.signal,
+        };
+        const all = await skills.list(lookup);
+        const matches = (Array.isArray(all) ? all : []).filter((skill) => {
+          if (wanted.length === 0) return true;
+          const haystack = tokens(`${skill?.name ?? ''} ${skill?.description ?? ''} ${skill?.whenToUse ?? ''}`).join(' ');
+          return wanted.every((token) => haystack.includes(token));
+        });
+        const head = matches.slice(0, 20);
+        const lines = head.map((skill) => {
+          const desc = String(skill?.description || '').split('\n')[0];
+          return `- ${skill?.name}: ${desc}`;
+        });
+        if (lines.length === 0) return { text: `No skills match "${args?.query}". Use skill_search with other keywords.` };
+        const extra = matches.length > 20 ? `\n…(${matches.length - 20} more)` : '';
+        return { text: `Matching skills (${matches.length}):\n${lines.join('\n')}${extra}\n\nLoad one with skill_load (exact name).` };
+      } catch (error) {
+        return { text: `skill_search unavailable: ${String((error && error.message) || error)}` };
+      }
+    },
+  };
+}
+
+/**
+ * skill_load：按精确名加载单个技能的完整说明，经 agent.inject 作为
+ * source.kind='skill-invocation' 的下一条上下文消息注入（用户主动技能手势
+ * 同款来源，绝不被默认抑制集剥离）。
+ */
+export function createSkillLoad({ skillsOf }) {
+  return {
+    name: 'skill_load',
+    description: 'Load the full instructions of ONE skill by its exact name (from skill_search results) and inject them for the next request. Call this before acting on a task that matches the skill.',
+    parameters: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'exact skill name (kebab-case, from skill_search)' } },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string' } }, required: ['text'] },
+      render: (_a, value) => [{ type: 'text', text: value.text }],
+    },
+    async execute(args, exec) {
+      try {
+        const agent = exec?.agent;
+        if (agent === void 0) return { text: 'skill_load requires an agent context.' };
+        const skills = skillsOf();
+        if (skills === void 0 || typeof skills.get !== 'function') {
+          return { text: 'skill_load unavailable: skills service is not mounted.' };
+        }
+        const name = typeof args?.name === 'string' ? args.name.trim() : '';
+        if (name.length === 0) return { text: 'skill_load requires a skill name.' };
+        const skill = await skills.get(name, {
+          scope: agent,
+          cwd: agent.session?.header?.cwd,
+          signal: exec?.signal,
+        });
+        if (skill === void 0) {
+          return { text: `No skill named "${name}". Run skill_search to list available skills.` };
+        }
+        const body = extractSkillBody(skill);
+        if (body.length === 0) {
+          return { text: `Skill "${name}" has no loadable body.` };
+        }
+        if (typeof agent.inject !== 'function') {
+          return { text: `Skill "${name}" found, but injection is unavailable in this agent.` };
+        }
+        agent.inject({
+          id: `skill-load-${name}-${Date.now()}`,
+          role: 'user',
+          content: [{ type: 'text', text: body }],
+          source: { kind: 'skill-invocation', name, form: 'instructions' },
+        });
+        return { text: `Skill "${name}" loaded; its instructions will be injected for the next request.` };
+      } catch (error) {
+        return { text: `skill_load failed: ${String((error && error.message) || error)}` };
+      }
+    },
+  };
+}
+
+/** 提取已加载技能定义的模型可见正文（与参考实现一致）。 */
+export function extractSkillBody(skill) {
+  const content = skill?.content ?? skill?.instructions ?? skill?.body;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => (typeof part === 'string' ? part : JSON.stringify(part))).join('\n');
+  }
+  return '';
 }
 
 // ── bootstrap 锚定（参照 dsh-anchored-standard 的实测结论）──────────────
@@ -456,7 +913,7 @@ export function applyBootstrapBudget(config, promoted, maxTokens) {
 
 // ── host 插件 ────────────────────────────────────────────────────────────
 
-export function apply(ctx, config) {
+export async function apply(ctx, config, options = {}) {
   // fail-safe：初始化失败只记录，绝不让本插件拖垮 harness（host 层挂载时
   // entry 异常会导致进程启动失败）。
   try {
@@ -476,6 +933,41 @@ export function apply(ctx, config) {
     const patchConfig = config !== null && typeof config === 'object' && !Array.isArray(config) ? config : {};
     /** 当前生效配置（热更新；后续 store 创建后以 config.json 权威合并结果覆盖）。 */
     let cfg = normalizeConfig(patchConfig);
+
+    /** 真实 Minimal 工具对模块（0.5.0）。加载失败 = null = 降级旧行为。
+     *  options.realPairModules 仅供测试注入。 */
+    const realPairModules = options.realPairModules === void 0
+      ? (cfg.bootstrap.enabled && cfg.bootstrap.realPair ? await loadRealPairModules() : null)
+      : options.realPairModules;
+    /** 是否已尝试加载过真实工具对模块（避免配置热更新时反复重试）。 */
+    let realPairModulesTried = options.realPairModules !== void 0 || (cfg.bootstrap.enabled && cfg.bootstrap.realPair);
+    if (cfg.bootstrap.enabled && cfg.bootstrap.realPair && realPairModules === null) {
+      try {
+        ctx.logger?.warn?.('adaptive-perf: real Minimal tool pair modules unavailable (optional @deepseek-ai deps missing?); falling back to catalog-only bootstrap');
+      } catch {}
+    }
+
+    /** 已注入过 instruction-hint 的会话（内存去重，与参考实现一致）。 */
+    const hintedSessions = new Set();
+
+    /**
+     * 配置热更新把 realPair 从关闭切到开启时补加载官方模块（初始未启用时
+     * 不加载）。加载成功后对已接管会话补挂。
+     */
+    function ensureRealPairModules() {
+      if (realPairModulesTried || cfg.bootstrap.enabled === false || cfg.bootstrap.realPair === false) return;
+      realPairModulesTried = true;
+      loadRealPairModules().then((mods) => {
+        if (mods === null) return;
+        realPairModules = mods;
+        info('real Minimal tool pair modules loaded; mounting for live agents');
+        for (const a of agents.values()) {
+          syncRealPair(a);
+          applyMinimalPrompt(a);
+          syncBootstrap(a);
+        }
+      }).catch(() => {});
+    }
 
     /** agentId -> 会话自适应状态。 */
     const agents = new Map();
@@ -517,7 +1009,8 @@ export function apply(ctx, config) {
       }
     }
 
-    /** 应用/更新极简提示词层（persona 阴影 + 全局引导段屏蔽）。 */
+    /** 应用/更新极简提示词层（persona 阴影 + 全局引导段屏蔽 +
+     *  真实工具对替换后的 tool 引导段阴影）。 */
     function applyMinimalPrompt(a) {
       for (const disposer of a.promptDisposers) {
         try { disposer(); } catch {}
@@ -528,6 +1021,11 @@ export function apply(ctx, config) {
       try {
         if (cfg.minimalPrompt.suppressSections) {
           for (const [name, order] of SECTION_SHADOWS) {
+            a.promptDisposers.push(sp.section({ name, order, text: '' }));
+          }
+        }
+        if (a.realPairActive) {
+          for (const [name, order] of TOOL_GUIDANCE_SHADOWS) {
             a.promptDisposers.push(sp.section({ name, order, text: '' }));
           }
         }
@@ -595,6 +1093,111 @@ export function apply(ctx, config) {
       info(`agent ${a.agent.id}: escalated family "${familyId}" (${trigger})`);
     }
 
+    /** 从持久事件恢复 dev_tool_search 已解锁的工具（resume-safe）。 */
+    function loadUnlockedFromEvents(a) {
+      const events = a.agent.session && Array.isArray(a.agent.session.events) ? a.agent.session.events : [];
+      for (const event of events) {
+        if (event === null || typeof event !== 'object' || event.type !== 'tool/call') continue;
+        if (event.data === null || typeof event.data !== 'object' || event.data.name !== 'dev_tool_search') continue;
+        let args = event.data.arguments;
+        if (typeof args === 'string') {
+          try { args = JSON.parse(args); } catch { continue; }
+        }
+        if (args === null || typeof args !== 'object' || Array.isArray(args)) continue;
+        if (Array.isArray(args.toolNames)) {
+          for (const name of args.toolNames) {
+            if (typeof name === 'string' && name.length > 0) a.unlocked.add(name);
+          }
+        }
+      }
+    }
+
+    /**
+     * 挂载/卸载真实 Minimal 工具对（0.5.0）：把官方 minimal preset 同款插件
+     * （持久 PTY bash + str_replace_editor 及其依赖的 terminals/本地 fs）
+     * 挂进 agent 作用域。scoped registration 按名阴影 standard 的 sandboxed
+     * bash，且自身层注册不受 restrict 影响（view() 对 own layer 豁免）——
+     * 首轮目录因此是"真实工具对 + 被 deny 的其他继承工具"。
+     * 依赖模块缺失（realPairModules === null）或 Windows（PTY 仅 linux/darwin）
+     * 时静默降级：不挂载，退回旧行为（仅收窄目录）。
+     */
+    function syncRealPair(a) {
+      for (const dispose of a.realPairDisposers) {
+        try { dispose(); } catch {}
+      }
+      a.realPairDisposers = [];
+      const active = cfg.enabled && cfg.bootstrap.enabled && cfg.bootstrap.realPair
+        && realPairModules !== null && process.platform !== 'win32';
+      if (active) {
+        const mounts = realPairMounts(realPairModules, a.agent.session?.header?.cwd);
+        a.realPairDisposers = mountRealPair(a.agent, mounts, warn);
+        if (a.realPairDisposers.length > 0) {
+          info(`agent ${a.agent.id}: real Minimal tool pair mounted (${mounts.length} plugins)`);
+        }
+      }
+      a.realPairActive = a.realPairDisposers.length > 0;
+    }
+
+    /**
+     * 给目标 agent 注册 on-demand 发现工具（dsh-anchored-standard 的 resident
+     * discovery pattern）：晋升后常驻 bootstrap.discoveryTools 列出的工具——
+     * dev_tool_search（搜索完整目录并按名解锁，解锁结果下一请求生效，写入
+     * a.unlocked 后 syncBootstrap 重算 deny 集）+ skill_search / skill_load
+     * （常驻上下文抑制的替代品：按需发现/加载技能）。
+     * 已存在的同名工具（preset 自带）不重复注册。
+     */
+    function syncDiscoveryTools(a, enabled) {
+      const want = enabled ? cfg.bootstrap.discoveryTools : [];
+      for (const [name, disposer] of a.toolDisposers) {
+        if (!want.includes(name)) {
+          try { disposer(); } catch {}
+          a.toolDisposers.delete(name);
+        }
+      }
+      if (!enabled) return;
+      const scopedTools = a.agent.ctx && a.agent.ctx.tools;
+      if (scopedTools === void 0 || typeof scopedTools.register !== 'function') return;
+      for (const name of want) {
+        if (a.toolDisposers.has(name)) continue;
+        if (a.visibleNames.has(name)) continue; // preset/宿主已提供同名工具
+        const def = discoveryToolDef(a, name);
+        if (def === null) continue;
+        try {
+          const disposer = scopedTools.register(def);
+          if (typeof disposer === 'function') a.toolDisposers.set(name, disposer);
+        } catch (error) {
+          warn(`register ${name} failed for agent ${a.agent.id}: ${error && error.message || error}`);
+        }
+      }
+    }
+
+    /** 构造一个发现工具定义；未知名称返回 null。 */
+    function discoveryToolDef(a, name) {
+      if (name === 'dev_tool_search') {
+        return createDevToolSearch({
+          schemasOf: (exec) => {
+            const agent = exec !== null && typeof exec === 'object' ? exec.agent : void 0;
+            return agent === void 0 ? [] : tools.schemas(agent);
+          },
+          onUnlock: async (names, exec) => {
+            const agent = exec !== null && typeof exec === 'object' ? exec.agent : void 0;
+            const state = agent === void 0 ? void 0 : agents.get(agent.id);
+            if (state === void 0) return;
+            for (const name of names) state.unlocked.add(name);
+            syncBootstrap(state);
+          },
+          catalogHint: 'This session starts with a minimal resident set: bash, str_replace_editor, skill_search, skill_load. Everything else is unlocked on demand through this tool.',
+        });
+      }
+      if (name === 'skill_search' && cfg.skillDiscovery) {
+        return createSkillSearch({ skillsOf: () => ctx.get('skills') });
+      }
+      if (name === 'skill_load' && cfg.skillDiscovery) {
+        return createSkillLoad({ skillsOf: () => ctx.get('skills') });
+      }
+      return null;
+    }
+
     /** 完整接管一个 agent（幂等）。 */
     function handleAgent(agent) {
       if (agents.has(agent.id)) return;
@@ -608,6 +1211,10 @@ export function apply(ctx, config) {
         bootstrapKey: null,
         escalated: new Set(),
         visibleNames: new Set(),
+        unlocked: new Set(),
+        toolDisposers: new Map(),
+        realPairDisposers: [],
+        realPairActive: false,
       };
       // 记录当前可见目录（限制前）；仅记录真实存在的工具，后续 restrict 与
       // 实际目录取交集，preset 升级改名/删除工具不会让本插件崩溃。
@@ -620,8 +1227,10 @@ export function apply(ctx, config) {
       } catch (error) {
         warn(`schemas lookup failed for agent ${agent.id}: ${error && error.message || error}`);
       }
+      loadUnlockedFromEvents(a);
       agents.set(agent.id, a);
       applySuppression(a);
+      syncRealPair(a);
       applyMinimalPrompt(a);
       applyFamilies(a);
       syncBootstrap(a);
@@ -641,6 +1250,14 @@ export function apply(ctx, config) {
         try { disposer(); } catch {}
       }
       a.promptDisposers = [];
+      for (const disposer of a.toolDisposers.values()) {
+        try { disposer(); } catch {}
+      }
+      a.toolDisposers.clear();
+      for (const dispose of a.realPairDisposers) {
+        try { dispose(); } catch {}
+      }
+      a.realPairDisposers = [];
       if (a.bootstrapDisposer !== null) {
         try { a.bootstrapDisposer(); } catch {}
       }
@@ -731,8 +1348,12 @@ export function apply(ctx, config) {
     }
 
     /**
-     * bootstrap 阶段的保留工具集：bootstrap 工具对 + PTC 的直接调用工具
-     * （run_code）+ compaction 后恢复期的工作集。已晋升返回 null。
+     * bootstrap 阶段的保留工具集：
+     *  - 未晋升：bootstrap 工具对 + PTC 的直接调用工具（run_code）+
+     *    compaction 后恢复期的工作集；
+     *  - 已晋升：bootstrap 工具对 + resident discovery 工具 +
+     *    dev_tool_search 已解锁工具 + 已升级工具族（dsh-anchored-standard 的
+     *    resident catalog，避免晋升后一次性 dump 完整 Standard 目录）。
      *
      * 注意：不能靠过滤 system-prompt/assemble 的 assembly.tools 来实现——
      * PTC 模式下 assembly.tools 只有 [run_code]，Minimal 工具对不在其中，
@@ -741,17 +1362,32 @@ export function apply(ctx, config) {
      * SDK 参考段，且天然保留 run_code（不在 deny 里）。
      */
     function bootstrapKeepSet(a) {
+      if (!cfg.enabled || !cfg.bootstrap.enabled) return null;
+      const session = a.agent.session;
+      if (session === void 0) return null; // 无会话信息时保持既有行为（测试/未知场景）
       const phase = bootstrapPhaseOf(a.agent);
-      if (phase.promoted) return null;
       const keep = new Set(cfg.bootstrap.tools);
       if (a.visibleNames.has('run_code')) keep.add('run_code');
+      if (phase.promoted) {
+        for (const name of cfg.bootstrap.discoveryTools) keep.add(name);
+        for (const name of a.unlocked) keep.add(name);
+        for (const [id, family] of Object.entries(cfg.families)) {
+          if (a.escalated.has(id)) {
+            for (const name of familyDeny(a, family)) keep.add(name);
+          }
+        }
+        return keep;
+      }
       if (phase.boundary >= 0) for (const name of cfg.bootstrap.compactionTools) keep.add(name);
       return keep;
     }
 
     /** 按当前阶段同步 bootstrap 的临时 restrict（幂等；仅阶段/配置变化时重挂）。 */
     function syncBootstrap(a) {
+      const phase = bootstrapPhaseOf(a.agent);
       const keep = bootstrapKeepSet(a);
+      // discovery 工具只在晋升后的 resident 阶段注册；bootstrap/compaction 阶段隐藏。
+      syncDiscoveryTools(a, keep !== null && phase.promoted);
       const key = keep === null ? null : [...keep].sort().join(',');
       if (key === a.bootstrapKey) return;
       if (a.bootstrapDisposer !== null) {
@@ -785,18 +1421,59 @@ export function apply(ctx, config) {
       }
     });
 
-    // 首轮剥离自动注入的上下文（技能目录提醒 / AGENTS.md 摘要）。prepend +
-    // 根作用域注册保证是最后一道变换（后注册的注入者无法再补回）。
-    ctx.on('agent/pre-step', async ({ agent }, next) => {
+    // 上下文剥离 + instruction-hint。prepend + 根作用域注册保证是最后一道
+    // 变换（后注册的注入者无法再补回）。两个职责同在一个监听器里，顺序天然
+    // 正确：先剥离被抑制来源，再（晋升后一次性）追加指令文件提示。
+    // 剥离与 bootstrap 开关正交：常驻抑制（suppressInjectedContext）在
+    // bootstrap 关闭时也生效；instruction-hint 依赖晋升阶段（bootstrap 机制）。
+    ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
       const decision = await next();
       if (decision === null || typeof decision !== 'object' || decision.kind === 'reject') return decision;
       try {
-        if (!bootstrapActiveFor(agent)) return decision;
+        if (!cfg.enabled || !isTarget(agent)) return decision;
         const phase = bootstrapPhaseOf(agent);
-        if (phase.promoted || cfg.bootstrap.suppressedContextSources.length === 0) return decision;
-        if (!Array.isArray(decision.messages)) return decision;
-        const kept = filterBootstrapMessages(decision.messages, new Set(cfg.bootstrap.suppressedContextSources));
-        return kept === decision.messages ? decision : { ...decision, messages: kept };
+        const suppressed = new Set(cfg.bootstrap.suppressedContextSources);
+        let out = decision;
+        // 剥离条件：bootstrap 未晋升（旧行为）或常驻抑制开启（0.5.0 默认：
+        // 整个会话不再注入技能目录与 AGENTS.md 摘要，替代品是按需发现工具）。
+        const stripActive = (cfg.bootstrap.enabled && !phase.promoted) || cfg.suppressInjectedContext;
+        if (suppressed.size > 0 && stripActive && Array.isArray(out.messages)) {
+          const kept = stripSuppressedMessages(out.messages, suppressed);
+          out = kept === out.messages ? out : { ...out, messages: kept };
+        }
+        // instruction-hint：晋升后一次性注入"指令文件存在，需要时自读"。
+        if (cfg.bootstrap.enabled && cfg.instructionHint && phase.promoted && Array.isArray(out.messages)) {
+          const session = agent.session;
+          if (session !== null && typeof session === 'object' && typeof session.id === 'string' && !hintedSessions.has(session.id)) {
+            hintedSessions.add(session.id);
+            const fs = ctx.get('fs');
+            const dshHome = process.env.DSH_HOME?.trim() || `${process.env.HOME || process.env.USERPROFILE || ''}/.dsh`;
+            const probe = await probeInstructionFiles(fs, session.header?.cwd, dshHome, signal);
+            if (probe !== null) {
+              const sections = [];
+              if (probe.projectFiles.length > 0) {
+                sections.push(`Workspace instruction files exist: ${probe.projectFiles.join(', ')} (project root: ${probe.root}).`);
+              }
+              if (probe.userGlobalFiles.length > 0) {
+                sections.push(`A user-global instruction file exists: ${INSTRUCTION_USER_CANDIDATE}.`);
+              }
+              const text = [
+                ...sections,
+                'Do NOT assume their content. When a task touches this workspace, read the relevant instruction files first and follow them.',
+              ].join(' ');
+              out = {
+                ...out,
+                messages: [...out.messages, {
+                  id: `instruction-hint-${session.id}`,
+                  role: 'user',
+                  content: [{ type: 'text', text }],
+                  source: { kind: 'instruction-hint', form: 'hint' },
+                }],
+              };
+            }
+          }
+        }
+        return out;
       } catch (error) {
         // 过滤失败绝不吞掉用户的上下文：原样放行。
         warnBootstrapOnce(`bootstrap context filter failed, keeping injected context: ${String((error && error.message) || error)}`);
@@ -839,6 +1516,8 @@ export function apply(ctx, config) {
       onUpdate: (merged) => {
         cfg = normalizeConfig({ ...patchConfig, ...merged });
         info('config hot-updated; recomputing restrictions for live agents');
+        // realPair 从关闭切到开启：补加载官方模块（首次尝试失败不反复重试）。
+        ensureRealPairModules();
         // 补挂此前创建的会话（例如插件从 disabled 切换为 enabled，或新增了
         // 目标 preset）：新符合条件的 agent 立即接管（handleAgent 已应用全部
         // 层，下面的重算只针对此前已接管的 agent，避免同一 onUpdate 内重复）。
@@ -854,6 +1533,7 @@ export function apply(ctx, config) {
           const a = agents.get(agentId);
           if (a === void 0) continue;
           applySuppression(a);
+          syncRealPair(a);
           applyMinimalPrompt(a);
           applyFamilies(a);
           syncBootstrap(a);
