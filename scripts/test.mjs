@@ -79,6 +79,59 @@ for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf"]) {
   check(`bundle(${name}): patch 文件存在并插入自身`, patch.includes("- insert:") && patch.includes(scopedName));
 }
 
+// ── client bundle 冒烟：settings.plugin.item 注册必须带 key ──────────────
+// 宿主 dsh-client-ui-slots（0.1.0-rc.7+）把 settings.plugin.item 声明为
+// keyed slot，注册缺 key 会让整个 client bundle apply 失败（Failed to load
+// plugins）。key 为卡片编辑的设置 namespace（与 host 侧 serviceKey 一致）。
+// 这里 mock react/slots/remote/locale 真实执行三个包的 client apply。
+{
+  const requireCjs = createRequire(import.meta.url);
+  const reactStub = {
+    createElement: (...args) => ({ args }),
+    Fragment: "fragment",
+    useMemo: (fn) => fn(),
+    useState: (init) => [typeof init === "function" ? init() : init, () => {}],
+    useCallback: (fn) => fn,
+    useEffect: () => {},
+    useRef: () => ({ current: null }),
+  };
+  const configServiceStub = {
+    get: async () => ({ ok: true, value: { config: {} } }),
+    set: async (partial) => ({ ok: true, value: partial }),
+  };
+  for (const [name, key] of [["vision-router", "visionRouterConfig"], ["sandbox-extra-roots", "sandboxExtraRootsConfig"], ["adaptive-perf", "adaptivePerfConfig"]]) {
+    const entries = [];
+    const prevWindow = globalThis.window;
+    globalThis.window = { __ModuleLoader__: { load: (entry) => entries.push(entry) } };
+    let bundleExports;
+    try {
+      requireCjs(path.join(ROOT, "packages", name, "client", "client.cjs"));
+      bundleExports = entries[0].factory((id) => {
+        if (id === "react") return reactStub;
+        throw new Error("unexpected require: " + id);
+      });
+    } finally {
+      if (prevWindow === void 0) delete globalThis.window;
+      else globalThis.window = prevWindow;
+    }
+    const registrations = [];
+    const clientCtx = {
+      slots: {
+        inject: (slotName, fn) => { fn(); },
+        register: (options, component) => registrations.push({ options, component }),
+      },
+      locale: Object.assign(() => () => "", { bind: () => () => "", register: () => {} }),
+      effect: (fn) => {},
+      remote: { $mount: async () => {} },
+      get: (svc) => (typeof svc === "string" && svc.startsWith("remote.") ? configServiceStub : {}),
+    };
+    await bundleExports.apply(clientCtx);
+    const item = registrations.find((r) => r.options.name === "settings.plugin.item");
+    check(`client(${name}): settings.plugin.item 注册带 key=${key}`,
+      item !== undefined && item.options.key === key);
+  }
+}
+
 // ── vision-router ──────────────────────────────────────────────────────
 const { apply: applyVision } = await import(path.join(ROOT, "packages/vision-router/lib/index.mjs"));
 const calls = { transcription: 0, downstream: [], vision: [] };

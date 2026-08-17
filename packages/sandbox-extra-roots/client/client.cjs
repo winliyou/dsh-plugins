@@ -184,6 +184,9 @@ window.__ModuleLoader__.load({
       });
       ctx.slots.inject("settings.plugin.item", () => ctx.slots.register({
         name: "settings.plugin.item",
+        // keyed slot：key 为卡片编辑的设置 namespace（与 host 侧 serviceKey 一致），
+        // 设置页按 key 与宿主服务的 namespace 配对 dispatch。
+        key: "sandboxExtraRootsConfig",
         id: "sandbox-extra-roots",
         order: 40,
         locale: NS,

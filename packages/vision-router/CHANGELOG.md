@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/winliyou/dsh-plugins) (2026-08-17)
+
+
+### Bug Fixes
+
+* settings card registration: pass `key` (the settings namespace, matching the host-side service key) when registering into `settings.plugin.item` — the host `dsh-client-ui-slots` 0.1.0-rc.7 declares it as a keyed slot, and a registration without `key` fails the whole client bundle apply ("Failed to load plugins: keyed slot requires options.key")
+
 ## [0.4.0](https://github.com/winliyou/dsh-plugins) (2026-08-17)
 
 
