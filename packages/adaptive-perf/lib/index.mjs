@@ -117,10 +117,19 @@ export const DEFAULT_CONFIG = {
   enabled: true,
   /** 应用自适应的 agent preset 列表（composedPreset 返回值）。 */
   presets: ['standard', 'code'],
+  /**
+   * 默认策略（0.6.0）：功能优先，全部优化 opt-in。旧版把下列机制默认
+   * 开启，导致 standard/PTC 模式功能缺失（工具族从目录删除 → PTC 程序
+   * 调用直接 UNKNOWN_TOOL；技能目录/指令摘要被剥离；官方引导段被屏蔽；
+   * 首轮只剩两个工具）。这些机制的收益本质是"砍上下文换 token"，没有
+   * 无损形态，因此默认全部关闭，保持官方 preset 的完整功能；需要省
+   * token 时按需开启（设置页或 config.json），开启即接受相应的功能
+   * 约束（关键词/失败信号放行、skill_search 按需发现等补偿机制仍在）。
+   */
   /** 抑制运行时上下文快照（等同极简模式的 includeRuntimeContext: false）。 */
-  suppressRuntimeContext: true,
+  suppressRuntimeContext: false,
   /** 会话启动时默认隐藏编排类工具族（核心编码工具始终保留）。 */
-  leanByDefault: true,
+  leanByDefault: false,
   /** 用户消息命中工具族触发词时自动放行该族（会话内单调）。 */
   escalateOnKeyword: true,
   /** 工具调用失败（UNKNOWN_TOOL 文本含隐藏工具名）时自动放行该族。 */
@@ -131,7 +140,7 @@ export const DEFAULT_CONFIG = {
    * 不再像旧版那样在晋升后恢复——替代品是 skill_search/skill_load 按需发现
    * 与 instruction-hint 一次性提示。false = 只在 bootstrap（请求 #1）剥离。
    */
-  suppressInjectedContext: true,
+  suppressInjectedContext: false,
   /** 晋升后常驻 skill_search / skill_load 两个按需技能发现工具。 */
   skillDiscovery: true,
   /** 晋升后注入一次"指令文件存在，需要时自读"的短提示（替代全文注入）。 */
@@ -168,7 +177,7 @@ export const DEFAULT_CONFIG = {
   /** 首轮锚定（参照 dsh-anchored-standard）。 */
   bootstrap: {
     /** 是否启用首轮锚定。 */
-    enabled: true,
+    enabled: false,
     /**
      * 是否挂载真实 Minimal 工具对（0.5.0）：把官方 minimal preset 的持久
      * PTY bash + str_replace_editor 挂进 agent 作用域（按名阴影 standard 的
@@ -204,7 +213,7 @@ export const DEFAULT_CONFIG = {
    */
   minimalPrompt: {
     /** 是否启用极简提示词层。 */
-    enabled: true,
+    enabled: false,
     /** 替换后的 persona 文本；与极简模式相同可完全对齐语域。留空不替换。 */
     persona: 'You are a helpful software engineer assistant.',
     /** 屏蔽全局引导段（identity / source / web-surface）。 */

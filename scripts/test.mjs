@@ -506,11 +506,13 @@ check("AP: bootstrap 配置校验-非法 promoteOn 拒绝", rejected === true);
 
 // minimalPrompt（极简提示词层）配置归一化与校验
 const mpnorm = ap.normalizeConfig({ minimalPrompt: { persona: "  You are terse.  ", suppressSections: false } });
-check("AP: minimalPrompt 配置归一化", mpnorm.minimalPrompt.enabled === true
+check("AP: minimalPrompt 配置归一化", mpnorm.minimalPrompt.enabled === false
   && mpnorm.minimalPrompt.persona === "You are terse."
   && mpnorm.minimalPrompt.suppressSections === false);
 const mpdef = ap.normalizeConfig({});
-check("AP: minimalPrompt 默认与极简 persona 相同", mpdef.minimalPrompt.persona === "You are a helpful software engineer assistant."
+check("AP: minimalPrompt 默认关闭（0.6.0 功能优先）且 persona 模板保留",
+  mpdef.minimalPrompt.enabled === false
+  && mpdef.minimalPrompt.persona === "You are a helpful software engineer assistant."
   && mpdef.minimalPrompt.suppressSections === true);
 let mpRejected = false;
 try { ap.validateConfig({ minimalPrompt: { persona: 123 } }); } catch { mpRejected = true; }
@@ -523,8 +525,11 @@ check("AP: 阴影段清单完整", ap.SECTION_SHADOWS.length === 3
 
 // ── 0.5.0：常驻上下文抑制 / 技能发现 / 指令提示 / 真实工具对配置 ──────
 const v5def = ap.normalizeConfig({});
-check("AP: 0.5.0 默认配置", v5def.suppressInjectedContext === true && v5def.skillDiscovery === true
-  && v5def.instructionHint === true && v5def.bootstrap.realPair === true
+check("AP: 0.6.0 默认配置（功能优先：抑制/收窄/锚定全关，补偿机制保留）",
+  v5def.suppressInjectedContext === false && v5def.leanByDefault === false
+  && v5def.suppressRuntimeContext === false && v5def.skillDiscovery === true
+  && v5def.instructionHint === true && v5def.bootstrap.enabled === false
+  && v5def.bootstrap.realPair === true
   && v5def.bootstrap.discoveryTools.includes("dev_tool_search")
   && v5def.bootstrap.discoveryTools.includes("skill_search")
   && v5def.bootstrap.discoveryTools.includes("skill_load"));
@@ -695,9 +700,16 @@ function apEmit(event, ...args) {
   for (const listener of apEvents[event] ?? []) listener(...args);
 }
 
-// 引擎启动（默认配置，config.json 不存在 → 默认值）。
+// 引擎启动：显式传激进配置（0.6.0 起这些机制默认关闭，机制断言需要 opt-in）。
 // realPairModules: null 注入 = 官方包缺失的降级路径（测试环境无 @deepseek-ai 包）。
-await ap.apply(apCtx, { presets: ["standard", "code"] }, { realPairModules: null });
+await ap.apply(apCtx, {
+  presets: ["standard", "code"],
+  leanByDefault: true,
+  suppressRuntimeContext: true,
+  suppressInjectedContext: true,
+  minimalPrompt: { enabled: true },
+  bootstrap: { enabled: true, realPair: false },
+}, { realPairModules: null });
 const agentStd = apAgent("s-std", "standard");
 apEmit("agent/created", { agent: agentStd });
 const stdDenies = apRestrictCalls.filter((c) => c.agent === "s-std");
@@ -753,7 +765,7 @@ check("AP: 已升级族跨配置刷新保持放行", apRestrictCalls.filter((c) 
 // 极简提示词层热更新（每次配置更新都会对已接管会话重算，用增量断言）
 const mpCallsBefore = apSectionCalls.filter((c) => c.agent === "s-std").length;
 const mpDisposedBefore = apSectionDisposed.filter((c) => c.agent === "s-std").length;
-apCtx.gateway.set({ minimalPrompt: { suppressSections: false } });
+apCtx.gateway.set({ minimalPrompt: { enabled: true, suppressSections: false } });
 const mpNewCalls = apSectionCalls.filter((c) => c.agent === "s-std").slice(mpCallsBefore);
 const mpNewDisposed = apSectionDisposed.filter((c) => c.agent === "s-std").slice(mpDisposedBefore);
 check("AP: minimalPrompt 热更新-旧阴影释放且仅 persona 保留", mpNewDisposed.length === 4
@@ -893,7 +905,7 @@ const apCtx2 = {
     try { this.gateway = new Cls(this, cfg); } finally { this.reflect = saved; }
   },
 };
-await ap.apply(apCtx2, { presets: ["standard"] }, { realPairModules: stubModules });
+await ap.apply(apCtx2, { presets: ["standard"], bootstrap: { enabled: true, realPair: true } }, { realPairModules: stubModules });
 const agentRp = apAgent("s-rp", "standard", { id: "s-rp", header: { cwd: "/rp" }, events: [] });
 agentRp.ctx.plugin = (mod, cfg) => {
   apMounted.push({ agent: agentRp.id, module: mod.name, config: cfg });
@@ -909,6 +921,50 @@ const mountedBefore = apFiberDisposed.length;
 apCtx2.gateway.set({ bootstrap: { realPair: false } });
 check("AP: realPair 热更新关闭后卸载", apFiberDisposed.length === mountedBefore + apMounted.length);
 for (const listener of rpEvents["agent/disposed"] ?? []) listener({ agent: agentRp });
+
+// ── 0.6.0：默认零干预（功能优先，全部优化 opt-in）──────────────────────
+// 默认配置下 standard 会话不受任何影响：不 restrict 工具、不抑制运行时
+// 上下文、不阴影提示段——standard/PTC 模式功能完整。
+{
+  const zeroEvents = {};
+  const zeroCtx = {
+    logger: apCtx.logger,
+    get(name) {
+      if (name === "tools") return { schemas: (a) => [...(apToolSets.get(a.id) ?? [])].map((n) => ({ name: n })), restrict: () => () => {} };
+      if (name === "systemPrompt") return { suppressRuntimeContext() { return () => {}; } };
+      if (name === "agentPresets") return apAgentPresetsMock;
+      if (name === "agents") return apAgentsMock;
+      if (name === "skills") return apSkillsMock;
+      if (name === "fs") return apFsMock;
+      return undefined;
+    },
+    on(event, listener) { (zeroEvents[event] ??= []).push(listener); },
+    effect(fn) { fn(); },
+    plugin(Cls, cfg) {
+      const saved = this.reflect;
+      this.reflect = { provide: () => {}, props: {} };
+      try { this.gateway = new Cls(this, cfg); } finally { this.reflect = saved; }
+    },
+  };
+  // 热更新用例已把激进配置持久化进 config.json（fakeHome），先清掉再
+  // apply，模拟全新安装下的默认行为（功能优先，全部机制 opt-in）。
+  fs.rmSync(path.join(fakeHome, ".dsh", "plugins", "adaptive-perf", "config.json"), { force: true });
+  await ap.apply(zeroCtx, {});
+  const zeroAgent = apAgent("s-zero", "standard");
+  const zeroSectionsBefore = apSectionCalls.filter((c) => c.agent === "s-zero").length;
+  for (const listener of zeroEvents["agent/created"] ?? []) listener({ agent: zeroAgent });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  check("AP: 默认配置零干预（无工具限制）", apRestrictCalls.filter((c) => c.agent === "s-zero").length === 0,
+    JSON.stringify(apRestrictCalls.filter((c) => c.agent === "s-zero").map((c) => c.deny)));
+  check("AP: 默认配置零干预（无运行时上下文抑制）", !apSuppressCalls.has("s-zero"));
+  check("AP: 默认配置零干预（无提示段阴影）", apSectionCalls.filter((c) => c.agent === "s-zero").length === zeroSectionsBefore,
+    JSON.stringify(apSectionCalls.filter((c) => c.agent === "s-zero")));
+  // 热开启激进模式仍可按需生效（opt-in 路径完好）。
+  zeroCtx.gateway.set({ leanByDefault: true });
+  const zeroAgent2 = apAgent("s-zero2", "standard");
+  for (const listener of zeroEvents["agent/created"] ?? []) listener({ agent: zeroAgent2 });
+  check("AP: 热开启 lean 后新会话接入限制（opt-in 有效）", apRestrictCalls.filter((c) => c.agent === "s-zero2").length === 4);
+}
 
 
 // ── session-archive（归档管理：列表/查看/批量删除/恢复）─────────────────

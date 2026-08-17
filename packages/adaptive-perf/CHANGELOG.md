@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/winliyou/dsh-plugins) (2026-08-17)
+
+
+### ⚠ Breaking (behavior)
+
+* **function-first defaults — every optimization is now opt-in.** The previous defaults broke standard/PTC functionality: tool families removed from the catalog (PTC program calls hit `UNKNOWN_TOOL` outright), skill-catalog/AGENTS.md injections stripped, official prompt sections shadowed, request #1 restricted to two tools. These mechanisms have no lossless form (their savings come from removing context/tools), so `leanByDefault`, `suppressRuntimeContext`, `suppressInjectedContext`, `minimalPrompt.enabled`, and `bootstrap.enabled` all default to **false**: a fresh install is a zero-intervention no-op and official presets keep full functionality. Enable any mechanism on demand from the settings page; compensation paths (keyword/failure-signal escalation, `skill_search` discovery, instruction-hint) activate together with them. Tests now cover both the zero-intervention defaults and each mechanism under explicit opt-in config
+
 ## [0.5.3](https://github.com/winliyou/dsh-plugins) (2026-08-17)
 
 
