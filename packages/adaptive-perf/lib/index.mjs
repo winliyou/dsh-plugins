@@ -924,15 +924,19 @@ export function applyBootstrapBudget(config, promoted, maxTokens) {
 /** 把配置 namespace 注册进宿主 settings 体系（dsh-settings 0.1.0-rc.7+）。
  * 设置页 describe() 只枚举 settings.register 注册过的 namespace；本插件
  * 的卡片读写不经过宿主 settings 文档，注册只为让卡片出现在设置页。
+ * options.base 必传当前生效配置快照：宿主 resolve = schema(mergeLayers(base,
+ * section))，schema 无默认值时 base 缺失会让 describe() 的 value 为
+ * undefined，而设置页 wire 校验要求 value 非空（invalid_type: nonoptional），
+ * 一项失败会拖垮整个设置页。本插件的 any() schema 完全依赖 base。
  * fail-safe（schema 库/服务缺失静默跳过）+ 幂等（重复注册忽略）。
  * 导出以便测试注入 Schema stub。 */
-export function registerSettingsNamespace(ctx, ns, schemaLib, buildSchema) {
+export function registerSettingsNamespace(ctx, ns, schemaLib, buildSchema, options) {
   if (schemaLib === null || schemaLib === undefined) return false;
   if (ctx === null || typeof ctx !== 'object' || typeof ctx.inject !== 'function') return false;
   try {
     ctx.inject(['settings'], (settingsCtx) => {
       try {
-        settingsCtx.settings.register(ns, buildSchema(schemaLib));
+        settingsCtx.settings.register(ns, buildSchema(schemaLib), options);
       } catch (error) {
         const message = String(error && error.message || error);
         if (!message.includes('already registered')) throw error;
@@ -1583,8 +1587,10 @@ export async function apply(ctx, config, options = {}) {
     // registrations，未注册的 namespace 即使卡片带正确的 key 也不渲染。
     // 卡片的实际读写仍走上面的 config gateway（config.json 权威、热更新）。
     // 配置为多层嵌套结构（families/bootstrap/minimalPrompt…），schema 用 any
-    // 透传——describe 元数据只服务于可见性，卡片不读取它。
-    registerSettingsNamespace(ctx, 'adaptivePerfConfig', Schema, (z) => z.any());
+    // 透传——describe 元数据只服务于可见性，卡片不读取它。any() 无默认值，
+    // 必须传 base（当前生效配置快照），否则 describe() 的 value 为 undefined，
+    // 设置页 wire 校验（nonoptional）会整体失败。
+    registerSettingsNamespace(ctx, 'adaptivePerfConfig', Schema, (z) => z.any(), { base: cfg });
 
     // 卸载清理：释放全部会话副作用与监听。
     ctx.effect(() => () => {

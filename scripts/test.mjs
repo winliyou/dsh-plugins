@@ -152,12 +152,13 @@ for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf"]) {
   const registered = [];
   const regCtx = {
     inject(names, fn) { if (names.includes("settings")) fn(regCtx); },
-    settings: { register(ns, schema) { registered.push({ ns, schema }); } },
+    settings: { register(ns, schema, options) { registered.push({ ns, schema, options }); } },
     logger: { warn: () => {} },
   };
-  check("settings: 注册 namespace 并传 buildSchema 产物",
-    vrNS.registerSettingsNamespace(regCtx, "visionRouterConfig", stubZ, (z) => z.object({ a: z.string() })) === true
-      && registered.length === 1 && registered[0].ns === "visionRouterConfig" && registered[0].schema.stub === "object");
+  check("settings: 注册 namespace 并传 buildSchema 产物与 base",
+    vrNS.registerSettingsNamespace(regCtx, "visionRouterConfig", stubZ, (z) => z.object({ a: z.string() }), { base: { a: "v" } }) === true
+      && registered.length === 1 && registered[0].ns === "visionRouterConfig" && registered[0].schema.stub === "object"
+      && registered[0].options !== undefined && registered[0].options.base.a === "v");
   regCtx.settings.register = () => { throw new Error('settings namespace "visionRouterConfig" is already registered'); };
   check("settings: 重复注册静默忽略（HMR/多挂载点幂等）",
     vrNS.registerSettingsNamespace(regCtx, "visionRouterConfig", stubZ, (z) => z.object({})) === true);

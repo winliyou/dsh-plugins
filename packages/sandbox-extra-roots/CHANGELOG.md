@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.6](https://github.com/winliyou/dsh-plugins) (2026-08-17)
+
+
+### Bug Fixes
+
+* pass the live config snapshot as `base` when registering the settings namespace: without `base`, a schema without defaults (adaptive-perf's `any()`) made `settings.describe()` return `value: undefined`, and the settings page's wire validation (`invalid_type: nonoptional` at `namespaces[n].value`) failed hard, breaking the whole settings UI. With `base` the resolved value is always the full config object
+
 ## [0.2.5](https://github.com/winliyou/dsh-plugins) (2026-08-17)
 
 

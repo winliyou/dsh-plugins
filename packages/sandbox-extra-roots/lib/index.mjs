@@ -81,15 +81,19 @@ function getLandlockExec() {
 /** 把配置 namespace 注册进宿主 settings 体系（dsh-settings 0.1.0-rc.7+）。
  * 设置页 describe() 只枚举 settings.register 注册过的 namespace；本插件
  * 的卡片读写不经过宿主 settings 文档，注册只为让卡片出现在设置页。
+ * options.base 必传当前生效配置快照：宿主 resolve = schema(mergeLayers(base,
+ * section))，schema 无默认值时 base 缺失会让 describe() 的 value 为
+ * undefined，而设置页 wire 校验要求 value 非空（invalid_type: nonoptional），
+ * 一项失败会拖垮整个设置页。
  * fail-safe（schema 库/服务缺失静默跳过）+ 幂等（重复注册忽略）。
  * 导出以便测试注入 Schema stub。 */
-export function registerSettingsNamespace(ctx, ns, schemaLib, buildSchema) {
+export function registerSettingsNamespace(ctx, ns, schemaLib, buildSchema, options) {
   if (schemaLib === null || schemaLib === undefined) return false;
   if (ctx === null || typeof ctx !== "object" || typeof ctx.inject !== "function") return false;
   try {
     ctx.inject(["settings"], (settingsCtx) => {
       try {
-        settingsCtx.settings.register(ns, buildSchema(schemaLib));
+        settingsCtx.settings.register(ns, buildSchema(schemaLib), options);
       } catch (error) {
         const message = String(error && error.message || error);
         if (!message.includes("already registered")) throw error;
@@ -186,7 +190,7 @@ export async function apply(ctx, config) {
     // 卡片的实际读写仍走上面的 config gateway(config.json 权威、热更新)。
     registerSettingsNamespace(ctx, "sandboxExtraRootsConfig", Schema, (z) => z.object({
       extraWritableRoots: z.array(z.string()).default([]),
-    }));
+    }), { base: cfg });
 
     // remote.set 严格校验：非法数组/相对路径直接拒绝，UI 能立即看到原因。
     function validateSandboxConfig(partial) {
