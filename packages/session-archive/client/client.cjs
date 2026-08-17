@@ -33,6 +33,7 @@ window.__ModuleLoader__.load({
       ".sa_actionDanger:hover:not(:disabled){background:var(--dsw-alias-state-error-primary)}",
       ".sa_actionDanger:disabled{opacity:.4}",
       ".sa_confirm{color:var(--dsw-alias-state-error-primary);border:1px solid var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent)}",
+      ".sa_confirm:hover:not(:disabled){background:var(--dsw-alias-state-error-primary);color:#fff}",
       ".sa_body{flex:1;min-height:0;padding:4px 12px 12px;overflow-y:auto}",
       ".sa_empty{color:var(--dsw-alias-label-tertiary);margin:24px 0;text-align:center;font-size:12px;line-height:18px}",
       ".sa_error{color:var(--dsw-alias-state-error-primary);margin:8px 0;font-size:12px;line-height:18px}",
