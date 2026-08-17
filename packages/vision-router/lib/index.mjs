@@ -420,6 +420,33 @@ function progressChunk(ctx, sessionId, text) {
   }
 }
 
+/** 注入给纯文本模型 agent 的能力提示段：纠正"我不支持图片"的自我认知，
+ * 引导模型用 read_image 而不是 python 猜测图片内容。文本面向模型，保持
+ * 精炼（每会话常驻上下文成本）。 */
+const CAPABILITY_HINT = `## 图片能力（本部署）
+
+本部署配有视觉转述层：进入你会话的任何图片（对话框粘贴/拖入，或 read_image 工具读取的文件）都会先由视觉模型转述为详尽文本（逐字转录图内文字、图表数值与空间布局）再交给你。read_image 工具描述中的 image input 要求在本部署已由转述层满足——需要理解 PNG/JPEG/WebP/GIF 文件的内容时直接用 read_image，不要用 python/脚本去猜测或分析图片。
+
+需要更多细节时：直接追问即可，历史图片会自动带着你的新问题重新分析；也可以对图片文件做预处理（如放大、裁剪局部）后再次 read_image。`;
+
+/** 对纯文本模型路由的 agent 注入能力提示段（agent/created）。
+ * 模型路由取 agent.options（与宿主 read_image 门禁同源字段）；原生支持
+ * 图片的模型不注入。fail-safe：任何异常只记日志。 */
+async function injectCapabilityHint(ctx, state, agent) {
+  try {
+    const provider = agent?.options?.provider;
+    const model = agent?.options?.model;
+    const sp = agent?.ctx?.systemPrompt;
+    if (provider === void 0 || model === void 0 || sp === void 0 || typeof sp.section !== 'function') return;
+    const supportsImage = await targetSupportsImage(ctx, state, { provider, model });
+    if (supportsImage) return;
+    const disposer = sp.section({ name: 'vision-router:capability', order: 45, text: CAPABILITY_HINT });
+    if (typeof disposer === 'function') state.promptDisposers.set(agent.id, disposer);
+  } catch (error) {
+    try { ctx.logger?.warn?.(`vision-router: capability hint skipped: ${error && error.message || error}`); } catch {}
+  }
+}
+
 /** 判断目标模型原生是否支持图片输入。
  * 不用 resolveModelInfo（它可能被本插件或历史挂载的包装增强过，导致误判），
  * 而是直接读模型目录 listModels —— adapter 的目录数据未被增强。
@@ -797,6 +824,8 @@ export function apply(ctx, config) {
       visionModelCache: null,
       /** 目标模型图片能力缓存（provider/model -> boolean）。 */
       targetImageCache: new Map(),
+      /** 已注入能力提示的 agent（agentId -> section disposer）。 */
+      promptDisposers: new Map(),
       disposers: [],
     });
     state.mounts += 1;
@@ -808,6 +837,10 @@ export function apply(ctx, config) {
     ctx.effect(() => () => {
       state.mounts -= 1;
       if (state.mounts <= 0) {
+        for (const disposer of state.promptDisposers.values()) {
+          try { disposer(); } catch {}
+        }
+        state.promptDisposers.clear();
         for (const fn of state.disposers) {
           try { fn(); } catch {}
         }
@@ -842,6 +875,24 @@ export function apply(ctx, config) {
     ctx.on?.('llm/adapters-updated', () => {
       state.visionModelCache = null;
       state.targetImageCache.clear();
+    });
+
+    // ── 能力提示（模型认知补全）──────────────────────────────────────────
+    // 纯文本模型的自我认知是"我不支持图片"，而 read_image 的工具描述写着
+    // "Requires the current model to accept image input"——模型据此自我排除，
+    // 面对"分析图片"类任务转而用 python 猜测图片内容，转述层无从介入。
+    // 这里对纯文本模型路由的 agent 注入一段系统提示，告知转述层存在、
+    // read_image 可放心使用；原生多模态模型不注入（无谓噪声）。
+    // 注册在 early-return 幂等检查之前，跨挂载点安全（监听随 fiber 销毁）。
+    ctx.on?.('agent/created', ({ agent }) => {
+      void injectCapabilityHint(ctx, state, agent);
+    });
+    ctx.on?.('agent/disposed', ({ agent }) => {
+      const disposer = state.promptDisposers.get(agent?.id);
+      if (disposer !== undefined) {
+        try { disposer(); } catch {}
+        state.promptDisposers.delete(agent.id);
+      }
     });
 
     // 远程配置服务（设置页 UI 读写；typert 不可用时跳过）

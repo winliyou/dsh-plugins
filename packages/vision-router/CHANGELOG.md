@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/winliyou/dsh-plugins) (2026-08-17)
+
+
+### Features
+
+* **capability hint**: inject a system-prompt section into agents routed to text-only models, telling the model that a vision transcription layer exists — any image (pasted or read via `read_image`) is transcribed to detailed text before reaching it — and that `read_image`'s "model must accept image input" requirement is satisfied by this deployment, so it should read images with `read_image` instead of guessing at them with python/scripts, follow up for details (images are re-analyzed with the new question), or pre-process (crop/zoom) and re-read. Agents on natively multimodal models get no injection; sections are disposed with the agent. This closes the model-cognition gap: the transcription layer existed but the model's self-knowledge ("I can't see images") made it avoid `read_image` entirely
+
 ## [0.4.3](https://github.com/winliyou/dsh-plugins) (2026-08-17)
 
 

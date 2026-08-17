@@ -195,12 +195,14 @@ const llmMock = {
   stream(options) { return this.streamWithRegistration(options); },
 };
 const appended = [];
+const vrEvents = {}; // event -> [listeners]
 const ctx = {
   llm: llmMock,
   sessions: { get: (id) => id === "s9" ? { log: [{ type: "step/start", data: { turn: 3, step: 0 } }], append: (t, d) => appended.push({ t, d }) } : undefined },
   attachments: undefined,
   logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
   get(name) { return this[name]; },
+  on(event, listener) { (vrEvents[event] ??= []).push(listener); },
   effect(fn) { fn(); },
   plugin(Cls, cfg) {
     const saved = this.reflect;
@@ -328,6 +330,38 @@ check("VR: remote 网关注册", ctx.gateway !== undefined && ctx.gateway.get().
 let invalidRejected = false;
 try { ctx.gateway.set({ maxVisionTokens: -1 }); } catch { invalidRejected = true; }
 check("VR: remote 拒绝非法配置", invalidRejected);
+
+// ── vision-router 能力提示注入（纯文本模型认知补全）─────────────────────
+// 纯文本模型的 read_image 自我排除（工具描述要求 image input）会让模型转而
+// 用 python 猜测图片内容；注入提示段纠正认知。多模态模型不注入。
+{
+  const sectionCalls = []; // { agentId, section }
+  const disposedAgents = [];
+  function makeHintAgent(id, provider, model) {
+    return {
+      id,
+      options: { provider, model },
+      ctx: { systemPrompt: { section(section) { sectionCalls.push({ id, section }); return () => disposedAgents.push(id); } } },
+    };
+  }
+  const textAgent = makeHintAgent("a-text", "deepseek", "deepseek-v4-flash");
+  const visionAgent = makeHintAgent("a-vision", "zai-open", "glm-4v-flash");
+  const noRouteAgent = makeHintAgent("a-noroute", undefined, undefined);
+  for (const listener of vrEvents["agent/created"] ?? []) {
+    listener({ agent: textAgent });
+    listener({ agent: visionAgent });
+    listener({ agent: noRouteAgent });
+  }
+  await new Promise((resolve) => setTimeout(resolve, 20)); // 注入异步查模型目录
+  const textSections = sectionCalls.filter((c) => c.id === "a-text");
+  check("VR: 纯文本模型注入能力提示",
+    textSections.length === 1 && textSections[0].section.name === "vision-router:capability"
+      && textSections[0].section.text.includes("read_image") && textSections[0].section.text.includes("转述"));
+  check("VR: 多模态模型不注入", sectionCalls.filter((c) => c.id === "a-vision").length === 0);
+  check("VR: 无模型路由不注入", sectionCalls.filter((c) => c.id === "a-noroute").length === 0);
+  for (const listener of vrEvents["agent/disposed"] ?? []) listener({ agent: textAgent });
+  check("VR: agent 销毁释放提示段", disposedAgents.includes("a-text"));
+}
 
 // ── sandbox-extra-roots ────────────────────────────────────────────────
 const { apply: applySandbox } = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/index.mjs"));
