@@ -43,8 +43,16 @@ npm test                    # 运行 scripts/test.mjs（config-store / remote / 
 
 ## 版本管理与发布
 
+版本号遵循**语义化版本** `MAJOR.MINOR.PATCH`，按变更类型更新对应位：
+
+| 变更类型 | 更新位 | 示例 |
+|---|---|---|
+| 破坏性更新（不兼容的 API/行为变更） | `MAJOR`（第一位） | 0.2.1 → 1.0.0 |
+| 非破坏性的小功能新增 | `MINOR`（第二位） | 0.2.1 → 0.3.0 |
+| bug 修复 | `PATCH`（最后一位） | 0.2.1 → 0.2.2 |
+
 **版本号在本地修改**，CI 不会改写版本号：直接编辑各包的 `package.json`
-的 `version` 字段（或 `npm version patch`），提交并推送即可。
+的 `version` 字段（或 `npm version <major|minor|patch>`），提交并推送即可。
 
 ```bash
 # 例：发一个 patch 修复
