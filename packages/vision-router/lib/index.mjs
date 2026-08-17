@@ -16,6 +16,11 @@
  *      原生不支持图片时，把每条含图消息交给视觉模型转述，将 image block
  *      替换为文本描述块后再向下游分发；否则原样透传。目标模型的原生能力
  *      通过 listModels 读取（不受 resolveModelInfo 包装影响）。
+ *   3. 来源标注（sourceHint）：替换文本在转述内容后附带每张图片的来源——
+ *      read_image 工具结果里的图片给出 <path> 信封中的文件路径；对话框
+ *      粘贴/拖入的图片明确告知"磁盘上没有源文件，不要搜索"，并尽可能给
+ *      出 DSH 本地附件副本的落盘路径（sha256 attachmentId 可推导），避免
+ *      主模型浪费轮次去找一个（可能不存在的）文件。
  *
  * 配置：cordis.patch.yml 的 config（安装默认）与
  *       ~/.dsh/plugins/vision-router/config.json（设置页 UI，权威）合并。
@@ -24,6 +29,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { stat as fsStat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -54,6 +60,8 @@ const DEFAULT_CONFIG = {
   maxVisionTokens: 2048,
   /** 转述提示词；{count} 替换为图片数量。 */
   prompt: '用户发来了一张图片。请先直接回答用户针对图片提出的问题（若有），再简要描述图片内容（主要物体、颜色、文字、布局等）。请用中文回答。',
+  /** 转述文本后附带图片来源说明（文件路径 / 粘贴无源文件提示 / 本地副本路径）。 */
+  sourceHint: true,
   /** 超过该字节数的图片在保存前自动压缩（sharp）。 */
   compressImageBytes: 4 * 1024 * 1024,
   /** 压缩后的最大像素边长（fit inside）。视觉模型按 512px 切块计 token，
@@ -88,6 +96,7 @@ function normalizeVisionConfig(source) {
     autoDiscover: typeof merged.autoDiscover === 'boolean' ? merged.autoDiscover : DEFAULT_CONFIG.autoDiscover,
     maxVisionTokens: positiveInteger(merged.maxVisionTokens, DEFAULT_CONFIG.maxVisionTokens),
     prompt: typeof merged.prompt === 'string' && merged.prompt.trim().length > 0 ? merged.prompt : DEFAULT_CONFIG.prompt,
+    sourceHint: typeof merged.sourceHint === 'boolean' ? merged.sourceHint : DEFAULT_CONFIG.sourceHint,
     compressImageBytes: positiveInteger(merged.compressImageBytes, DEFAULT_CONFIG.compressImageBytes),
     compressMaxDimension: positiveInteger(merged.compressMaxDimension, DEFAULT_CONFIG.compressMaxDimension),
     compressTargetBytes: positiveInteger(merged.compressTargetBytes, DEFAULT_CONFIG.compressTargetBytes),
@@ -108,6 +117,9 @@ function validateVisionConfig(partial) {
   }
   if (partial.autoDiscover !== void 0 && typeof partial.autoDiscover !== 'boolean') {
     throw new TypeError('vision-router config field "autoDiscover" must be a boolean');
+  }
+  if (partial.sourceHint !== void 0 && typeof partial.sourceHint !== 'boolean') {
+    throw new TypeError('vision-router config field "sourceHint" must be a boolean');
   }
   const intFields = ['maxVisionTokens', 'compressImageBytes', 'compressMaxDimension', 'compressTargetBytes', 'compressFallbackDimension'];
   for (const key of intFields) {
@@ -149,15 +161,28 @@ function isImageBlock(block) {
   return typeof mediaType === 'string' && mediaType.startsWith('image/');
 }
 
-/** 递归收集图片块，返回该条消息的文本（只取顶层 text 块拼接）。 */
-function collectImages(content, out) {
+/** 从 tool-result 顶层的文本块里提取 read_image 信封中的 <path>（若有）。 */
+function toolResultPath(content) {
+  if (!Array.isArray(content)) return void 0;
+  for (const block of content) {
+    if (block === null || typeof block !== 'object' || block.type !== 'text' || typeof block.text !== 'string') continue;
+    const match = /<path>([^<]+)<\/path>/.exec(block.text);
+    if (match !== null) return match[1];
+  }
+  return void 0;
+}
+
+/** 递归收集图片块及其来源（chat=对话粘贴/拖入；tool=工具结果，path 为
+ * read_image 读取的文件路径），返回该条消息的文本（只取顶层 text 块拼接）。 */
+function collectImages(content, out, origin) {
   if (!Array.isArray(content)) return '';
+  const scope = origin ?? { kind: 'chat' };
   let text = '';
   for (const block of content) {
     if (block === null || typeof block !== 'object') continue;
-    if (isImageBlock(block)) out.push(block);
+    if (isImageBlock(block)) out.push({ image: block, origin: scope });
     else if (block.type === 'text') text += block.text;
-    else if (block.type === 'tool-result') collectImages(block.content, out);
+    else if (block.type === 'tool-result') collectImages(block.content, out, { kind: 'tool', path: toolResultPath(block.content) ?? scope.path });
   }
   return text;
 }
@@ -474,6 +499,49 @@ function imageStableId(image) {
   return String(image);
 }
 
+/** 本地附件存储（dsh-attachment-local）的对象布局：attachmentId 形如
+ * sha256:<64hex> 时落盘路径可推导（$DSH_HOME/attachments/v1/objects/<前2位>/<全hash>）。
+ * 其他后端或非内容寻址引用返回 null，来源说明退化为不带副本路径。 */
+function attachmentObjectPath(attachmentId) {
+  if (typeof attachmentId !== 'string') return null;
+  const match = /^sha256:([a-f0-9]{64})$/.exec(attachmentId);
+  if (match === null) return null;
+  const dshHome = process.env.DSH_HOME?.trim() ? resolve(process.env.DSH_HOME) : join(homedir(), '.dsh');
+  return join(dshHome, 'attachments', 'v1', 'objects', match[1].slice(0, 2), match[1]);
+}
+
+/** 描述一张图片的来源，随转述文本交给主模型——让它不必自己去文件系统里找图：
+ * read_image 的图给出文件路径；粘贴/拖入的图明确说明磁盘上没有源文件。 */
+async function describeImageSource(image, origin) {
+  const att = image !== null && typeof image === 'object' ? image.attachment : void 0;
+  const ref = att !== null && typeof att === 'object' ? att : {};
+  const name = typeof ref.name === 'string' && ref.name.length > 0 ? ref.name
+    : (typeof image?.name === 'string' && image.name.length > 0 ? image.name : '');
+  const mediaType = typeof ref.mediaType === 'string' ? ref.mediaType
+    : (typeof image?.mediaType === 'string' ? image.mediaType : '');
+  const parts = [];
+  if (origin.kind === 'tool' && origin.path !== void 0) {
+    parts.push(`read_image 从文件读取：${origin.path}`);
+  } else if (origin.kind === 'tool') {
+    parts.push('工具结果携带的图片（未提供文件路径）');
+  } else {
+    parts.push(`用户在对话框粘贴/拖入的图片：磁盘上没有该图片的源文件（剪贴板粘贴的图片不存在于文件系统中），不要尝试在文件系统里搜索或定位它${name !== '' ? `；显示名 "${name}"` : ''}`);
+  }
+  const meta = [];
+  if (mediaType !== '') meta.push(mediaType);
+  if (Number.isInteger(ref.width) && Number.isInteger(ref.height)) meta.push(`${ref.width}×${ref.height} px`);
+  if (meta.length > 0) parts.push(meta.join('，'));
+  const objectPath = attachmentObjectPath(ref.attachmentId);
+  if (objectPath !== null) {
+    try {
+      if ((await fsStat(objectPath)).isFile() === true) {
+        parts.push(`DSH 保存的原图副本：${objectPath}（无扩展名；如需用 read_image 重新查看，先复制为带 .png/.jpg 等扩展名的文件）`);
+      }
+    } catch {}
+  }
+  return parts.join('；');
+}
+
 /** 解码可能带 data URL 前缀的 base64 图片数据。 */
 function decodeBase64Image(value) {
   let base64 = value;
@@ -539,7 +607,7 @@ async function transcribeMessage(ctx, state, vision, message, sessionId, signal)
   const images = [];
   const ownText = collectImages(message.content, images);
   if (images.length === 0) return message;
-  const normalizedImages = await Promise.all(images.map((img) => normalizeImageBlock(ctx, img)));
+  const normalizedImages = await Promise.all(images.map((entry) => normalizeImageBlock(ctx, entry.image)));
 
   const cache = state.captionCache;
   // 缓存键不能只由图片决定：同一张图配不同用户问题/提示词会得到不同转述，
@@ -590,7 +658,22 @@ async function transcribeMessage(ctx, state, vision, message, sessionId, signal)
     cache.set(cacheKey, caption);
   }
 
-  const replaced = replaceImages(message.content, caption);
+  // 来源标注在缓存之外逐请求计算：同一张图（缓存命中）随上下文不同可能
+  // 有不同来源描述（如先是粘贴、后又经 read_image 从文件读入）。
+  let finalCaption = caption;
+  if (cfg.sourceHint) {
+    try {
+      const lines = [];
+      for (let i = 0; i < normalizedImages.length; i += 1) {
+        lines.push(`${i + 1}. ${await describeImageSource(normalizedImages[i], images[i].origin)}`);
+      }
+      finalCaption = `${caption}\n\n[图片来源|共 ${normalizedImages.length} 张]\n${lines.join('\n')}`;
+    } catch (error) {
+      try { ctx.logger?.warn?.(`vision-router: source hint failed: ${error && error.message || error}`); } catch {}
+    }
+  }
+
+  const replaced = replaceImages(message.content, finalCaption);
   return replaced === message.content ? message : { ...message, content: replaced };
 }
 

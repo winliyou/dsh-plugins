@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/winliyou/dsh-plugins) (2026-08-17)
+
+
+### Features
+
+* annotate transcribed captions with image provenance (`sourceHint`, default on): images inside `read_image` tool results carry the `<path>` envelope's file path; pasted/dragged chat images get an explicit "no on-disk source file, do not search the filesystem" note plus the DSH durable object path (`$DSH_HOME/attachments/v1/objects/…`) when the sha256 attachment id resolves, so the text-only model no longer burns turns hunting for a file that may not exist
+
 ## [0.2.3](https://github.com/winliyou/dsh-plugins) (2026-08-16)
 
 

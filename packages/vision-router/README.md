@@ -5,6 +5,10 @@
 智谱官方**免费**视觉模型）转述为文本，再交给原模型继续分析。
 
 - 拖入或粘贴到对话框的图片 → 自动转述；agent 用 `read_image` 读到的图片 → 自动转述
+- **转述文本附带图片来源标注**：`read_image` 的图片给出文件路径；粘贴/拖入的图片
+  明确提示"磁盘上没有源文件，不要搜索"，并尽量给出 DSH 保存的原图副本路径
+  （`$DSH_HOME/attachments/v1/objects/…`，sha256 attachmentId 可推导时），
+  避免主模型浪费轮次去找一个（剪贴板图片根本不存在的）文件
 - 转述结果按 `sessionId+图片` 缓存，同会话不重复调用
 - 普通文本请求零影响（直接透传，历史图片已缓存时不打扰）
 - 大图自动压缩（字节或像素超限触发；mediaType 按输出字节实际检测；
@@ -56,6 +60,7 @@ dsh plugin --profile web remove @chaoset/vision-router
 | `visionProvider` | `zai-open` | 视觉模型所在 provider |
 | `visionModel` | `glm-4v-flash` | 视觉模型 id（必须真实声明 image 输入，否则报错） |
 | `autoDiscover` | `true` | 配置的模型不可用时自动寻找支持图片的模型 |
+| `sourceHint` | `true` | 转述文本后附带图片来源说明（read_image 文件路径 / 粘贴无源文件提示 / 本地副本路径） |
 | `maxVisionTokens` | `2048` | 转述输出上限 |
 | `prompt` | 内置模板 | 转述提示词，`{count}` 为图片数 |
 | `compressImageBytes` | `4194304` | 压缩触发字节数 |
@@ -70,4 +75,6 @@ dsh plugin --profile web remove @chaoset/vision-router
 - 包装 `streamWithRegistration`（llm.stream 与 agent loop 两条路径的汇聚点）：
   含图且目标模型原生不支持时转述，替换 image block 为文本后透传
 - 进度提示仅在**真正发起转述**时显示（缓存命中的历史图片不打扰）
+- 来源标注不进缓存、逐请求计算：同一张图先是粘贴、后又经 `read_image` 读入时，
+  两个位置各自得到正确的来源描述
 - 主请求取消时转述随之中止（signal 透传）

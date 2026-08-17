@@ -145,6 +145,52 @@ const rawPasteBlock = { type: "image", mediaType: "image/png", data: "aGVsbG8=",
 const rawPaste = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [rawPasteBlock] }] };
 for await (const c of llmMock.streamWithRegistration(rawPaste)) {}
 check("VR: 粘贴 raw image 块不崩溃并转述", calls.transcription === 3 && calls.downstream[1].messages[0].content[0].type === "text");
+
+// ── vision-router 来源标注（sourceHint）────────────────────────────────
+// 粘贴/拖入的图片：转述文本后附带"无磁盘源文件，不要搜索"提示与显示名。
+const clipCaption = calls.downstream.at(-1).messages[0].content[0].text;
+check("VR: 粘贴图片标注来源（显示名+勿搜索）",
+  clipCaption.includes("clipboard.png") && clipCaption.includes("不存在于文件系统") && clipCaption.includes("不要尝试在文件系统里搜索"));
+
+// read_image 工具结果内的图片：来源标注提取 <path> 信封中的文件路径，信封文本保留。
+const toolImage = { type: "image", attachment: { attachmentId: "a2", mediaType: "image/png", bytes: 10, width: 10, height: 10 } };
+const readImageMsg = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [
+  { type: "tool-result", toolCallId: "c1", content: [
+    { type: "text", text: "<path>/tmp/shot.png</path>\n<type>image</type>\n<content>\nimage/png image, 10x10 px, 10 bytes\n</content>" },
+    toolImage,
+  ] },
+] }] };
+for await (const c of llmMock.streamWithRegistration(readImageMsg)) {}
+const toolResult = calls.downstream.at(-1).messages[0].content[0];
+check("VR: read_image 图片标注文件路径",
+  toolResult.content[1].type === "text" && toolResult.content[1].text.includes("read_image 从文件读取：/tmp/shot.png"));
+check("VR: read_image 信封保留", toolResult.content[0].text.includes("<path>/tmp/shot.png</path>"));
+
+// 本地附件副本：sha256 attachmentId + $DSH_HOME 下存在对象文件时标注落盘路径。
+const durableHome = fs.mkdtempSync(path.join(os.tmpdir(), "vr-durable-"));
+const sha = "ab".repeat(32);
+const objectFile = path.join(durableHome, "attachments", "v1", "objects", "ab", sha);
+fs.mkdirSync(path.dirname(objectFile), { recursive: true });
+fs.writeFileSync(objectFile, "png");
+process.env.DSH_HOME = durableHome;
+const durableImage = { type: "image", attachment: { attachmentId: `sha256:${sha}`, mediaType: "image/png", bytes: 3, width: 4, height: 4 } };
+for await (const c of llmMock.streamWithRegistration({ provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [durableImage] }] })) {}
+const durableCaption = calls.downstream.at(-1).messages[0].content[0].text;
+check("VR: 本地附件副本路径标注", durableCaption.includes(objectFile) && durableCaption.includes("原图副本"));
+delete process.env.DSH_HOME;
+fs.rmSync(durableHome, { recursive: true, force: true });
+
+// sourceHint 关闭后不再附带来源标注（转述本身不受影响）。
+ctx.gateway.set({ sourceHint: false });
+const hintOffImage = { type: "image", attachment: { attachmentId: "a4", mediaType: "image/png", bytes: 10, width: 10, height: 10 } };
+for await (const c of llmMock.streamWithRegistration({ provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [hintOffImage] }] })) {}
+const hintOffCaption = calls.downstream.at(-1).messages[0].content[0].text;
+check("VR: sourceHint 关闭不附带来源", hintOffCaption.includes("图片转述结果") && !hintOffCaption.includes("[图片来源"));
+ctx.gateway.set({ sourceHint: true });
+let hintRejected = false;
+try { ctx.gateway.set({ sourceHint: "yes" }); } catch { hintRejected = true; }
+check("VR: sourceHint 拒绝非法值", hintRejected === true);
+
 check("VR: remote 网关注册", ctx.gateway !== undefined && ctx.gateway.get().config.visionProvider === "zai-open");
 let invalidRejected = false;
 try { ctx.gateway.set({ maxVisionTokens: -1 }); } catch { invalidRejected = true; }

@@ -4,7 +4,7 @@ DSH（DeepSeek Harness）host 层全局插件的 npm 包（monorepo）：
 
 | 包 | 功能 |
 |---|---|
-| `@chaoset/vision-router` | 识图自动降级：纯文本模型收到图片时自动调用视觉模型转述 |
+| `@chaoset/vision-router` | 识图自动降级：纯文本模型收到图片时自动调用视觉模型转述（转述文本附带图片来源标注） |
 | `@chaoset/sandbox-extra-roots` | 沙盒额外允许写入目录（Seatbelt/bwrap/Landlock + fs fence） |
 | `@chaoset/adaptive-perf` | 极简性能自适应：标准/PTC 模式抑制运行时上下文并按需精简工具目录 |
 

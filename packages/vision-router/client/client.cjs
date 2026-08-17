@@ -32,6 +32,8 @@ window.__ModuleLoader__.load({
       visionProvider: "视觉模型提供方",
       visionModel: "视觉模型",
       autoDiscover: "自动发现（配置的模型不可用时）",
+      sourceHint: "来源标注（转述文本附带图片来源说明）",
+      fieldSourceHint: "read_image 的图片标注文件路径；粘贴/拖入的图片提示“无磁盘文件，请勿搜索”，并尽量给出 DSH 保存的原图副本路径",
       maxVisionTokens: "转述输出上限（token）",
       compressImageBytes: "压缩触发字节数",
       compressMaxDimension: "压缩最大边长（px）",
@@ -55,6 +57,8 @@ window.__ModuleLoader__.load({
       visionProvider: "Vision provider",
       visionModel: "Vision model",
       autoDiscover: "Auto-discover (when configured model is unavailable)",
+      sourceHint: "Annotate image source in transcription",
+      fieldSourceHint: "read_image images get their file path; pasted/dragged images get a \"no on-disk file, do not search\" note plus the stored copy path when resolvable",
       maxVisionTokens: "Max transcription tokens",
       compressImageBytes: "Compress trigger bytes",
       compressMaxDimension: "Compress max dimension (px)",
@@ -243,6 +247,13 @@ window.__ModuleLoader__.load({
             value: draft === null ? false : draft.autoDiscover,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, autoDiscover: v })
+          }),
+          react.createElement(BoolField, {
+            label: t("sourceHint"),
+            hint: t("fieldSourceHint"),
+            value: draft === null ? false : draft.sourceHint,
+            disabled: draft === null,
+            onChange: (v) => setDraft({ ...draft, sourceHint: v })
           }),
           react.createElement(NumField, {
             t,
