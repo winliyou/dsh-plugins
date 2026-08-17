@@ -965,21 +965,23 @@ check("SA: list 折叠标题", listResult.items.find((i) => i.sessionId === "s1"
   && listResult.items.find((i) => i.sessionId === "s2").title === null);
 check("SA: list 带文件元信息", listResult.items.every((i) => i.size > 0 && i.updatedAt > 0 && i.live === false));
 
+// 宿主归档不停止内存会话、web 重连还会恢复旧 tab，但归档会话已从会话
+// 列表移除、无法继续对话——内存存在不构成删除风险，不再标记"运行中"。
 sessions.set("s1", {});
 const listLive = await archiveHost.list();
-check("SA: list 标记 live 会话", listLive.items.find((i) => i.sessionId === "s1").live === true);
-sessions.delete("s1");
+check("SA: list 归档会话不标运行中（内存存在也不）", listLive.items.find((i) => i.sessionId === "s1").live === false);
 
 const detailResult = await archiveHost.detail("s1");
 check("SA: detail 提取标题与消息", detailResult.title === "第一个归档会话"
   && detailResult.messages.length === 2
   && detailResult.messages[0].role === "user"
   && detailResult.messages[1].text.includes("可以帮你"));
+check("SA: detail 归档会话不标运行中", detailResult.live === false);
 
-sessions.set("s1", {});
-const delLive = await archiveHost.deleteArchived(["s1"]);
+// busy 兜底：归档 + 仍在内存 + 文件 60s 内有写入（归档瞬间还在生成）→ 拒绝。
+const delBusy = await archiveHost.deleteArchived(["s1"]);
+check("SA: busy 兜底拒绝删除（内存+新 mtime）", delBusy.deleted.length === 0 && delBusy.failed[0].reason === "busy");
 sessions.delete("s1");
-check("SA: 删除拒绝 live 会话", delLive.deleted.length === 0 && delLive.failed[0].reason === "live");
 
 const delResult = await archiveHost.deleteArchived(["s1", "s-ghost"]);
 check("SA: 批量删除归档会话", delResult.deleted.includes("s1") && delResult.deleted.includes("s-ghost")

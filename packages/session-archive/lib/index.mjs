@@ -101,8 +101,27 @@ export function createArchiveHost(ctx, cfg) {
   const registry = ctx.workspaceRegistry;
   const persistence = ctx.sessionPersistence;
 
-  /** 会话是否仍在内存中运行（live）。 */
-  const isLive = (sessionId) => ctx.sessions.get(sessionId) !== undefined;
+  /** 当前归档集合快照。 */
+  const archivedSet = () => new Set(
+    typeof registry.archivedSessionIds === 'function'
+      ? registry.archivedSessionIds()
+      : (Array.isArray(registry.archivedSessionIds) ? registry.archivedSessionIds : []),
+  );
+
+  /** 会话是否"活跃"（不能安全删除）。
+   * 宿主的 archiveSession 只改归档注册表、不停止内存会话，web 客户端
+   * 重连还会把旧 tab 恢复进内存——归档会话因此长期"内存存在"。但归档
+   * 会话已从会话列表移除、无法继续对话，不会再写持久化文件，删除安全；
+   * 若把内存存在当作 live，归档面板会永远显示"运行中"且无法勾选删除。
+   * 因此 live 仅对"内存存在且**未归档**"的会话为真（防将来误用），
+   * 归档面板中恒为 false。 */
+  const isLive = (sessionId) =>
+    ctx.sessions.get(sessionId) !== undefined && !archivedSet().has(sessionId);
+
+  /** 归档瞬间的生成流兜底：会话仍在内存且文件最近有写入（60s 内）时
+   * 视为忙碌——删除文件后进行中的请求会把半截日志 append 回来。 */
+  const isBusy = (sessionId, file) =>
+    file !== null && ctx.sessions.get(sessionId) !== undefined && Date.now() - file.mtimeMs < 60_000;
 
   /** 从归档集合移除若干 id（恢复/删除共用），返回实际移除的 id。 */
   async function removeFromArchiveSet(ids) {
@@ -158,8 +177,7 @@ export function createArchiveHost(ctx, cfg) {
   return {
     /** 列出全部归档会话（存在性过滤：文件已删的幽灵归档记录不显示）。 */
     async list() {
-      const rawArchived = typeof registry.archivedSessionIds === 'function' ? registry.archivedSessionIds() : registry.archivedSessionIds;
-      const archived = Array.isArray(rawArchived) ? rawArchived : [];
+      const archived = [...archivedSet()];
       if (archived.length === 0) return { items: [] };
       const headers = await persistence.list();
       const byId = new Map(headers.map((header) => [header.id, header]));
@@ -227,6 +245,10 @@ export function createArchiveHost(ctx, cfg) {
         const file = await fileInfo(header);
         if (file === null) {
           deleted.push(sessionId);
+          continue;
+        }
+        if (isBusy(sessionId, file)) {
+          failed.push({ sessionId, reason: 'busy' });
           continue;
         }
         try {
