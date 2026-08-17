@@ -1,6 +1,6 @@
 {
   "name": "@chaoset/vision-router",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "DSH host plugin: route image requests to a vision model for transcription when the session model is text-only",
   "type": "module",
   "license": "MIT",

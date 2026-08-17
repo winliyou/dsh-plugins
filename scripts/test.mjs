@@ -132,6 +132,39 @@ for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf"]) {
   }
 }
 
+// ── settings namespace 注册（宿主 rc.7+ 设置页可见性）──────────────────
+// 设置页 describe() 只枚举 ctx.settings.register 注册过的 namespace；未注册
+// 时卡片即使带正确 key 也不渲染。仓库测试环境无 @deepseek-ai/schemastery，
+// 用 stub schema 库直接驱动三个包导出的注册函数。
+{
+  const vrNS = await import(path.join(ROOT, "packages/vision-router/lib/index.mjs"));
+  const sbNS = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/index.mjs"));
+  const apNS = await import(path.join(ROOT, "packages/adaptive-perf/lib/index.mjs"));
+  check("settings: 三包均导出注册函数",
+    typeof vrNS.registerSettingsNamespace === "function"
+    && typeof sbNS.registerSettingsNamespace === "function"
+    && typeof apNS.registerSettingsNamespace === "function");
+  const stubZ = {
+    object: (fields) => ({ stub: "object", fields }),
+    any: () => ({ stub: "any" }),
+    string: () => ({ stub: "string" }),
+  };
+  const registered = [];
+  const regCtx = {
+    inject(names, fn) { if (names.includes("settings")) fn(regCtx); },
+    settings: { register(ns, schema) { registered.push({ ns, schema }); } },
+    logger: { warn: () => {} },
+  };
+  check("settings: 注册 namespace 并传 buildSchema 产物",
+    vrNS.registerSettingsNamespace(regCtx, "visionRouterConfig", stubZ, (z) => z.object({ a: z.string() })) === true
+      && registered.length === 1 && registered[0].ns === "visionRouterConfig" && registered[0].schema.stub === "object");
+  regCtx.settings.register = () => { throw new Error('settings namespace "visionRouterConfig" is already registered'); };
+  check("settings: 重复注册静默忽略（HMR/多挂载点幂等）",
+    vrNS.registerSettingsNamespace(regCtx, "visionRouterConfig", stubZ, (z) => z.object({})) === true);
+  check("settings: schema 库缺失跳过", vrNS.registerSettingsNamespace(regCtx, "x", null, (z) => z.any()) === false);
+  check("settings: ctx 无 inject 跳过", vrNS.registerSettingsNamespace({}, "x", stubZ, (z) => z.any()) === false);
+}
+
 // ── vision-router ──────────────────────────────────────────────────────
 const { apply: applyVision } = await import(path.join(ROOT, "packages/vision-router/lib/index.mjs"));
 const calls = { transcription: 0, downstream: [], vision: [] };

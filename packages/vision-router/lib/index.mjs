@@ -49,6 +49,14 @@ try {
   console.warn('vision-router: settings gateway unavailable: ' + (error && error.message || error));
 }
 
+// 宿主 settings 体系的 schema 库（dsh-settings 0.1.0-rc.7+ 用 schemastery）。
+// DSH profile 的 hoisted node_modules 直接解析；仓库测试环境无此包时为
+// null，settings namespace 注册段静默跳过（fail-safe）。
+let Schema = null;
+try {
+  ({ default: Schema } = await import('@deepseek-ai/schemastery'));
+} catch {}
+
 export const name = 'vision-router';
 
 /** attachments 为可选服务（apply 内 ctx.get 获取），不参与 inject，避免组合缺服务时启动失败。 */
@@ -734,6 +742,30 @@ async function transcribeMessage(ctx, state, vision, message, sessionId, signal,
   return replaced === message.content ? message : { ...message, content: replaced };
 }
 
+/** 把配置 namespace 注册进宿主 settings 体系（dsh-settings 0.1.0-rc.7+）。
+ * 设置页 describe() 只枚举 settings.register 注册过的 namespace；本插件
+ * 的卡片读写不经过宿主 settings 文档，注册只为让卡片出现在设置页。
+ * fail-safe（schema 库/服务缺失静默跳过）+ 幂等（重复注册忽略）。
+ * 导出以便测试注入 Schema stub。 */
+export function registerSettingsNamespace(ctx, ns, schemaLib, buildSchema) {
+  if (schemaLib === null || schemaLib === undefined) return false;
+  if (ctx === null || typeof ctx !== 'object' || typeof ctx.inject !== 'function') return false;
+  try {
+    ctx.inject(['settings'], (settingsCtx) => {
+      try {
+        settingsCtx.settings.register(ns, buildSchema(schemaLib));
+      } catch (error) {
+        const message = String(error && error.message || error);
+        if (!message.includes('already registered')) throw error;
+      }
+    });
+    return true;
+  } catch (error) {
+    try { ctx.logger?.warn?.(`vision-router: settings namespace registration skipped: ${error && error.message || error}`); } catch {}
+    return false;
+  }
+}
+
 export function apply(ctx, config) {
   // fail-safe：初始化失败只记录，绝不让本插件拖垮 harness（host 层挂载时
   // entry 异常会导致进程启动失败）。
@@ -812,6 +844,23 @@ export function apply(ctx, config) {
     if (PluginConfigGateway !== null) {
       ctx.plugin(PluginConfigGateway, { store, serviceKey: 'visionRouterConfig' });
     }
+
+    // 注册进宿主 settings 体系（可见性）：设置页的 configurable-plugins 标签
+    // 用 settings.describe() 枚举 registrations，未注册的 namespace 即使卡片
+    // 带了正确的 key 也不渲染。注册只提供 describe 元数据；卡片的实际读写
+    // 仍走上面的 config gateway（config.json 权威、热更新）。
+    registerSettingsNamespace(ctx, 'visionRouterConfig', Schema, (z) => z.object({
+      visionProvider: z.string().default(DEFAULT_CONFIG.visionProvider),
+      visionModel: z.string().default(DEFAULT_CONFIG.visionModel),
+      autoDiscover: z.boolean().default(DEFAULT_CONFIG.autoDiscover),
+      maxVisionTokens: z.number().default(DEFAULT_CONFIG.maxVisionTokens),
+      prompt: z.string().default(DEFAULT_CONFIG.prompt),
+      sourceHint: z.boolean().default(DEFAULT_CONFIG.sourceHint),
+      compressImageBytes: z.number().default(DEFAULT_CONFIG.compressImageBytes),
+      compressMaxDimension: z.number().default(DEFAULT_CONFIG.compressMaxDimension),
+      compressTargetBytes: z.number().default(DEFAULT_CONFIG.compressTargetBytes),
+      compressFallbackDimension: z.number().default(DEFAULT_CONFIG.compressFallbackDimension),
+    }));
 
     // ── 0) 包装 attachments.saveImage：大图/超像素图自动压缩 ──────────────────
     // 与 llm 包装相互独立：每次 apply 都尝试（attachments 后挂载也能补装），

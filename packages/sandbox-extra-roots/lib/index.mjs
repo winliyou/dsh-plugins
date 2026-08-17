@@ -44,6 +44,14 @@ try {
   console.warn("sandbox-extra-roots: settings gateway unavailable: " + (error && error.message || error));
 }
 
+// 宿主 settings 体系的 schema 库（dsh-settings 0.1.0-rc.7+ 用 schemastery）。
+// DSH profile 的 hoisted node_modules 直接解析；仓库测试环境无此包时为
+// null，settings namespace 注册段静默跳过（fail-safe）。
+let Schema = null;
+try {
+  ({ default: Schema } = await import("@deepseek-ai/schemastery"));
+} catch {}
+
 export const name = "sandbox-extra-roots";
 
 export const inject = ["sandbox", "fs", "sandboxPolicy"];
@@ -68,6 +76,30 @@ function getLandlockExec() {
     .then((landlock) => landlock.launcherPath())
     .catch(() => null);
   return landlockExecPromise;
+}
+
+/** 把配置 namespace 注册进宿主 settings 体系（dsh-settings 0.1.0-rc.7+）。
+ * 设置页 describe() 只枚举 settings.register 注册过的 namespace；本插件
+ * 的卡片读写不经过宿主 settings 文档，注册只为让卡片出现在设置页。
+ * fail-safe（schema 库/服务缺失静默跳过）+ 幂等（重复注册忽略）。
+ * 导出以便测试注入 Schema stub。 */
+export function registerSettingsNamespace(ctx, ns, schemaLib, buildSchema) {
+  if (schemaLib === null || schemaLib === undefined) return false;
+  if (ctx === null || typeof ctx !== "object" || typeof ctx.inject !== "function") return false;
+  try {
+    ctx.inject(["settings"], (settingsCtx) => {
+      try {
+        settingsCtx.settings.register(ns, buildSchema(schemaLib));
+      } catch (error) {
+        const message = String(error && error.message || error);
+        if (!message.includes("already registered")) throw error;
+      }
+    });
+    return true;
+  } catch (error) {
+    try { ctx.logger?.warn?.(`sandbox-extra-roots: settings namespace registration skipped: ${error && error.message || error}`); } catch {}
+    return false;
+  }
 }
 
 export async function apply(ctx, config) {
@@ -148,6 +180,13 @@ export async function apply(ctx, config) {
     if (PluginConfigGateway !== null) {
       ctx.plugin(PluginConfigGateway, { store, serviceKey: "sandboxExtraRootsConfig" });
     }
+
+    // 注册进宿主 settings 体系(可见性)：设置页用 settings.describe() 枚举
+    // registrations，未注册的 namespace 即使卡片带正确的 key 也不渲染。
+    // 卡片的实际读写仍走上面的 config gateway(config.json 权威、热更新)。
+    registerSettingsNamespace(ctx, "sandboxExtraRootsConfig", Schema, (z) => z.object({
+      extraWritableRoots: z.array(z.string()).default([]),
+    }));
 
     // remote.set 严格校验：非法数组/相对路径直接拒绝，UI 能立即看到原因。
     function validateSandboxConfig(partial) {

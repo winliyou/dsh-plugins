@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/winliyou/dsh-plugins) (2026-08-17)
+
+
+### Bug Fixes
+
+* register the config namespace into the host settings service (`ctx.settings.register`) so the settings page's configurable-plugins tab lists it: the tab dispatches cards from `settings.describe()`, and a namespace that was never registered renders nothing even with a correctly keyed card. Registration is visibility-only — the card still reads/writes through the plugin's own config gateway (config.json stays authoritative, hot-reload preserved). Fail-safe when schemastery or the settings service is unavailable; duplicate registrations (HMR) are ignored
+
 ## [0.4.1](https://github.com/winliyou/dsh-plugins) (2026-08-17)
 
 

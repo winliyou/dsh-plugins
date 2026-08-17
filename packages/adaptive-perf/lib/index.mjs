@@ -89,6 +89,14 @@ try {
   console.warn('adaptive-perf: settings gateway unavailable: ' + (error && error.message || error));
 }
 
+// 宿主 settings 体系的 schema 库（dsh-settings 0.1.0-rc.7+ 用 schemastery）。
+// DSH profile 的 hoisted node_modules 直接解析；仓库测试环境无此包时为
+// null，settings namespace 注册段静默跳过（fail-safe）。
+let Schema = null;
+try {
+  ({ default: Schema } = await import('@deepseek-ai/schemastery'));
+} catch {}
+
 export const name = 'adaptive-perf';
 
 /**
@@ -913,6 +921,30 @@ export function applyBootstrapBudget(config, promoted, maxTokens) {
 
 // ── host 插件 ────────────────────────────────────────────────────────────
 
+/** 把配置 namespace 注册进宿主 settings 体系（dsh-settings 0.1.0-rc.7+）。
+ * 设置页 describe() 只枚举 settings.register 注册过的 namespace；本插件
+ * 的卡片读写不经过宿主 settings 文档，注册只为让卡片出现在设置页。
+ * fail-safe（schema 库/服务缺失静默跳过）+ 幂等（重复注册忽略）。
+ * 导出以便测试注入 Schema stub。 */
+export function registerSettingsNamespace(ctx, ns, schemaLib, buildSchema) {
+  if (schemaLib === null || schemaLib === undefined) return false;
+  if (ctx === null || typeof ctx !== 'object' || typeof ctx.inject !== 'function') return false;
+  try {
+    ctx.inject(['settings'], (settingsCtx) => {
+      try {
+        settingsCtx.settings.register(ns, buildSchema(schemaLib));
+      } catch (error) {
+        const message = String(error && error.message || error);
+        if (!message.includes('already registered')) throw error;
+      }
+    });
+    return true;
+  } catch (error) {
+    try { ctx.logger?.warn?.(`adaptive-perf: settings namespace registration skipped: ${error && error.message || error}`); } catch {}
+    return false;
+  }
+}
+
 export async function apply(ctx, config, options = {}) {
   // fail-safe：初始化失败只记录，绝不让本插件拖垮 harness（host 层挂载时
   // entry 异常会导致进程启动失败）。
@@ -1546,6 +1578,13 @@ export async function apply(ctx, config, options = {}) {
     if (PluginConfigGateway !== null) {
       ctx.plugin(PluginConfigGateway, { store, serviceKey: 'adaptivePerfConfig' });
     }
+
+    // 注册进宿主 settings 体系（可见性）：设置页用 settings.describe() 枚举
+    // registrations，未注册的 namespace 即使卡片带正确的 key 也不渲染。
+    // 卡片的实际读写仍走上面的 config gateway（config.json 权威、热更新）。
+    // 配置为多层嵌套结构（families/bootstrap/minimalPrompt…），schema 用 any
+    // 透传——describe 元数据只服务于可见性，卡片不读取它。
+    registerSettingsNamespace(ctx, 'adaptivePerfConfig', Schema, (z) => z.any());
 
     // 卸载清理：释放全部会话副作用与监听。
     ctx.effect(() => () => {
