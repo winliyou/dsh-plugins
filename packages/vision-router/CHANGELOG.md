@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.0](https://github.com/winliyou/dsh-plugins) (2026-08-17)
+
+
+### Features
+
+* **re-look on follow-up**: transcription context and the caption cache key now include the user's latest question (the last non-empty user message in the request). When the user asks for image details in a later turn, historical images are re-transcribed by the vision model with the new question — matching how a native multimodal model re-examines the original image on every turn. Unchanged context (retries, agent tool-loop intermediate turns) still hits the cache
+* exhaustive transcription prompt by default: transcribe all visible text verbatim, report chart values and spatial relationships, prioritize text/numbers when length-limited — the caption is consumed by a model that cannot see the image
+* multi-image positional replacement: each image is replaced in place by a numbered placeholder with inline provenance; the joint caption sits at the first image's position, preserving "which image goes with which text" semantics
+* transcribe multiple image-bearing messages in parallel, and show the progress hint at most once per request (no spam when a follow-up re-transcribes several historical images)
+
 ## [0.3.0](https://github.com/winliyou/dsh-plugins) (2026-08-17)
 
 

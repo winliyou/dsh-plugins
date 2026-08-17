@@ -81,7 +81,7 @@ for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf"]) {
 
 // ── vision-router ──────────────────────────────────────────────────────
 const { apply: applyVision } = await import(path.join(ROOT, "packages/vision-router/lib/index.mjs"));
-const calls = { transcription: 0, downstream: [] };
+const calls = { transcription: 0, downstream: [], vision: [] };
 const CATALOG = {
   "zai-open": [
     { id: "glm-4v-flash", name: "GLM-4V-Flash", inputModalities: ["text", "image"] },
@@ -99,6 +99,7 @@ const llmMock = {
   streamWithRegistration(options) {
     if (options.messages && options.messages.length === 1 && options.messages[0].role === "user" && options.messages[0].content.some((b) => b.type === "image")) {
       calls.transcription += 1;
+      calls.vision.push(options);
       return (async function* () { yield { type: "text-delta", text: "图片转述结果" }; yield { type: "finish", reason: { kind: "success" } }; })();
     }
     calls.downstream.push(options);
@@ -129,22 +130,36 @@ for await (const c of llmMock.streamWithRegistration(withImage)) {}
 check("VR: 含图转述+替换", calls.transcription === 1 && calls.downstream[0].messages[0].content[0].type === "text");
 const progressCount = appended.filter((a) => a.t === "assistant/chunk" && a.d.chunk.text.includes("已收到图片")).length;
 check("VR: 提示 1 次", progressCount === 1);
-const before = appended.length;
-const textAfter = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [
+check("VR: 转述请求使用详尽 prompt（逐字转录指引）", calls.vision[0].messages[0].content[0].text.includes("逐字转录"));
+
+// ── vision-router 追问重看（re-look）───────────────────────────────────
+// 用户追问图片细节：历史图片带着最新问题重新交给视觉模型（对齐原生多模态
+// 每轮带原图重新看图的行为），转述请求文本携带"用户当前最新的问题"。
+const followupReq = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [
   { role: "user", content: [imageBlock] },
-  { role: "user", content: [{ type: "text", text: "继续" }] },
+  { role: "assistant", content: [{ type: "text", text: "这张图是一个示例。" }] },
+  { role: "user", content: [{ type: "text", text: "左下角写的是什么？" }] },
 ] };
-for await (const c of llmMock.streamWithRegistration(textAfter)) {}
-check("VR: 普通文本+历史图不再提示", appended.length === before);
+for await (const c of llmMock.streamWithRegistration(followupReq)) {}
+check("VR: 追问触发历史图片重新转述", calls.transcription === 2);
+const followVisionText = calls.vision[1].messages[0].content[0].text;
+check("VR: 重转述请求携带最新问题", followVisionText.includes("用户当前最新的问题") && followVisionText.includes("左下角写的是什么？"));
+check("VR: 追问时重新提示", appended.filter((a) => a.t === "assistant/chunk" && a.d.chunk.text.includes("已收到图片")).length === 2);
+// 上下文不变（重试、agent 工具循环中间轮）命中缓存：不重复转述、不提示。
+const visionBeforeRetry = calls.transcription;
+const appendedBeforeRetry = appended.length;
+for await (const c of llmMock.streamWithRegistration(followupReq)) {}
+check("VR: 上下文不变命中缓存", calls.transcription === visionBeforeRetry && appended.length === appendedBeforeRetry);
+
 const reAsk = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [
   { role: "user", content: [{ type: "text", text: "图片里的文字是什么？" }, imageBlock] },
 ] };
 for await (const c of llmMock.streamWithRegistration(reAsk)) {}
-check("VR: 同一图片+不同问题不误用缓存", calls.transcription === 2);
+check("VR: 同一图片+不同问题不误用缓存", calls.transcription === 3);
 const rawPasteBlock = { type: "image", mediaType: "image/png", data: "aGVsbG8=", name: "clipboard.png" };
 const rawPaste = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [rawPasteBlock] }] };
 for await (const c of llmMock.streamWithRegistration(rawPaste)) {}
-check("VR: 粘贴 raw image 块不崩溃并转述", calls.transcription === 3 && calls.downstream[1].messages[0].content[0].type === "text");
+check("VR: 粘贴 raw image 块不崩溃并转述", calls.transcription === 4 && calls.downstream.at(-1).messages[0].content[0].type === "text");
 
 // ── vision-router 来源标注（sourceHint）────────────────────────────────
 // 粘贴/拖入的图片：转述文本后附带"无磁盘源文件，不要搜索"提示与显示名。
@@ -185,11 +200,42 @@ ctx.gateway.set({ sourceHint: false });
 const hintOffImage = { type: "image", attachment: { attachmentId: "a4", mediaType: "image/png", bytes: 10, width: 10, height: 10 } };
 for await (const c of llmMock.streamWithRegistration({ provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [hintOffImage] }] })) {}
 const hintOffCaption = calls.downstream.at(-1).messages[0].content[0].text;
-check("VR: sourceHint 关闭不附带来源", hintOffCaption.includes("图片转述结果") && !hintOffCaption.includes("[图片来源"));
+check("VR: sourceHint 关闭不附带来源", hintOffCaption.includes("图片转述结果") && hintOffCaption.includes("[图片 1]") && !hintOffCaption.includes("[图片 1｜"));
 ctx.gateway.set({ sourceHint: true });
 let hintRejected = false;
 try { ctx.gateway.set({ sourceHint: "yes" }); } catch { hintRejected = true; }
 check("VR: sourceHint 拒绝非法值", hintRejected === true);
+
+// ── vision-router 多图位置保留 ─────────────────────────────────────────
+// 一条消息里多张图与文本交错：每张图原位置替换为带编号的占位（来源内联），
+// 联合转述正文放在首张图的位置，"哪张图对应哪段话"的语义不丢失。
+const imgA5 = { type: "image", attachment: { attachmentId: "a5", mediaType: "image/png", bytes: 10, width: 10, height: 10 } };
+const imgA6 = { type: "image", attachment: { attachmentId: "a6", mediaType: "image/jpeg", bytes: 10, width: 10, height: 10 } };
+for await (const c of llmMock.streamWithRegistration({ provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [
+  { type: "text", text: "对比这两张图" }, imgA5, { type: "text", text: "中间的说明" }, imgA6,
+] }] })) {}
+const multiBlocks = calls.downstream.at(-1).messages[0].content;
+check("VR: 多图逐位替换保留位置",
+  multiBlocks.length === 4
+  && multiBlocks[1].text.startsWith("[图片 1｜") && multiBlocks[1].text.includes("图片转述结果")
+  && multiBlocks[2].text === "中间的说明"
+  && multiBlocks[3].text.startsWith("[图片 2｜") && !multiBlocks[3].text.includes("图片转述结果"));
+check("VR: 多图联合转述头", multiBlocks[1].text.includes("[视觉模型对全部 2 张图片的分析"));
+check("VR: 联合转述一次请求带全部图", calls.vision.at(-1).messages[0].content.filter((b) => b.type === "image").length === 2);
+
+// ── vision-router agent 场景（tool-result 无顶层文本）─────────────────
+// read_image 的 tool-result 消息没有顶层文本："用户当前关注"向前回溯到本次
+// 任务描述并带入转述；agent 工具循环的后续轮次上下文不变，命中缓存。
+const agentToolImage = { type: "image", attachment: { attachmentId: "a8", mediaType: "image/png", bytes: 10, width: 10, height: 10 } };
+const agentReq = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [
+  { role: "user", content: [{ type: "text", text: "看看这个目录里的截图配色" }] },
+  { role: "user", content: [{ type: "tool-result", toolCallId: "c9", content: [agentToolImage] }] },
+] };
+for await (const c of llmMock.streamWithRegistration(agentReq)) {}
+check("VR: agent tool-result 图回溯任务文本", calls.vision.at(-1).messages[0].content[0].text.includes("用户当前最新的问题") && calls.vision.at(-1).messages[0].content[0].text.includes("看看这个目录里的截图配色"));
+const agentVisionCount = calls.transcription;
+for await (const c of llmMock.streamWithRegistration(agentReq)) {}
+check("VR: agent 中间轮命中缓存", calls.transcription === agentVisionCount);
 
 check("VR: remote 网关注册", ctx.gateway !== undefined && ctx.gateway.get().config.visionProvider === "zai-open");
 let invalidRejected = false;

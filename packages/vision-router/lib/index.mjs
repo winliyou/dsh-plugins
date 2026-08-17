@@ -16,11 +16,16 @@
  *      原生不支持图片时，把每条含图消息交给视觉模型转述，将 image block
  *      替换为文本描述块后再向下游分发；否则原样透传。目标模型的原生能力
  *      通过 listModels 读取（不受 resolveModelInfo 包装影响）。
- *   3. 来源标注（sourceHint）：替换文本在转述内容后附带每张图片的来源——
- *      read_image 工具结果里的图片给出 <path> 信封中的文件路径；对话框
- *      粘贴/拖入的图片明确告知"磁盘上没有源文件，不要搜索"，并尽可能给
- *      出 DSH 本地附件副本的落盘路径（sha256 attachmentId 可推导），避免
- *      主模型浪费轮次去找一个（可能不存在的）文件。
+ *   3. 追问重看（re-look）：转述上下文与缓存键纳入"用户当前关注"——请求
+ *      中最后一条带非空文本的 user 消息。用户追问图片细节时，历史图片会
+ *      带着新问题重新交给视觉模型分析（与原生多模态每轮带原图重新看图对
+ *      齐）；上下文未变时（重试、agent 工具循环的中间轮）命中缓存不重复
+ *      调用。多条含图消息并行转述，降低多图场景的等待时间。
+ *   4. 来源标注（sourceHint）：图片原位置替换为带编号的占位标记，来源
+ *      （read_image 的 <path> 信封文件路径 / 粘贴图"磁盘无源文件，不要
+ *      搜索"提示 / DSH 本地附件副本落盘路径）内联在标记里；多张图片各自
+ *      保留出现位置，联合转述正文放在首张图片的位置，主模型既知道每个
+ *      位置有一张图，也不必浪费轮次去文件系统里找（可能不存在的）文件。
  *
  * 配置：cordis.patch.yml 的 config（安装默认）与
  *       ~/.dsh/plugins/vision-router/config.json（设置页 UI，权威）合并。
@@ -58,8 +63,10 @@ const DEFAULT_CONFIG = {
   autoDiscover: true,
   /** 转述请求的最大输出 token。 */
   maxVisionTokens: 2048,
-  /** 转述提示词；{count} 替换为图片数量。 */
-  prompt: '用户发来了一张图片。请先直接回答用户针对图片提出的问题（若有），再简要描述图片内容（主要物体、颜色、文字、布局等）。请用中文回答。',
+  /** 转述提示词；{count} 替换为图片数量。默认为"详尽转述"模板：转述结果
+   * 供一个看不到图片的模型使用，因此要求逐字转录文字、报告数值与空间
+   * 关系，并在篇幅受限时优先保文字与数值。 */
+  prompt: '用户发来了 {count} 张图片。请先直接回答用户针对图片提出的问题（若有），再为一位无法看到图片的 AI 助手详尽转述图片内容：逐字转录图中全部可见文字（保留原文语言，按阅读顺序）；报告图表的类型、坐标轴与具体数值；描述主要物体/人物及其空间位置关系（上下左右、前景背景）与颜色风格；多张图片按出现顺序分别说明并指出相互关系。篇幅有限时，优先保证文字转录与数值的完整准确。请用中文回答。',
   /** 转述文本后附带图片来源说明（文件路径 / 粘贴无源文件提示 / 本地副本路径）。 */
   sourceHint: true,
   /** 超过该字节数的图片在保存前自动压缩（sharp）。 */
@@ -187,28 +194,57 @@ function collectImages(content, out, origin) {
   return text;
 }
 
-/** 把图片块替换为一段转述文本；未替换的消息保持原引用。 */
-function replaceImages(content, caption) {
+/** 把图片块按收集顺序逐个替换为 replacements[i] 的文本块，保留每张图片
+ * 原本的出现位置（多图与文本交错时"哪张图对应哪段话"的语义不丢失）。
+ * 遍历顺序与 collectImages 的前序 DFS 严格一致，索引一一对应。 */
+function replaceImages(content, replacements) {
   let changed = false;
-  const out = [];
-  for (const block of content) {
-    if (block === null || typeof block !== 'object') {
+  let index = 0;
+  const walk = (blocks) => {
+    const out = [];
+    for (const block of blocks) {
+      if (block === null || typeof block !== 'object') {
+        out.push(block);
+        continue;
+      }
+      if (isImageBlock(block)) {
+        changed = true;
+        const replacement = replacements[index];
+        index += 1;
+        if (typeof replacement === 'string' && replacement.length > 0) {
+          out.push({ type: 'text', text: replacement });
+        }
+        continue;
+      }
+      if (block.type === 'tool-result' && hasImage(block.content)) {
+        out.push({ ...block, content: walk(block.content) });
+        continue;
+      }
       out.push(block);
-      continue;
     }
-    if (isImageBlock(block)) {
-      if (!changed) out.push({ type: 'text', text: caption });
-      changed = true;
-      continue;
-    }
-    if (block.type === 'tool-result' && hasImage(block.content)) {
-      out.push({ ...block, content: replaceImages(block.content, caption) });
-      changed = true;
-      continue;
-    }
-    out.push(block);
-  }
+    return out;
+  };
+  const out = walk(content);
   return changed ? out : content;
+}
+
+/** 提取请求中"用户当前关注"：从后往前第一条带非空顶层文本的 user 消息。
+ * 追问场景它是最新问题（触发历史图片带新问题重新转述）；agent 工具循环
+ * 里 tool-result 消息没有顶层文本，向前回溯到本次任务描述。 */
+function latestUserText(messages) {
+  if (!Array.isArray(messages)) return '';
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message === null || typeof message !== 'object' || message.role !== 'user') continue;
+    if (!Array.isArray(message.content)) continue;
+    let text = '';
+    for (const block of message.content) {
+      if (block !== null && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') text += block.text;
+    }
+    text = text.trim();
+    if (text.length > 0) return text;
+  }
+  return '';
 }
 
 /** 消费一个 chunk 流，拼接文本；error/aborted finish 时抛错（带 signal 时以信号为准）。 */
@@ -436,7 +472,8 @@ async function resolveVisionModel(ctx, state) {
   throw new Error('vision-router: no image-capable model found; add one to the model catalog (e.g. zai-open / glm-4v-flash) or set visionProvider/visionModel');
 }
 
-/** 基于一次路由决策的异步生成器：转述含图消息后调用 down(新 options)。 */
+/** 基于一次路由决策的异步生成器：转述含图消息后调用 down(新 options)。
+ * 含图消息并行转述（多图等待时间取决于最慢一次视觉调用，而非累加）。 */
 async function* routeOnce(ctx, state, options, down) {
   let supportsImage;
   try {
@@ -456,30 +493,31 @@ async function* routeOnce(ctx, state, options, down) {
     yield failChunk(error, options.signal);
     return;
   }
-  const messages = [];
-  let changed = false;
-  for (const message of options.messages) {
-    if (message === null || typeof message !== 'object' || !hasImage(message.content)) {
-      messages.push(message);
-      continue;
-    }
-    changed = true;
-    try {
-      // 进度提示在 transcribeMessage 内部、仅在真正发起转述时显示：
-      // 缓存命中的历史图片不打扰用户（普通文本请求不会再弹提示）。
-      messages.push(await transcribeMessage(ctx, state, vision, message, options.sessionId, options.signal));
-    } catch (error) {
-      ctx.logger.error(`vision-router: transcription failed for ${vision.provider}/${vision.model}: ${error.message}`);
-      yield failChunk(error, options.signal);
-      return;
-    }
+  // 追问重看：转述上下文与缓存键都纳入"用户当前关注"。追问时缓存未命中
+  // → 历史图片带着新问题重新转述；上下文未变（重试、agent 工具循环）时
+  // 命中缓存，不打扰。
+  const followup = latestUserText(options.messages);
+  // 进度提示按请求去重：并行转述多条消息（或一次追问触发多张历史图重转）
+  // 时只提示一次；全部命中缓存则不提示。
+  const progress = { shown: false };
+  let messages;
+  try {
+    messages = await Promise.all(options.messages.map((message) => {
+      if (message === null || typeof message !== 'object' || !hasImage(message.content)) return message;
+      return transcribeMessage(ctx, state, vision, message, options.sessionId, options.signal, followup, progress);
+    }));
+  } catch (error) {
+    ctx.logger.error(`vision-router: transcription failed for ${vision.provider}/${vision.model}: ${error.message}`);
+    yield failChunk(error, options.signal);
+    return;
   }
+  const changed = messages.some((message, i) => message !== options.messages[i]);
   if (!changed) {
     yield* down(options);
     return;
   }
   const routed = { ...options, messages };
-  ctx.logger.info(`vision-router: routed ${changed} image message(s) to ${vision.provider}/${vision.model} for ${options.provider}/${options.model}`);
+  ctx.logger.info(`vision-router: routed image message(s) to ${vision.provider}/${vision.model} for ${options.provider}/${options.model}`);
   yield* down(routed);
 }
 
@@ -601,24 +639,30 @@ async function normalizeImageBlock(ctx, image) {
   return image;
 }
 
-/** 转述一条含图消息，返回图片被替换为文本后的新消息。 */
-async function transcribeMessage(ctx, state, vision, message, sessionId, signal) {
+/** 转述一条含图消息，返回图片被替换为文本后的新消息。
+ * followup 为"用户当前关注"（请求中最后一条带非空文本的 user 消息），
+ * 纳入缓存键并作为转述上下文：追问细节时缓存未命中，历史图片带着新
+ * 问题重新交给视觉模型——对齐原生多模态"每轮请求都带原图"的行为。
+ * progress 为请求级共享的去重标记，仅本次请求第一次真实转述时提示。 */
+async function transcribeMessage(ctx, state, vision, message, sessionId, signal, followup, progress) {
   const cfg = state.cfg;
   const images = [];
-  const ownText = collectImages(message.content, images);
+  const ownText = collectImages(message.content, images).trim();
   if (images.length === 0) return message;
   const normalizedImages = await Promise.all(images.map((entry) => normalizeImageBlock(ctx, entry.image)));
 
   const cache = state.captionCache;
   // 缓存键不能只由图片决定：同一张图配不同用户问题/提示词会得到不同转述，
   // 只按图片 ID 缓存会让第二个问题错误复用第一个问题的回答。这里把视觉模型
-  // 路由、提示词与消息文本一起纳入摘要。
-  const userText = ownText.trim();
+  // 路由、提示词、消息文本与"用户当前关注"一起纳入摘要——followup 变化
+  // （追问、编辑重发）即视为需要重新看图；上下文不变（重试、agent 工具
+  // 循环的中间轮）则命中缓存，不重复调用视觉模型。
   const cacheMaterial = JSON.stringify({
     provider: vision.provider,
     model: vision.model,
     prompt: cfg.prompt,
-    userText,
+    userText: ownText,
+    followup: followup ?? '',
     imageIds: normalizedImages.map(imageStableId),
   });
   const cacheKey = `${sessionId ?? 'anon'}:${createHash('sha256').update(cacheMaterial).digest('hex')}`;
@@ -627,12 +671,18 @@ async function transcribeMessage(ctx, state, vision, message, sessionId, signal)
   if (cached !== void 0) {
     caption = cached;
   } else {
-    // 仅在实际发起转述时显示进度（含失败原因），避免普通文本请求被历史图片打扰。
-    progressChunk(ctx, sessionId, '🖼️ 已收到图片，正在分析…');
-    const prompt = cfg.prompt.replace('{count}', String(normalizedImages.length));
-    const parts = [{ type: 'text', text: userText.length > 0 ? `${prompt}
-
-用户针对这些图片的说明：${userText}` : prompt }, ...normalizedImages];
+    // 仅在实际发起转述时显示进度（含失败原因），且每次请求只提示一次，
+    // 避免追问触发多张历史图重转时刷屏；全部命中缓存时不打扰。
+    if (progress === void 0 || !progress.shown) {
+      if (progress !== void 0) progress.shown = true;
+      progressChunk(ctx, sessionId, '🖼️ 已收到图片，正在分析…');
+    }
+    const segments = [cfg.prompt.replace('{count}', String(normalizedImages.length))];
+    if (ownText.length > 0) segments.push(`用户发送图片时的说明：${ownText}`);
+    if (typeof followup === 'string' && followup.length > 0 && followup !== ownText) {
+      segments.push(`用户当前最新的问题（请重点围绕它重新查看图片）：${followup}`);
+    }
+    const parts = [{ type: 'text', text: segments.join('\n\n') }, ...normalizedImages];
     const visionOptions = {
       provider: vision.provider,
       model: vision.model,
@@ -659,21 +709,28 @@ async function transcribeMessage(ctx, state, vision, message, sessionId, signal)
   }
 
   // 来源标注在缓存之外逐请求计算：同一张图（缓存命中）随上下文不同可能
-  // 有不同来源描述（如先是粘贴、后又经 read_image 从文件读入）。
-  let finalCaption = caption;
+  // 有不同来源描述（如先是粘贴、后又经 read_image 从文件读入）。来源内联
+  // 到每张图片的占位标记里，多图各自保留出现位置；联合转述正文放在首张
+  // 图片的位置（视觉模型一次看到全部图，便于对比类问题）。
+  let sources = [];
   if (cfg.sourceHint) {
-    try {
-      const lines = [];
-      for (let i = 0; i < normalizedImages.length; i += 1) {
-        lines.push(`${i + 1}. ${await describeImageSource(normalizedImages[i], images[i].origin)}`);
-      }
-      finalCaption = `${caption}\n\n[图片来源|共 ${normalizedImages.length} 张]\n${lines.join('\n')}`;
-    } catch (error) {
-      try { ctx.logger?.warn?.(`vision-router: source hint failed: ${error && error.message || error}`); } catch {}
-    }
+    sources = await Promise.all(normalizedImages.map((image, i) =>
+      describeImageSource(image, images[i].origin).catch((error) => {
+        try { ctx.logger?.warn?.(`vision-router: source hint failed: ${error && error.message || error}`); } catch {}
+        return '';
+      })));
   }
+  const header = images.length > 1
+    ? `[视觉模型对全部 ${images.length} 张图片的分析（按 [图片 N] 出现顺序）]`
+    : '[视觉模型图片分析]';
+  const replacements = normalizedImages.map((_, i) => {
+    const label = typeof sources[i] === 'string' && sources[i].length > 0
+      ? `[图片 ${i + 1}｜${sources[i]}]`
+      : `[图片 ${i + 1}]`;
+    return i === 0 ? `${label}\n\n${header}\n${caption}` : label;
+  });
 
-  const replaced = replaceImages(message.content, finalCaption);
+  const replaced = replaceImages(message.content, replacements);
   return replaced === message.content ? message : { ...message, content: replaced };
 }
 
