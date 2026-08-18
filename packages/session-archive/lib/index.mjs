@@ -337,7 +337,6 @@ export function apply(ctx, config) {
   });
   // 启动时也以 config.json（若有）为权威，和其余插件保持一致。
   Object.assign(cfg, normalizeConfig(store.effective()));
-  ctx.effect(() => store.dispose?.());
 
   if (SessionArchiveGateway !== null) {
     ctx.plugin(SessionArchiveGateway, { host: createArchiveHost(ctx, cfg), serviceKey: 'sessionArchive' });
