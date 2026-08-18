@@ -8,7 +8,9 @@
     "lib",
     "client",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "exports": {
     ".": "./lib/index.mjs",
