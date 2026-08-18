@@ -67,7 +67,7 @@ check("shared: config-store/remote 三包保持一致",
   && visionRemoteSrc === sandboxRemoteSrc && sandboxRemoteSrc === adaptiveRemoteSrc);
 
 // ── npm bundle metadata（dsh plugin 自动激活依赖 dsh.bundle.patch）──────
-for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf"]) {
+for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf", "session-archive"]) {
   const pkgPath = path.join(ROOT, "packages", name, "package.json");
   const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
   const patchFile = path.join(ROOT, "packages", name, "cordis.patch.yml");
