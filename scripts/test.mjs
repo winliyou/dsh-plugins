@@ -132,6 +132,56 @@ for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf"]) {
     check(`client(${name}): settings.plugin.item 注册带 key=${key}`,
       item !== undefined && item.options.key === key);
   }
+
+// session-archive client 冒烟：侧边栏归档入口 + remote 贡献挂载。
+{
+  const requireCjs = createRequire(import.meta.url);
+  const reactStub = {
+    createElement: (...args) => ({ args }),
+    Fragment: "fragment",
+    useMemo: (fn) => fn(),
+    useState: (init) => [typeof init === "function" ? init() : init, () => {}],
+    useCallback: (fn) => fn,
+    useEffect: () => {},
+    useRef: () => ({ current: null }),
+  };
+  const entries = [];
+  const prevWindow = globalThis.window;
+  globalThis.window = { __ModuleLoader__: { load: (entry) => entries.push(entry) } };
+  let bundleExports;
+  try {
+    requireCjs(path.join(ROOT, "packages/session-archive/client/client.cjs"));
+    bundleExports = entries[0].factory((id) => {
+      if (id === "react") return reactStub;
+      throw new Error("unexpected require: " + id);
+    });
+  } finally {
+    if (prevWindow === void 0) delete globalThis.window;
+    else globalThis.window = prevWindow;
+  }
+  const registrations = [];
+  const mounted = [];
+  const archiveServiceStub = {
+    list: async () => ({ ok: true, value: { items: [] } }),
+    detail: async () => ({ ok: true, value: {} }),
+    delete: async () => ({ ok: true, value: { deleted: [], failed: [], removedFromArchive: 0 } }),
+    unarchive: async () => ({ ok: true, value: { restored: [], removedFromArchive: 0 } }),
+  };
+  const clientCtx = {
+    slots: {
+      inject: (slotName, fn) => { fn(); },
+      register: (options, component) => registrations.push({ options, component }),
+    },
+    locale: Object.assign(() => () => "", { bind: () => () => "", register: () => {} }),
+    effect: (fn) => {},
+    remote: { $mount: async (contribution) => mounted.push(contribution) },
+    get: (svc) => (svc === "remote.sessionArchive" ? archiveServiceStub : {}),
+  };
+  await bundleExports.apply(clientCtx);
+  const action = registrations.find((r) => r.options.name === "sidebar.footer.action");
+  check("client(session-archive): 侧边栏归档入口注册", action !== undefined && action.options.id === "session-archive");
+  check("client(session-archive): remote 贡献挂载", mounted.length === 1 && mounted[0].package === "@chaoset/session-archive");
+}
 }
 
 // ── settings namespace 注册（宿主 rc.7+ 设置页可见性）──────────────────
