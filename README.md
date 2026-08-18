@@ -34,11 +34,11 @@ packages/
 
 ## 开发
 
-`@deepseek-ai/*` 包不在公共 npm registry（内部发布），本地开发用链接：
+`@deepseek-ai/*` 内部包来自公共 registry，作为根部 `devDependencies` 由 bun 安装：
 
 ```bash
-bash scripts/link-deps.sh   # 把全局安装的 @deepseek-ai 链接到 node_modules
-npm test                    # 运行 scripts/test.mjs（config-store / remote / host 插件回归）
+bun install              # 安装依赖（含测试用的 @deepseek-ai/dsh-typert-protocol）
+bun test                 # 运行 scripts/test.mjs（config-store / remote / host 插件回归）
 ```
 
 ## 版本管理与发布
@@ -52,13 +52,13 @@ npm test                    # 运行 scripts/test.mjs（config-store / remote / 
 | bug 修复 | `PATCH`（最后一位） | 0.2.1 → 0.2.2 |
 
 **版本号在本地修改**，CI 不会改写版本号：直接编辑各包的 `package.json`
-的 `version` 字段（或 `npm version <major|minor|patch>`），提交并推送即可。
+的 `version` 字段（或 `bunx npm version <major|minor|patch>`），提交并推送即可。
 
 ```bash
 # 例：发一个 patch 修复
-cd packages/vision-router && npm version patch
-cd ../sandbox-extra-roots && npm version patch
-cd ../adaptive-perf && npm version patch
+cd packages/vision-router && bunx npm version patch
+cd ../sandbox-extra-roots && bunx npm version patch
+cd ../adaptive-perf && bunx npm version patch
 git add -A && git commit -m "fix: ..." && git push
 ```
 
@@ -70,9 +70,9 @@ GitHub Actions（`.github/workflows/publish.yml`）在推送到 `main` 且
 手动发布同样可以：
 
 ```bash
-cd packages/vision-router && npm publish
-cd ../sandbox-extra-roots && npm publish
-cd ../adaptive-perf && npm publish
+cd packages/vision-router && bunx npm@latest publish --access public
+cd ../sandbox-extra-roots && bunx npm@latest publish --access public
+cd ../adaptive-perf && bunx npm@latest publish --access public
 ```
 
 ## 安装（npm 生态方式）

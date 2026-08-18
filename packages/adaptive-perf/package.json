@@ -1,6 +1,6 @@
 {
   "name": "@chaoset/adaptive-perf",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "DSH host plugin: bring standard / PTC presets to minimal-mode-level performance — real Minimal tool pair, permanent injected-context suppression with on-demand discovery, runtime-context suppression, and adaptive tool-catalog trimming with demand-driven escalation",
   "type": "module",
   "license": "MIT",
@@ -31,19 +31,16 @@
     }
   },
   "optionalDependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-terminal": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-terminal-bash": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-tool-bash-persistent": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-fs-local": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-tool-str-replace-editor": "^0.1.0-rc.6"
-  },
-  "engines": {
-    "node": ">=22.19.0"
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-terminal": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-terminal-bash": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-tool-bash-persistent": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-fs-local": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-tool-str-replace-editor": "^0.1.0-rc.7"
   },
   "scripts": {
-    "test": "node ../../scripts/test.mjs",
-    "prepublishOnly": "npm test"
+    "test": "bun ../../scripts/test.mjs",
+    "prepublishOnly": "bun ../../scripts/test.mjs"
   },
   "repository": {
     "type": "git",

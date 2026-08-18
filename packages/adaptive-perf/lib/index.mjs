@@ -1,8 +1,9 @@
 /**
  * adaptive-perf — 极简性能自适应插件（@chaoset/adaptive-perf）
  *
- * 目标：让「标准模式（standard）」与「PTC 模式（code）」达到与「极简模式
- * （minimal）」相同级别的高性能。极简模式快的原因（对源码的对照结论）：
+ * 目标：让「标准模式（standard）」「PTC 模式（code）」与「创造模式
+ * （cordis）」达到与「极简模式（minimal）」相同级别的高性能。极简模式快
+ * 的原因（对源码的对照结论）：
  *   1. persona 配置了 includeRuntimeContext: false —— 每次模型请求不注入
  *      "Current runtime context" 快照（文件策略 / 审批策略等动态段）；
  *   2. 工具目录极小（只有 bash + str_replace_editor）—— 每个请求的
@@ -30,23 +31,20 @@
  *      （技能目录提醒 skill-catalog、AGENTS.md 摘要 agent-instructions；
  *      用户主动的技能手势不过滤）；首个**持久**晋升信号（首个 tool/call 或
  *      assistant/message，promoteOn 可选 either/tool-call/assistant-message）
- *      后进入 **resident 目录**：工具对 + 常驻发现工具（dev_tool_search /
- *      skill_search / skill_load）+ 已解锁工具，而不是一次性 dump 完整
- *      Standard 目录（避免 post-promotion regression）；阶段从持久会话事件
- *      推导，resume/reload 不丢状态；compaction/end 之后回到受控目录
- *      （工具对 + compactionTools）直到新的晋升信号（纪元感知）；
- *      bootstrap.maxTokens（可选）给请求 #1 封顶输出预算，晋升后剥离。
- *   D. 常驻上下文抑制（suppressInjectedContext，0.5.0 新增）：技能目录提醒
- *      与 AGENTS.md 摘要**不再在晋升后恢复**——参考实现实测它们即使在后置
- *      阶段也扰动轨迹且每个请求多耗数千 token。替代品：
- *        - skill_search / skill_load：按需发现并注入单个技能的完整说明
- *          （晋升后常驻，替代 ~9KB 的 <available_skills> 注入）；
- *        - instruction-hint：晋升后只注入**一次**的短提示——"这些指令文件
- *          存在，需要时自己读"，而不是每请求 dump 全文（文件探测走宿主 fs，
- *          探测失败不注入，绝不抛错）。
- *   E. 工具目录自适应精简：会话启动时按"工具族"默认隐藏高开销低频工具
- *      （子代理 / 工作流 / ralph / goal 等编排类），只保留核心编码工具，
- *      随后根据两类信号在会话内"单调升级"放行对应工具族（只升不降）：
+ *      后**完整恢复**该模式的全部工具目录与常规上下文注入（0.7.0，
+ *      dsh-anchored-standard 语义：只锚定首轮，不减少后续功能）；阶段从
+ *      持久会话事件推导，resume/reload 不丢状态，晋升信号持久（compaction
+ *      不重置）；bootstrap.maxTokens（可选）给请求 #1 封顶输出预算，晋升后
+ *      剥离。
+ *   D. 常驻上下文抑制（suppressInjectedContext，0.5.0 新增，0.7.0 默认
+ *      开启）：true = 整个会话剥离技能目录提醒与 AGENTS.md 摘要注入（功能
+ *      可见性由常驻发现工具 dev_tool_search / skill_search / skill_load
+ *      承担——实测晋升后恢复注入会把轨迹拉回 standard-like）；false =
+ *      只剥离首轮，晋升后恢复常规注入（opt-in）。
+ *   E. 工具目录自适应精简（leanByDefault，0.7.0 默认关闭的 opt-in）：开启时
+ *      按"工具族"隐藏高开销低频工具（子代理 / 工作流 / ralph / goal 等编排
+ *      类），只保留核心编码工具，随后根据两类信号在会话内"单调升级"放行
+ *      对应工具族（只升不降）：
  *        - 关键词信号：用户消息命中某工具族的触发词（如"子代理"）→ 放行该族；
  *        - 失败信号：PTC 的 run_code 程序调用被隐藏工具报 UNKNOWN_TOOL
  *          （tools/result 失败文本含工具名）→ 放行该族，下次程序即可调用。
@@ -57,17 +55,15 @@
  *   - agent.ctx.systemPrompt.section()  按名阴影 prompt 段（persona/引导段）
  *   - agent.ctx.tools.schemas(agent)  读取该 agent 当前可见工具（限制交集）
  *   - agent.ctx.tools.restrict({ deny })  按 agent 作用域裁剪继承工具
- *   - agent.ctx.tools.register()  在 agent 作用域注册工具（按名阴影继承工具，
- *       自身层注册不受 restrict 影响——view() 对 own layer 豁免）
  *   - agent.ctx.plugin()  挂载官方 minimal preset 同款插件（持久 bash /
  *       str_replace_editor / 其依赖的 terminals 与本地 fs）
- *   - agent/pre-step（waterfall） 剥离自动注入上下文 + 注入 instruction-hint
+ *   - agent/pre-step（waterfall） 首轮剥离自动注入上下文
  *   - agent/request（waterfall） 首轮输出预算封顶
- *   - session/event  增量喂入持久事件（晋升 / compaction 纪元）
+ *   - session/event  增量喂入持久事件（晋升信号）
  *   - agent/created、agent/disposed、agent/inbox/inserted、tools/result 事件
  * 监听器都注册在 host 根作用域（与 dsh-agent-presets 自身同款用法），事件按
- * scope 过滤分发，子作用域派发的事件根监听器可收到；两个 waterfall 均以
- * prepend 注册保证"最外层"（剥离是最后一道变换）。
+ * scope 过滤分发，子作用域派发的事件根监听器可收到；waterfall 均以 prepend
+ * 注册保证"最外层"（剥离是最后一道变换）。
  *
  * 配置：cordis.patch.yml 的 config（安装默认）与
  *       ~/.dsh/plugins/adaptive-perf/config.json（设置页 UI，权威）合并，
@@ -108,26 +104,28 @@ export const name = 'adaptive-perf';
  *
  * bootstrap：首轮锚定（参照 dsh-anchored-standard 的实测结论）。请求 #1 只暴露
  * bootstrap.tools（真实 Minimal 工具对），剥离 suppressedContextSources 列出的
- * 自动注入上下文；首个持久晋升信号（promoteOn）后恢复；compaction/end 之后回到
- * 受控目录（bootstrap 工具对 + compactionTools）直到新的晋升信号；maxTokens>0
- * 时给请求 #1 封顶输出预算（晋升后剥离）。
+ * 自动注入上下文；首个持久晋升信号（promoteOn）后完整恢复全部工具与常规注入
+ * （晋升是持久信号，compaction/end 不重置）；maxTokens>0 时给请求 #1 封顶输出
+ * 预算（晋升后剥离）。
  */
 export const DEFAULT_CONFIG = {
   /** 总开关：关闭后插件对会话不产生任何影响。 */
   enabled: true,
   /** 应用自适应的 agent preset 列表（composedPreset 返回值）。 */
-  presets: ['standard', 'code'],
+  presets: ['standard', 'code', 'cordis'],
   /**
-   * 默认策略（0.6.0）：功能优先，全部优化 opt-in。旧版把下列机制默认
-   * 开启，导致 standard/PTC 模式功能缺失（工具族从目录删除 → PTC 程序
-   * 调用直接 UNKNOWN_TOOL；技能目录/指令摘要被剥离；官方引导段被屏蔽；
-   * 首轮只剩两个工具）。这些机制的收益本质是"砍上下文换 token"，没有
-   * 无损形态，因此默认全部关闭，保持官方 preset 的完整功能；需要省
-   * token 时按需开启（设置页或 config.json），开启即接受相应的功能
-   * 约束（关键词/失败信号放行、skill_search 按需发现等补偿机制仍在）。
+   * 默认策略（0.7.0）：首轮锚定、晋升后 resident 目录（dsh-anchored-standard
+   * 语义）。非极简 preset 的会话：请求 #1 按极简条件组装（真实 Minimal 工具
+   * 对 + 极简 persona + 屏蔽全局引导段 + 剥离自动注入 + 抑制运行时快照）以
+   * 锚定极简轨迹；首个持久晋升信号后进入 resident 阶段——保留 bootstrap 工具
+   * 对 + 常驻发现工具（dev_tool_search / skill_search / skill_load），完整
+   * 目录经 dev_tool_search 按需解锁（避免晋升时一次性倒出完整目录把轨迹拉回
+   * standard-like，anchored-standard 实测的"晋升后回退"问题），常规上下文
+   * 注入恢复可见——功能不减少。工具目录默认零裁剪（leanByDefault 关闭，
+   * 编排类工具族始终可用）；需要时可在设置页按需开启。
    */
   /** 抑制运行时上下文快照（等同极简模式的 includeRuntimeContext: false）。 */
-  suppressRuntimeContext: false,
+  suppressRuntimeContext: true,
   /** 会话启动时默认隐藏编排类工具族（核心编码工具始终保留）。 */
   leanByDefault: false,
   /** 用户消息命中工具族触发词时自动放行该族（会话内单调）。 */
@@ -136,15 +134,11 @@ export const DEFAULT_CONFIG = {
   escalateOnUnknownTool: true,
   /**
    * 常驻上下文抑制（0.5.0）：true = 整个会话剥离自动注入上下文
-   * （skill-catalog 技能目录提醒、agent-instructions AGENTS.md 摘要），
-   * 不再像旧版那样在晋升后恢复——替代品是 skill_search/skill_load 按需发现
-   * 与 instruction-hint 一次性提示。false = 只在 bootstrap（请求 #1）剥离。
+   * （skill-catalog 技能目录提醒、agent-instructions AGENTS.md 摘要）；
+   * false = 只在 bootstrap 未晋升阶段剥离，晋升后恢复注入（0.7.0 默认，
+   * 与 dsh-anchored-standard 一致：只锚定首轮、不减少后续功能）。
    */
-  suppressInjectedContext: false,
-  /** 晋升后常驻 skill_search / skill_load 两个按需技能发现工具。 */
-  skillDiscovery: true,
-  /** 晋升后注入一次"指令文件存在，需要时自读"的短提示（替代全文注入）。 */
-  instructionHint: true,
+  suppressInjectedContext: true,
   /** 核心编码工具（不进入任何限制族；此处仅作文档展示）。 */
   coreTools: [
     'bash', 'read', 'write', 'edit', 'glob', 'grep', 'read_image',
@@ -177,7 +171,7 @@ export const DEFAULT_CONFIG = {
   /** 首轮锚定（参照 dsh-anchored-standard）。 */
   bootstrap: {
     /** 是否启用首轮锚定。 */
-    enabled: false,
+    enabled: true,
     /**
      * 是否挂载真实 Minimal 工具对（0.5.0）：把官方 minimal preset 的持久
      * PTY bash + str_replace_editor 挂进 agent 作用域（按名阴影 standard 的
@@ -191,9 +185,7 @@ export const DEFAULT_CONFIG = {
     promoteOn: 'either',
     /** 请求 #1 剥离的自动注入上下文 source.kind；[] 关闭剥离。 */
     suppressedContextSources: ['skill-catalog', 'agent-instructions'],
-    /** compaction/end 之后、再次晋升前可用的额外核心工作集。 */
-    compactionTools: ['read', 'write', 'edit', 'glob', 'grep', 'todo_write', 'ask_user_question'],
-    /** 晋升后常驻的按需发现工具（dsh-anchored-standard 的 resident discovery set）。 */
+    /** 晋升后 resident 目录的常驻发现工具（按需解锁完整目录）。 */
     discoveryTools: ['dev_tool_search', 'skill_search', 'skill_load'],
     /** 请求 #1 的输出预算封顶（token）；0 = 不封顶（opt-in）。 */
     maxTokens: 0,
@@ -213,7 +205,7 @@ export const DEFAULT_CONFIG = {
    */
   minimalPrompt: {
     /** 是否启用极简提示词层。 */
-    enabled: false,
+    enabled: true,
     /** 替换后的 persona 文本；与极简模式相同可完全对齐语域。留空不替换。 */
     persona: 'You are a helpful software engineer assistant.',
     /** 屏蔽全局引导段（identity / source / web-surface）。 */
@@ -277,8 +269,7 @@ export function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
     tools: stringList(rawBootstrap.tools, db.tools),
     promoteOn,
     suppressedContextSources: stringListOrEmpty(rawBootstrap.suppressedContextSources, db.suppressedContextSources),
-    compactionTools: stringListOrEmpty(rawBootstrap.compactionTools, db.compactionTools),
-    discoveryTools: stringListOrEmpty(rawBootstrap.discoveryTools, db.discoveryTools),
+    discoveryTools: stringList(rawBootstrap.discoveryTools, db.discoveryTools),
     maxTokens,
   };
   const rawMP = raw.minimalPrompt !== null && typeof raw.minimalPrompt === 'object' && !Array.isArray(raw.minimalPrompt)
@@ -298,8 +289,6 @@ export function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
     escalateOnKeyword: boolValue(merged.escalateOnKeyword, defaults.escalateOnKeyword),
     escalateOnUnknownTool: boolValue(merged.escalateOnUnknownTool, defaults.escalateOnUnknownTool),
     suppressInjectedContext: boolValue(merged.suppressInjectedContext, defaults.suppressInjectedContext),
-    skillDiscovery: boolValue(merged.skillDiscovery, defaults.skillDiscovery),
-    instructionHint: boolValue(merged.instructionHint, defaults.instructionHint),
     coreTools: stringList(merged.coreTools, defaults.coreTools),
     families,
     bootstrap,
@@ -313,7 +302,7 @@ export function validateConfig(partial) {
     throw new TypeError('adaptive-perf config must be a plain object');
   }
   const boolFields = ['enabled', 'suppressRuntimeContext', 'leanByDefault', 'escalateOnKeyword', 'escalateOnUnknownTool',
-    'suppressInjectedContext', 'skillDiscovery', 'instructionHint'];
+    'suppressInjectedContext'];
   for (const key of boolFields) {
     if (partial[key] !== void 0 && typeof partial[key] !== 'boolean') {
       throw new TypeError(`adaptive-perf config field "${key}" must be a boolean`);
@@ -359,7 +348,7 @@ export function validateConfig(partial) {
     if (b.maxTokens !== void 0 && !(Number.isSafeInteger(b.maxTokens) && b.maxTokens >= 0)) {
       throw new TypeError('adaptive-perf config field "bootstrap.maxTokens" must be a non-negative safe integer');
     }
-    for (const key of ['tools', 'suppressedContextSources', 'compactionTools', 'discoveryTools']) {
+    for (const key of ['tools', 'suppressedContextSources', 'discoveryTools']) {
       if (b[key] !== void 0 && !(Array.isArray(b[key]) && b[key].every((v) => typeof v === 'string'))) {
         throw new TypeError(`adaptive-perf config field "bootstrap.${key}" must be an array of strings`);
       }
@@ -536,89 +525,7 @@ export function mountRealPair(agent, mounts, warn) {
   return disposers;
 }
 
-// ── instruction-hint（0.5.0，参照 dsh-anchored-standard）──────────────────
 
-/** 项目链候选指令文件名（探测顺序）与用户全局候选。 */
-export const INSTRUCTION_PROJECT_CANDIDATES = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md'];
-export const INSTRUCTION_USER_CANDIDATE = 'AGENTS.md';
-
-/** 平台无关的路径拼接（与参考实现一致）。 */
-export function joinPath(dir, segment) {
-  if (dir.endsWith('/') || dir.endsWith('\\')) return dir + segment;
-  const sep = dir.includes('\\') ? '\\' : '/';
-  return dir + sep + segment;
-}
-
-/** 绝对 POSIX/Windows 路径的父目录。 */
-export function parentPath(path) {
-  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-  if (idx <= 0) return path;
-  const parent = path.slice(0, idx);
-  return parent.length === 0 ? path : parent;
-}
-
-/** 从 cwd 向上找项目根（含 .git/.hg/.svn 标记的最近祖先）。 */
-export async function findProjectRoot(fs, cwd, signal) {
-  let current = cwd;
-  for (;;) {
-    for (const marker of ['.git', '.hg', '.svn']) {
-      try {
-        const target = await fs.resolve(joinPath(current, marker), { cwd, signal });
-        const info = await fs.stat(target, signal);
-        if (info !== void 0) return current;
-      } catch {
-        // 探测失败 = 标记不存在，继续。
-      }
-    }
-    const parent = parentPath(current);
-    if (parent === current || parent.length === 0) return cwd;
-    current = parent;
-  }
-}
-
-/** 列出某目录下存在的候选指令文件。 */
-export async function presentInDir(fs, dir, candidates, signal) {
-  const found = [];
-  for (const candidate of candidates) {
-    try {
-      const target = await fs.resolve(joinPath(dir, candidate), { cwd: dir, signal });
-      const info = await fs.stat(target, signal);
-      if (info !== void 0 && info.type === 'file') found.push(candidate);
-    } catch {
-      // 不存在/不可读——跳过。
-    }
-  }
-  return found;
-}
-
-/**
- * 探测会话的指令文件（项目链 + $DSH_HOME/AGENTS.md）。任何失败都返回
- * null/空集——提示注入绝不能让会话受损。
- * @returns { projectFiles, root, userGlobalFiles } 或 null（无 fs / 无 cwd）。
- */
-export async function probeInstructionFiles(fs, cwd, dshHome, signal) {
-  if (fs === null || fs === void 0 || typeof cwd !== 'string' || cwd.length === 0) return null;
-  const projectFiles = [];
-  let root = cwd;
-  try {
-    root = await findProjectRoot(fs, cwd, signal);
-    projectFiles.push(...await presentInDir(fs, root, INSTRUCTION_PROJECT_CANDIDATES, signal));
-  } catch {
-    // 项目链探测失败——忽略，仍报告用户全局文件。
-  }
-  const userGlobalFiles = [];
-  if (typeof dshHome === 'string' && dshHome.length > 0) {
-    try {
-      userGlobalFiles.push(...await presentInDir(fs, dshHome, [INSTRUCTION_USER_CANDIDATE], signal));
-    } catch {
-      // 不可读——忽略。
-    }
-  }
-  if (projectFiles.length === 0 && userGlobalFiles.length === 0) return null;
-  return { projectFiles, root, userGlobalFiles };
-}
-
-// ── 按需发现工具（resident discovery set，参照 dsh-anchored-standard）─────
 
 /**
  * 从 agent/pre-step 的 decision.messages 剥离指定 source.kind 的消息。
@@ -633,7 +540,17 @@ export function stripSuppressedMessages(messages, suppressedSources) {
   return kept.length === messages.length ? messages : kept;
 }
 
+// ── bootstrap 锚定（参照 dsh-anchored-standard 的实测结论）──────────────
+
+/** promoteOn 配置 → 晋升的持久事件类型集合。 */
+export const PROMOTE_EVENTS = {
+  'tool-call': ['tool/call'],
+  'assistant-message': ['assistant/message'],
+  either: ['tool/call', 'assistant/message'],
+};
+
 /**
+ /**
  * dev_tool_search：搜索完整可见目录并按名解锁工具（解锁结果下一请求生效，
  * 经 syncBootstrap 重算 deny 集；解锁记录写入 a.unlocked，resume-safe 由
  * loadUnlockedFromEvents 从持久事件恢复）。
@@ -845,49 +762,34 @@ export function extractSkillBody(skill) {
   return '';
 }
 
-// ── bootstrap 锚定（参照 dsh-anchored-standard 的实测结论）──────────────
-
-/** promoteOn 配置 → 晋升的持久事件类型集合。 */
-export const PROMOTE_EVENTS = {
-  'tool-call': ['tool/call'],
-  'assistant-message': ['assistant/message'],
-  either: ['tool/call', 'assistant/message'],
-};
 
 /**
- * 扫描一段持久会话日志，推导 { boundary, promoted } 阶段。
- * compaction/end 之后需要新的晋升信号（纪元感知）；boundary 为 -1 表示
- * 尚无压缩。事件无 seq 时按"边界之后"处理（与参考实现一致）。
+ * 扫描一段持久会话日志，推导 { promoted } 阶段。
+ * 晋升是持久信号（与 dsh-anchored-standard 一致）：首次 promoteOn 事件后
+ * 恒为已晋升，resume/reload 不丢状态，compaction 不重置。
  */
 export function scanPhase(events, promoteEvents) {
-  let boundary = -1;
   let promoted = false;
   if (Array.isArray(events)) {
     for (const event of events) {
-      const seq = typeof event?.seq === 'number' ? event.seq : 0;
-      if (event?.type === 'compaction/end') {
-        boundary = seq;
-        promoted = false;
-        continue;
+      if (promoteEvents.includes(event?.type)) {
+        promoted = true;
+        break;
       }
-      if (promoteEvents.includes(event?.type) && seq > boundary) promoted = true;
     }
   }
-  return { boundary, promoted };
+  return { promoted };
 }
 
 /** 增量喂入一个持久事件（仅更新已存在条目；冷会话由 scanPhase 全量推导）。 */
 export function observePhase(state, sessionId, event) {
   const entry = state.get(sessionId);
   if (entry === void 0) return;
-  const seq = typeof event?.seq === 'number' ? event.seq : 0;
-  if (event?.type === 'compaction/end') {
-    state.set(sessionId, { boundary: seq, promoted: false, promoteEvents: entry.promoteEvents });
-    return;
-  }
   if (entry.promoted) return;
-  const promoteEvents = entry.promoteEvents;
-  if (promoteEvents.includes(event?.type) && seq > entry.boundary) {
+  const promoteEvents = Array.isArray(entry.promoteEvents)
+    ? entry.promoteEvents
+    : PROMOTE_EVENTS[entry.promoteOn] ?? [];
+  if (promoteEvents.includes(event?.type)) {
     state.set(sessionId, { ...entry, promoted: true });
   }
 }
@@ -981,7 +883,7 @@ export async function apply(ctx, config, options = {}) {
 
     /** 真实 Minimal 工具对模块（0.5.0）。加载失败 = null = 降级旧行为。
      *  options.realPairModules 仅供测试注入。 */
-    const realPairModules = options.realPairModules === void 0
+    let realPairModules = options.realPairModules === void 0
       ? (cfg.bootstrap.enabled && cfg.bootstrap.realPair ? await loadRealPairModules() : null)
       : options.realPairModules;
     /** 是否已尝试加载过真实工具对模块（避免配置热更新时反复重试）。 */
@@ -991,9 +893,6 @@ export async function apply(ctx, config, options = {}) {
         ctx.logger?.warn?.('adaptive-perf: real Minimal tool pair modules unavailable (optional @deepseek-ai deps missing?); falling back to catalog-only bootstrap');
       } catch {}
     }
-
-    /** 已注入过 instruction-hint 的会话（内存去重，与参考实现一致）。 */
-    const hintedSessions = new Set();
 
     /**
      * 配置热更新把 realPair 从关闭切到开启时补加载官方模块（初始未启用时
@@ -1183,6 +1082,7 @@ export async function apply(ctx, config, options = {}) {
       a.realPairActive = a.realPairDisposers.length > 0;
     }
 
+
     /**
      * 给目标 agent 注册 on-demand 发现工具（dsh-anchored-standard 的 resident
      * discovery pattern）：晋升后常驻 bootstrap.discoveryTools 列出的工具——
@@ -1234,10 +1134,10 @@ export async function apply(ctx, config, options = {}) {
           catalogHint: 'This session starts with a minimal resident set: bash, str_replace_editor, skill_search, skill_load. Everything else is unlocked on demand through this tool.',
         });
       }
-      if (name === 'skill_search' && cfg.skillDiscovery) {
+      if (name === 'skill_search') {
         return createSkillSearch({ skillsOf: () => ctx.get('skills') });
       }
-      if (name === 'skill_load' && cfg.skillDiscovery) {
+      if (name === 'skill_load') {
         return createSkillLoad({ skillsOf: () => ctx.get('skills') });
       }
       return null;
@@ -1295,10 +1195,6 @@ export async function apply(ctx, config, options = {}) {
         try { disposer(); } catch {}
       }
       a.promptDisposers = [];
-      for (const disposer of a.toolDisposers.values()) {
-        try { disposer(); } catch {}
-      }
-      a.toolDisposers.clear();
       for (const dispose of a.realPairDisposers) {
         try { dispose(); } catch {}
       }
@@ -1306,6 +1202,10 @@ export async function apply(ctx, config, options = {}) {
       if (a.bootstrapDisposer !== null) {
         try { a.bootstrapDisposer(); } catch {}
       }
+      for (const disposer of a.toolDisposers.values()) {
+        try { disposer(); } catch {}
+      }
+      a.toolDisposers.clear();
       for (const disposer of a.familyDisposers.values()) {
         try { disposer(); } catch {}
       }
@@ -1357,10 +1257,11 @@ export async function apply(ctx, config, options = {}) {
     });
 
     // ── 首轮锚定（bootstrap，参照 dsh-anchored-standard 的实测结论）─────
-    // 阶段状态：sessionId -> { boundary, promoted, promoteEvents }。冷会话在
+    // 阶段状态：sessionId -> { promoted, promoteEvents }。冷会话在
     // handleAgent 时全量扫描持久日志（resume 安全），此后 session/event 增量
-    // 更新。子代理（delegationDepth > 0）恒为已晋升。所有 waterfall 用
-    // prepend 注册，保证本插件是"最外层"变换（剥离是最后一道）。
+    // 更新。晋升是持久信号（compaction 不重置）。子代理（delegationDepth > 0）
+    // 恒为已晋升。所有 waterfall 用 prepend 注册，保证本插件是"最外层"
+    // 变换（剥离是最后一道）。
     const bootstrapState = new Map();
     let bootstrapWarned = false;
     const warnBootstrapOnce = (message) => {
@@ -1371,14 +1272,14 @@ export async function apply(ctx, config, options = {}) {
 
     function bootstrapPhaseOf(agent) {
       const session = agent !== null && typeof agent === 'object' ? agent.session : void 0;
-      if (session === void 0 || typeof session.id !== 'string') return { boundary: -1, promoted: true };
+      if (session === void 0 || typeof session.id !== 'string') return { promoted: true };
       // 子代理首轮即可用工具（与参考实现一致）。
-      if ((session.header?.delegationDepth ?? 0) > 0) return { boundary: -1, promoted: true };
+      if ((session.header?.delegationDepth ?? 0) > 0) return { promoted: true };
       let entry = bootstrapState.get(session.id);
       if (entry === void 0) {
         entry = {
           ...scanPhase(session.events, PROMOTE_EVENTS[cfg.bootstrap.promoteOn]),
-          promoteEvents: PROMOTE_EVENTS[cfg.bootstrap.promoteOn],
+          promoteOn: cfg.bootstrap.promoteOn,
         };
         bootstrapState.set(session.id, entry);
       }
@@ -1393,12 +1294,13 @@ export async function apply(ctx, config, options = {}) {
     }
 
     /**
-     * bootstrap 阶段的保留工具集：
-     *  - 未晋升：bootstrap 工具对 + PTC 的直接调用工具（run_code）+
-     *    compaction 后恢复期的工作集；
-     *  - 已晋升：bootstrap 工具对 + resident discovery 工具 +
-     *    dev_tool_search 已解锁工具 + 已升级工具族（dsh-anchored-standard 的
-     *    resident catalog，避免晋升后一次性 dump 完整 Standard 目录）。
+     * bootstrap 阶段的保留工具集（0.7.0：首轮锚定、晋升后 resident 目录）：
+     *  - 未晋升：bootstrap 工具对 + PTC 的直接调用工具（run_code）；
+     *  - 已晋升：bootstrap 工具对 + 常驻发现工具（dev_tool_search /
+     *    skill_search / skill_load）+ dev_tool_search 已解锁工具
+     *    （dsh-anchored-standard 的 resident catalog：晋升时一次性倒出
+     *    完整 Standard 目录会把轨迹拉回 standard-like——晋升后回退问题，
+     *    因此重型工具保持一次 dev_tool_search 即可取用）。
      *
      * 注意：不能靠过滤 system-prompt/assemble 的 assembly.tools 来实现——
      * PTC 模式下 assembly.tools 只有 [run_code]，Minimal 工具对不在其中，
@@ -1416,14 +1318,7 @@ export async function apply(ctx, config, options = {}) {
       if (phase.promoted) {
         for (const name of cfg.bootstrap.discoveryTools) keep.add(name);
         for (const name of a.unlocked) keep.add(name);
-        for (const [id, family] of Object.entries(cfg.families)) {
-          if (a.escalated.has(id)) {
-            for (const name of familyDeny(a, family)) keep.add(name);
-          }
-        }
-        return keep;
       }
-      if (phase.boundary >= 0) for (const name of cfg.bootstrap.compactionTools) keep.add(name);
       return keep;
     }
 
@@ -1431,7 +1326,7 @@ export async function apply(ctx, config, options = {}) {
     function syncBootstrap(a) {
       const phase = bootstrapPhaseOf(a.agent);
       const keep = bootstrapKeepSet(a);
-      // discovery 工具只在晋升后的 resident 阶段注册；bootstrap/compaction 阶段隐藏。
+      // discovery 工具只在晋升后的 resident 阶段注册；bootstrap 阶段隐藏。
       syncDiscoveryTools(a, keep !== null && phase.promoted);
       const key = keep === null ? null : [...keep].sort().join(',');
       if (key === a.bootstrapKey) return;
@@ -1460,65 +1355,29 @@ export async function apply(ctx, config, options = {}) {
       const a = agents.get(session.id);
       if (a !== void 0) {
         const after = bootstrapState.get(session.id);
-        if (before === void 0 || after === void 0 || before.promoted !== after.promoted || before.boundary !== after.boundary) {
+        if (before === void 0 || after === void 0 || before.promoted !== after.promoted) {
           syncBootstrap(a);
         }
       }
     });
 
-    // 上下文剥离 + instruction-hint。prepend + 根作用域注册保证是最后一道
-    // 变换（后注册的注入者无法再补回）。两个职责同在一个监听器里，顺序天然
-    // 正确：先剥离被抑制来源，再（晋升后一次性）追加指令文件提示。
-    // 剥离与 bootstrap 开关正交：常驻抑制（suppressInjectedContext）在
-    // bootstrap 关闭时也生效；instruction-hint 依赖晋升阶段（bootstrap 机制）。
-    ctx.on('agent/pre-step', async ({ agent, signal }, next) => {
+    // 上下文剥离（首轮锚定的注入部分）。prepend + 根作用域注册保证是
+    // 最后一道变换（后注册的注入者无法再补回）。
+    // 剥离条件：bootstrap 未晋升（首轮剥离）或常驻抑制开启
+    // （suppressInjectedContext，0.7.0 默认开启：晋升后注入保持剥离，
+    // 由常驻发现工具承担功能可见性）。
+    ctx.on('agent/pre-step', async ({ agent }, next) => {
       const decision = await next();
       if (decision === null || typeof decision !== 'object' || decision.kind === 'reject') return decision;
       try {
         if (!cfg.enabled || !isTarget(agent)) return decision;
         const phase = bootstrapPhaseOf(agent);
         const suppressed = new Set(cfg.bootstrap.suppressedContextSources);
-        let out = decision;
-        // 剥离条件：bootstrap 未晋升（旧行为）或常驻抑制开启（0.5.0 默认：
-        // 整个会话不再注入技能目录与 AGENTS.md 摘要，替代品是按需发现工具）。
+        if (suppressed.size === 0) return decision;
         const stripActive = (cfg.bootstrap.enabled && !phase.promoted) || cfg.suppressInjectedContext;
-        if (suppressed.size > 0 && stripActive && Array.isArray(out.messages)) {
-          const kept = stripSuppressedMessages(out.messages, suppressed);
-          out = kept === out.messages ? out : { ...out, messages: kept };
-        }
-        // instruction-hint：晋升后一次性注入"指令文件存在，需要时自读"。
-        if (cfg.bootstrap.enabled && cfg.instructionHint && phase.promoted && Array.isArray(out.messages)) {
-          const session = agent.session;
-          if (session !== null && typeof session === 'object' && typeof session.id === 'string' && !hintedSessions.has(session.id)) {
-            hintedSessions.add(session.id);
-            const fs = ctx.get('fs');
-            const dshHome = process.env.DSH_HOME?.trim() || `${process.env.HOME || process.env.USERPROFILE || ''}/.dsh`;
-            const probe = await probeInstructionFiles(fs, session.header?.cwd, dshHome, signal);
-            if (probe !== null) {
-              const sections = [];
-              if (probe.projectFiles.length > 0) {
-                sections.push(`Workspace instruction files exist: ${probe.projectFiles.join(', ')} (project root: ${probe.root}).`);
-              }
-              if (probe.userGlobalFiles.length > 0) {
-                sections.push(`A user-global instruction file exists: ${INSTRUCTION_USER_CANDIDATE}.`);
-              }
-              const text = [
-                ...sections,
-                'Do NOT assume their content. When a task touches this workspace, read the relevant instruction files first and follow them.',
-              ].join(' ');
-              out = {
-                ...out,
-                messages: [...out.messages, {
-                  id: `instruction-hint-${session.id}`,
-                  role: 'user',
-                  content: [{ type: 'text', text }],
-                  source: { kind: 'instruction-hint', form: 'hint' },
-                }],
-              };
-            }
-          }
-        }
-        return out;
+        if (!stripActive || !Array.isArray(decision.messages)) return decision;
+        const kept = stripSuppressedMessages(decision.messages, suppressed);
+        return kept === decision.messages ? decision : { ...decision, messages: kept };
       } catch (error) {
         // 过滤失败绝不吞掉用户的上下文：原样放行。
         warnBootstrapOnce(`bootstrap context filter failed, keeping injected context: ${String((error && error.message) || error)}`);

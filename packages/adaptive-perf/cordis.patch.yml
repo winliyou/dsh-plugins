@@ -10,27 +10,36 @@
       name: '@chaoset/adaptive-perf'
       config:
         enabled: true
-        presets: [standard, code]
+        presets: [standard, code, cordis]
         suppressRuntimeContext: true
-        leanByDefault: true
+        leanByDefault: false
         escalateOnKeyword: true
         escalateOnUnknownTool: true
-        # 常驻上下文抑制（参照 dsh-anchored-standard）：整个会话剥离技能目录
-        # 提醒与 AGENTS.md 摘要注入，替代品是 skill_search/skill_load 按需
-        # 发现与 instruction-hint 一次性提示。
+        # 常驻上下文抑制（0.7.0 默认关闭）：true = 整个会话剥离技能目录
+        # 提醒与 AGENTS.md 摘要注入；false（默认）= 只在首轮剥离，晋升后
+        # 常驻剥离注入（0.7.0 默认开启）：技能目录/AGENTS.md 摘要的可见性
+        # 由 resident 发现工具 dev_tool_search / skill_search / skill_load
+        # 承担——实测晋升后恢复注入会把轨迹拉回 standard-like。
         suppressInjectedContext: true
-        skillDiscovery: true
-        instructionHint: true
-        # 首轮锚定（参照 dsh-anchored-standard issue #11）：请求 #1 只暴露
-        # 真实 Minimal 工具对（realPair 挂载官方 minimal preset 同款插件，
-        # schema 与 Minimal 逐字相同）并剥离自动注入上下文，首个持久信号后
-        # 进入 resident 目录（工具对 + 发现工具 + 已解锁工具）。
+        # 首轮锚定、晋升后 resident 目录（参照 dsh-anchored-standard issue
+        # #11）：请求 #1 只暴露真实 Minimal 工具对（realPair 挂载官方 minimal
+        # preset 同款插件，schema 与 Minimal 逐字相同）并剥离自动注入上下文；
+        # 首个持久信号后保留 bootstrap 工具对 + 常驻发现工具（完整目录经
+        # dev_tool_search 按需解锁，避免晋升时一次性倒出完整目录把轨迹拉回
+        # standard-like），常规注入恢复可见。
         bootstrap:
           enabled: true
           realPair: true
           tools: [bash, str_replace_editor]
           promoteOn: either
           suppressedContextSources: [skill-catalog, agent-instructions]
-          compactionTools: [read, write, edit, glob, grep, todo_write, ask_user_question]
           discoveryTools: [dev_tool_search, skill_search, skill_load]
           maxTokens: 0
+        # 极简提示词层（参照 dsh-anchored-standard 的完整锚定条件）：按名
+        # 阴影屏蔽 harness:identity / harness:source / app:web-surface 三个
+        # 全局引导段，并替换 deployment:persona 为极简语域 persona——只收窄
+        # 工具 schema 不够，首轮轨迹由 Minimal 的完整 system prompt 决定。
+        minimalPrompt:
+          enabled: true
+          persona: You are a helpful software engineer assistant.
+          suppressSections: true

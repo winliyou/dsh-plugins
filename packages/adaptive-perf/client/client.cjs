@@ -42,10 +42,6 @@ window.__ModuleLoader__.load({
       fieldEscalateOnUnknownTool: "PTC 程序调用被隐藏工具报 UNKNOWN_TOOL 时自动放行对应族",
       suppressInjectedContext: "常驻抑制注入上下文",
       fieldSuppressInjectedContext: "整个会话剥离技能目录提醒（skill-catalog）与 AGENTS.md 摘要（agent-instructions），不再在晋升后恢复——替代品是 skill_search/skill_load 按需发现与一次性 instruction-hint（参照 dsh-anchored-standard：注入在场即使后置也扰动轨迹）",
-      skillDiscovery: "技能按需发现",
-      fieldSkillDiscovery: "晋升后常驻 skill_search / skill_load 两个小工具，替代 ~9KB 的 <available_skills> 目录注入",
-      instructionHint: "指令文件一次性提示",
-      fieldInstructionHint: "晋升后注入一次“指令文件存在，需要时自读”的短提示（探测项目链 AGENTS.md/CLAUDE.md 与 $DSH_HOME/AGENTS.md），替代全文摘要",
       families: "工具族（高级）",
       fieldFamilies: "JSON：{ 族名: { enabled, tools: [工具名], keywords: [触发词] } }。保存后热生效。",
       coreTools: "核心工具（永不隐藏）",
@@ -59,11 +55,9 @@ window.__ModuleLoader__.load({
       bootstrapPromoteOn: "晋升触发",
       fieldBootstrapPromoteOn: "either（默认）：首个 tool/call 或 assistant/message 先到者晋升；tool-call / assistant-message 可单独指定",
       bootstrapSuppressed: "剥离的注入上下文",
+      bootstrapDiscovery: "常驻发现工具（晋升后）",
       fieldBootstrapSuppressed: "请求 #1 剥离的自动注入 source.kind（技能目录提醒 skill-catalog、AGENTS.md 摘要 agent-instructions）；逗号分隔，留空=不剥离",
-      bootstrapCompactionTools: "压缩后工作集",
-      fieldBootstrapCompactionTools: "compaction/end 之后、再次晋升前额外可用的工具（核心工作集）。逗号分隔。",
-      bootstrapDiscoveryTools: "晋升后常驻发现工具",
-      fieldBootstrapDiscoveryTools: "晋升后保留在 resident 目录里的按需发现工具（如 dev_tool_search）；逗号分隔。",
+      fieldBootstrapDiscovery: "晋升后常驻目录的发现工具（dev_tool_search 搜索完整目录并按名解锁；skill_search / skill_load 按需加载技能）；逗号分隔",
       bootstrapMaxTokens: "首轮输出预算封顶（token）",
       fieldBootstrapMaxTokens: "请求 #1 的 maxTokens 封顶，晋升后自动剥离；0 = 不封顶（opt-in）",
       minimalPromptEnabled: "极简提示词层（语域锚定）",
@@ -97,10 +91,6 @@ window.__ModuleLoader__.load({
       fieldEscalateOnUnknownTool: "A PTC program calling a hidden tool (UNKNOWN_TOOL) re-enables that family",
       suppressInjectedContext: "Always suppress injected context",
       fieldSuppressInjectedContext: "Strip the skill-catalog reminder and the AGENTS.md digest from every request, not just request #1 — replaced by on-demand skill_search/skill_load and a one-shot instruction hint (per dsh-anchored-standard: the injections perturb the trajectory even after promotion)",
-      skillDiscovery: "On-demand skill discovery",
-      fieldSkillDiscovery: "Keep skill_search / skill_load resident after promotion as the replacement for the ~9KB <available_skills> catalog injection",
-      instructionHint: "One-shot instruction hint",
-      fieldInstructionHint: "After promotion, inject ONCE a short hint that instruction files exist and should be read when relevant (probes the project chain AGENTS.md/CLAUDE.md and $DSH_HOME/AGENTS.md), instead of dumping their content",
       families: "Tool families (advanced)",
       fieldFamilies: "JSON: { familyId: { enabled, tools: [names], keywords: [triggers] } }. Hot-applied on save.",
       coreTools: "Core tools (never hidden)",
@@ -114,11 +104,9 @@ window.__ModuleLoader__.load({
       bootstrapPromoteOn: "Promotion trigger",
       fieldBootstrapPromoteOn: "either (default): first tool/call or assistant/message promotes; tool-call / assistant-message select one",
       bootstrapSuppressed: "Suppressed injected context",
+      bootstrapDiscovery: "Resident discovery tools (post-promotion)",
       fieldBootstrapSuppressed: "Auto-injected source.kinds stripped on request #1 (skill-catalog reminder, agent-instructions digest); comma-separated, empty = strip nothing",
-      bootstrapCompactionTools: "Post-compaction work set",
-      fieldBootstrapCompactionTools: "Extra tools available after compaction/end until a new promotion signal (core work set). Comma-separated.",
-      bootstrapDiscoveryTools: "Resident discovery tools",
-      fieldBootstrapDiscoveryTools: "On-demand discovery tools kept in the resident catalog after promotion (e.g. dev_tool_search). Comma-separated.",
+      fieldBootstrapDiscovery: "Resident discovery tools after promotion (dev_tool_search searches the full catalog and unlocks by name; skill_search / skill_load load skills on demand); comma-separated",
       bootstrapMaxTokens: "First-request output cap (tokens)",
       fieldBootstrapMaxTokens: "maxTokens cap for request #1, stripped after promotion; 0 = no cap (opt-in)",
       minimalPromptEnabled: "Minimal prompt layer (register anchor)",
@@ -265,21 +253,21 @@ window.__ModuleLoader__.load({
           react.createElement("p", { className: "ap_hint" }, t("hint")),
           react.createElement(BoolField, {
             label: t("enabled"),
-            value: draft === null ? false : draft.enabled,
+            value: draft === null ? true : draft.enabled,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, enabled: v })
           }),
           react.createElement(TextField, {
             label: t("presets"),
             hint: t("fieldPresets"),
-            value: draft === null ? "" : (draft.presets || []).join(", "),
+            value: draft === null ? "standard, code, cordis" : (draft.presets || []).join(", "),
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, presets: v.split(/[,，\s]+/).filter((x) => x.length > 0) })
           }),
           react.createElement(BoolField, {
             label: t("suppressRuntimeContext"),
             hint: t("fieldSuppressRuntimeContext"),
-            value: draft === null ? false : draft.suppressRuntimeContext,
+            value: draft === null ? true : draft.suppressRuntimeContext,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, suppressRuntimeContext: v })
           }),
@@ -293,14 +281,14 @@ window.__ModuleLoader__.load({
           react.createElement(BoolField, {
             label: t("escalateOnKeyword"),
             hint: t("fieldEscalateOnKeyword"),
-            value: draft === null ? false : draft.escalateOnKeyword,
+            value: draft === null ? true : draft.escalateOnKeyword,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, escalateOnKeyword: v })
           }),
           react.createElement(BoolField, {
             label: t("escalateOnUnknownTool"),
             hint: t("fieldEscalateOnUnknownTool"),
-            value: draft === null ? false : draft.escalateOnUnknownTool,
+            value: draft === null ? true : draft.escalateOnUnknownTool,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, escalateOnUnknownTool: v })
           }),
@@ -312,30 +300,16 @@ window.__ModuleLoader__.load({
             onChange: (v) => setDraft({ ...draft, suppressInjectedContext: v })
           }),
           react.createElement(BoolField, {
-            label: t("skillDiscovery"),
-            hint: t("fieldSkillDiscovery"),
-            value: draft === null ? false : draft.skillDiscovery,
-            disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, skillDiscovery: v })
-          }),
-          react.createElement(BoolField, {
-            label: t("instructionHint"),
-            hint: t("fieldInstructionHint"),
-            value: draft === null ? false : draft.instructionHint,
-            disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, instructionHint: v })
-          }),
-          react.createElement(BoolField, {
             label: t("bootstrapEnabled"),
             hint: t("fieldBootstrapEnabled"),
-            value: draft === null ? false : !!draft.bootstrap && draft.bootstrap.enabled,
+            value: draft === null ? true : !!draft.bootstrap && draft.bootstrap.enabled,
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), enabled: v } })
           }),
           react.createElement(BoolField, {
             label: t("bootstrapRealPair"),
             hint: t("fieldBootstrapRealPair"),
-            value: draft === null ? false : !!draft.bootstrap && draft.bootstrap.realPair,
+            value: draft === null ? true : !!draft.bootstrap && draft.bootstrap.realPair,
             disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
             onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), realPair: v } })
           }),
@@ -361,15 +335,8 @@ window.__ModuleLoader__.load({
             onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), suppressedContextSources: v.split(/[,，\s]+/).filter((x) => x.length > 0) } })
           }),
           react.createElement(TextField, {
-            label: t("bootstrapCompactionTools"),
-            hint: t("fieldBootstrapCompactionTools"),
-            value: draft === null ? "" : ((draft.bootstrap && draft.bootstrap.compactionTools) || []).join(", "),
-            disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
-            onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), compactionTools: v.split(/[,，\s]+/).filter((x) => x.length > 0) } })
-          }),
-          react.createElement(TextField, {
-            label: t("bootstrapDiscoveryTools"),
-            hint: t("fieldBootstrapDiscoveryTools"),
+            label: t("bootstrapDiscovery"),
+            hint: t("fieldBootstrapDiscovery"),
             value: draft === null ? "" : ((draft.bootstrap && draft.bootstrap.discoveryTools) || []).join(", "),
             disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
             onChange: (v) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), discoveryTools: v.split(/[,，\s]+/).filter((x) => x.length > 0) } })
@@ -387,14 +354,14 @@ window.__ModuleLoader__.load({
           react.createElement(BoolField, {
             label: t("minimalPromptEnabled"),
             hint: t("fieldMinimalPromptEnabled"),
-            value: draft === null ? false : (draft.minimalPrompt && draft.minimalPrompt.enabled === true),
+            value: draft === null ? true : (draft.minimalPrompt && draft.minimalPrompt.enabled === true),
             disabled: draft === null,
             onChange: (v) => setDraft({ ...draft, minimalPrompt: { ...(draft.minimalPrompt || {}), enabled: v } })
           }),
           react.createElement(BoolField, {
             label: t("minimalPromptSuppressSections"),
             hint: t("fieldMinimalPromptSuppressSections"),
-            value: draft === null ? false : (draft.minimalPrompt && draft.minimalPrompt.suppressSections === true),
+            value: draft === null ? true : (draft.minimalPrompt && draft.minimalPrompt.suppressSections === true),
             disabled: draft === null || (draft.minimalPrompt && draft.minimalPrompt.enabled === false),
             onChange: (v) => setDraft({ ...draft, minimalPrompt: { ...(draft.minimalPrompt || {}), suppressSections: v } })
           }),

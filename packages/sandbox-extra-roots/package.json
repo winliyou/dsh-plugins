@@ -31,18 +31,15 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-sandbox": "^0.1.0-rc.6"
+    "@deepseek-ai/dsh-sandbox": "^0.1.0-rc.7"
   },
   "optionalDependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.7",
     "@deepseek-ai/node-addon-landlock-run": "^0.1.1"
   },
-  "engines": {
-    "node": ">=22.19.0"
-  },
   "scripts": {
-    "test": "node ../../scripts/test.mjs",
-    "prepublishOnly": "npm test"
+    "test": "bun ../../scripts/test.mjs",
+    "prepublishOnly": "bun ../../scripts/test.mjs"
   },
   "repository": {
     "type": "git",

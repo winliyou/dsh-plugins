@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0](https://github.com/winliyou/dsh-plugins) (2026-08-18)
+
+### Features
+
+* **first-round anchoring, resident catalog after promotion (anchored-standard semantics).** Only request #1 is composed under Minimal conditions (real Minimal tool pair + minimal persona + suppressed global guide sections + stripped `skill-catalog`/`agent-instructions` injections + suppressed runtime snapshot); after the first persistent promotion signal (first `tool/call` or `assistant/message`) the session enters the **resident phase**: the bootstrap tool pair stays resident together with the discovery tools (`dev_tool_search`/`skill_search`/`skill_load`), the full catalog is unlocked on demand via `dev_tool_search`, and normal context injection becomes visible again. Performance is raised without reducing functionality — dumping the full catalog at promotion pulls the trajectory back to standard-like (the reference implementation's post-promotion regression), so the full catalog is fetched on demand instead. The tool/skill/web-search/plan/goal/subagent/workflow abilities of each mode remain fully available
+
+* **promotion is now persistent.** `scanPhase`/`observePhase` no longer reset on `compaction/end` (epoch-aware boundary removed); promotion is remembered per session like the reference implementation, so resume/reload and post-compaction rounds keep the resident catalog
+
+* **catalog is zero-trimmed by default.** `leanByDefault` defaults to `false`: orchestration tool families (subagent/workflow/ralph/goal) are never hidden unless explicitly opted in. `suppressInjectedContext` defaults to `true` (injections stay stripped for the whole session; visibility is carried by the resident discovery tools — measured: restoring injections after promotion pulls the trajectory back to standard-like, "Let me…" narration returns). Setting it to `false` restores post-promotion injections as an opt-in
+
+* **creator mode (cordis) is a target preset.** `presets` defaults to `["standard", "code", "cordis"]` in the bundle patch, the settings UI, and DEFAULT_CONFIG — the creator preset gets the same minimal-anchored first round
+
+### ⚠ Breaking (config)
+
+* **removed `skillDiscovery`, `instructionHint`, `bootstrap.compactionTools`; restored `bootstrap.discoveryTools`.** Under resident-catalog semantics the on-demand discovery is done by the resident `dev_tool_search`, so the one-shot instruction hint and the post-compaction work set are no longer needed; `bootstrap.discoveryTools` (default `dev_tool_search`/`skill_search`/`skill_load`) is restored as the resident post-promotion discovery set. The discovery tool factories (`createDevToolSearch`/`createSkillSearch`/`createSkillLoad`/`extractSkillBody`) and `loadUnlockedFromEvents` are back; saved configs ignore the removed fields; the settings UI renders the discovery-tools control again; `leanByDefault` keeps its new default (false) while `suppressInjectedContext` defaults to `true`
+
 ## [0.6.0](https://github.com/winliyou/dsh-plugins) (2026-08-17)
 
 

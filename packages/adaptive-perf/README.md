@@ -1,15 +1,22 @@
 # @chaoset/adaptive-perf — DSH 极简性能自适应插件
 
-> **默认策略（0.6.0，功能优先）**：本插件的性能收益本质是"砍上下文/砍工具换
-> token"，没有无损形态——旧版把下列机制默认开启，导致 standard/PTC 模式功能
-> 缺失（编排类工具族从目录删除、PTC 程序调用直接 `UNKNOWN_TOOL`；技能目录与
-> AGENTS.md 摘要被剥离；官方引导段被屏蔽；首轮只剩两个工具）。**0.6.0 起全部
-> 机制默认关闭，安装后对会话零干预，官方 preset 功能完整**；需要省 token 时在
-> 设置页按需开启下列任意机制（补偿机制——关键词/失败信号放行、`skill_search`
-> 按需发现——随开启自动生效）。下文描述的是各机制**开启后**的行为。
+> **默认策略（0.7.0，首轮锚定、晋升后 resident 目录）**：只提高性能，不减少功能。
+> 非极简模式会话的**请求 #1** 按极简模式条件组装——真实 Minimal 工具对
+> 锚定首轮轨迹、极简 persona + 屏蔽全局引导段对齐语域、剥离技能目录/指令
+> 摘要注入、抑制运行时快照；首个**持久**晋升信号（首个 `tool/call` 或
+> `assistant/message`）后进入 **resident 阶段**——保留 bootstrap 工具对 +
+> 常驻发现工具（`dev_tool_search` / `skill_search` / `skill_load`），完整
+> 目录经 `dev_tool_search` 按需解锁，常规上下文注入恢复可见（与
+> [dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard/)
+> 语义一致：晋升按会话记忆化，compaction 不重置；晋升时一次性倒出完整目录
+> 会把轨迹拉回 standard-like，故完整目录按需取用）。工具目录默认**零裁剪**
+> （编排类工具族始终可用）；`leanByDefault` 是省 token 的 opt-in 开关，
+> `suppressInjectedContext` 默认开启（注入剥离由发现工具承担可见性），
+> 设置页按需调整。
 
-让 **标准模式（standard）** 与 **PTC 模式（code）** 达到 **极简模式（minimal）**
-级别的高性能，同时保留完整能力——不是静态裁剪，而是**动态自适应**：
+让 **标准模式（standard）**、**PTC 模式（code）** 与 **创造模式（cordis）**
+达到 **极简模式（minimal）** 级别的高性能，同时保留完整能力——不是静态裁剪，
+而是**动态自适应**：
 
 - **真实 Minimal 工具对（realPair）**：首轮"轨迹"由请求 #1 可见的**工具 schema**
   逐字决定——只有与 Minimal 完全相同的 schema 能锚定（参照
@@ -24,23 +31,20 @@
   - 请求 #1 剥离自动注入上下文（技能目录提醒 `skill-catalog`、AGENTS.md 摘要
     `agent-instructions`，用户主动的技能手势不过滤）；
   - 会话出现首个**持久**晋升信号（首个 `tool/call` 或 `assistant/message`，
-    `promoteOn` 可选 `either`/`tool-call`/`assistant-message`）后进入 **resident
-    目录**：bootstrap 工具对 + 常驻发现工具（`dev_tool_search` +
-    `skill_search` + `skill_load`）+ 已解锁工具，而不是一次性 dump 完整
-    Standard 目录（避免 post-promotion regression）；阶段从持久会话事件推导，
-    **resume / reload 不丢状态**；
-  - `dev_tool_search` 可搜索完整目录并按名解锁工具，解锁结果下一请求生效；
-  - compaction 会把会话打回"第二次首轮"：`compaction/end` 之后回到受控目录
-    （bootstrap 工具对 + `compactionTools` 核心工作集），直到出现新的晋升信号；
+    `promoteOn` 可选 `either`/`tool-call`/`assistant-message`）后进入
+    **resident 阶段**：保留 bootstrap 工具对 + 常驻发现工具（0.7.0 语义：
+    只锚定首轮，不减少后续功能；完整目录经 `dev_tool_search` 按需解锁——
+    晋升时一次性倒出完整目录会把轨迹拉回 standard-like，anchored-standard
+    实测的"晋升后回退"问题），常规注入（技能目录提醒 + AGENTS.md 摘要）
+    恢复可见；阶段从持久会话事件推导，**resume / reload 不丢状态**，晋升
+    信号**持久**（`compaction/end` 不重置，与 dsh-anchored-standard 一致）；
   - `maxTokens > 0` 时可给请求 #1 封顶输出预算（晋升后自动剥离）。
-- **常驻上下文抑制（suppressInjectedContext）**：技能目录提醒与 AGENTS.md 摘要
-  **不再在晋升后恢复**——参考实现实测它们即使在后置阶段也扰动轨迹，且每个请求
-  多耗数千 token。替代品：
-  - `skill_search` / `skill_load`：晋升后常驻的两个小工具，按需发现并注入单个
-    技能的完整说明（替代 ~9KB 的 `<available_skills>` 目录注入）；
-  - `instruction-hint`：晋升后只注入**一次**的短提示——"指令文件存在，需要时
-    自己读"，而不是每请求 dump 全文（探测项目链 AGENTS.md/CLAUDE.md 与
-    `$DSH_HOME/AGENTS.md`，探测失败不注入，绝不抛错）。
+- **常驻上下文抑制（suppressInjectedContext，默认开启）**：整个会话持续
+  剥离技能目录提醒 + AGENTS.md 摘要注入——实测晋升后恢复注入会把轨迹拉回
+  standard-like（"Let me…" 叙述回归），且每请求多耗数千 token。功能可见性
+  由常驻发现工具承担：`dev_tool_search` 搜索完整目录并按名解锁、
+  `skill_search` / `skill_load` 按需搜索/加载技能说明。设为 `false` 时只剥
+  离请求 #1，晋升后恢复常规注入（功能不减少但轨迹回退，opt-in）。
 - **运行时上下文抑制**：对目标 preset 的会话调用 `suppressRuntimeContext()`
   （与极简模式的 `includeRuntimeContext: false` 同一机制），每次模型请求省掉
   "Current runtime context" 快照文本，**零功能损失**。
@@ -56,9 +60,10 @@
   - 挂载真实工具对时按名阴影 `tool:bash` 引导段（与可见工具一致）。
   各处均为 agent 作用域的 prompt 段阴影，仅影响目标会话；**对已恢复/已晋升的
   旧会话同样生效**（不依赖 bootstrap 阶段）。
-- **工具目录自适应精简**：会话启动时按"工具族"默认隐藏高开销低频工具
-  （子代理 / 工作流 / ralph / goal 等编排类），只保留核心编码工具
-  （bash / 文件读写编辑 / 检索 / jobs / todo / 提问 / 网页搜索 / 技能 / 计划）。
+- **工具目录自适应精简（leanByDefault，0.7.0 起为 opt-in）**：默认 `false` =
+  工具目录零裁剪，编排类工具族（子代理 / 工作流 / ralph / goal）始终可用。
+  设为 `true` 时会话启动按"工具族"隐藏高开销低频工具，只保留核心编码工具
+  （bash / 文件读写编辑 / 检索 / jobs / todo / 提问 / 网页搜索 / 技能 / 计划），
   标准模式的工具目录因此逼近极简；PTC 模式系统提示里的 **SDK 参考段同步缩小**。
 - **需求信号自动放行**（会话内单调升级，只升不降，限制请求缓存失效次数）：
   - 关键词信号：用户消息命中工具族触发词（如"子代理"、"工作流"）→ 放行该族；
@@ -70,12 +75,12 @@
 
 | 维度 | 极简模式 | 标准 / PTC 模式 | 本插件做法 |
 |---|---|---|---|
-| 首轮轨迹（决定后续行为风格） | Minimal 真实工具对锚定（5/5） | 任何 standard 系 schema（含 sandboxed bash）落入 standard-like（11/11） | realPair 挂载官方同款插件：请求 #1 的 schema 与 Minimal 逐字相同，首个持久信号后进 resident 目录 |
+| 首轮轨迹（决定后续行为风格） | Minimal 真实工具对锚定（5/5） | 任何 standard 系 schema（含 sandboxed bash）落入 standard-like（11/11） | realPair 挂载官方同款插件：请求 #1 的 schema 与 Minimal 逐字相同 |
 | 首轮注入提醒 | 无 skill 目录/AGENTS.md 注入 | 自动注入（在场时锚定 0/9） | 请求 #1 剥离 `skill-catalog` + `agent-instructions` |
-| 后置阶段注入 | 永不注入 | 晋升后每请求恢复 ~9KB 目录 + AGENTS.md 全文 | `suppressInjectedContext`：整个会话抑制；替代品为 `skill_search`/`skill_load` + 一次性 `instruction-hint` |
+| 后置阶段注入 | 永不注入 | 晋升后每请求恢复 ~9KB 目录 + AGENTS.md 全文 | 默认全程剥离（发现工具承担可见性）；`suppressInjectedContext=false` opt-in 恢复 |
 | 系统提示语域（persona + 全局引导段） | 一句话 persona，无任何引导段 | identity/source/web-surface 引导段 + 标准 persona（"Let me…" 叙述来源） | minimalPrompt 层按名阴影屏蔽 3 个全局段 + 替换极简 persona（对旧会话同样生效） |
 | 运行时上下文快照 | 关闭（`includeRuntimeContext: false`） | 每次请求注入文件策略/审批策略等快照 | 同一机制：`suppressRuntimeContext()` |
-| 模型可见工具目录 | 2 个（bash、str_replace_editor） | ~22 个工具 schema 全部进请求 | 首轮 2 个；晋升后 resident 目录（工具对 + 发现工具 + 已解锁），编排族默认隐藏按需放行 |
+| 模型可见工具目录 | 2 个（bash、str_replace_editor） | ~22 个工具 schema 全部进请求 | 首轮 2 个；晋升后 resident（2 + 3 个发现工具，完整目录按需解锁）；opt-in lean 时隐藏编排族按需放行 |
 | PTC SDK 参考段 | 无 | 全部工具的类型+描述渲染进提示 | 随目录缩小（同一 `visible` 视图驱动） |
 
 ## 安装（npm 生态方式）
@@ -120,12 +125,10 @@ dsh plugin --profile web remove @chaoset/adaptive-perf
 | 字段 | 默认值 | 说明 |
 |---|---|---|
 | `enabled` | `true` | 总开关 |
-| `presets` | `["standard", "code"]` | 应用自适应的 preset id |
+| `presets` | `["standard", "code", "cordis"]` | 应用自适应的 preset id |
 | `suppressRuntimeContext` | `true` | 抑制运行时上下文快照（零功能损失） |
-| `suppressInjectedContext` | `true` | 整个会话剥离技能目录/AGENTS.md 注入（0.5.0；`false` = 只在请求 #1 剥离） |
-| `skillDiscovery` | `true` | 晋升后常驻 `skill_search` / `skill_load`（0.5.0） |
-| `instructionHint` | `true` | 晋升后一次性注入指令文件提示（0.5.0） |
-| `leanByDefault` | `true` | 会话启动即隐藏编排类工具族 |
+| `suppressInjectedContext` | `true` | 常驻上下文抑制（默认开启）：整个会话剥离技能目录/AGENTS.md 注入（发现工具承担可见性）；`false` = 只在请求 #1 剥离，晋升后恢复 |
+| `leanByDefault` | `false` | 工具目录精简（opt-in）：`true` = 会话启动即隐藏编排类工具族；`false`（默认）= 零裁剪 |
 | `escalateOnKeyword` | `true` | 用户消息命中触发词 → 放行该族 |
 | `escalateOnUnknownTool` | `true` | 工具调用失败（UNKNOWN_TOOL）→ 放行该族 |
 | `coreTools` | 核心编码工具 | 展示用：不进入任何限制族 |
@@ -142,7 +145,6 @@ dsh plugin --profile web remove @chaoset/adaptive-perf
   "tools": ["bash", "str_replace_editor"],
   "promoteOn": "either",
   "suppressedContextSources": ["skill-catalog", "agent-instructions"],
-  "compactionTools": ["read", "write", "edit", "glob", "grep", "todo_write", "ask_user_question"],
   "discoveryTools": ["dev_tool_search", "skill_search", "skill_load"],
   "maxTokens": 0
 }
@@ -155,11 +157,19 @@ dsh plugin --profile web remove @chaoset/adaptive-perf
   Windows（无 PTY 后端）时自动降级为"仅收窄目录"并告警。
 - `tools`：请求 #1 可见的工具（真实 Minimal 对）。
 - `promoteOn`：`either`（默认）/ `tool-call` / `assistant-message`。
-- `suppressedContextSources`：剥离的自动注入 source.kind；`[]` 关闭剥离。
-- `compactionTools`：compaction/end 之后、再次晋升前可用的核心工作集。
-- `discoveryTools`：晋升后 resident 目录里的按需发现工具
-  （`dev_tool_search` 解锁工具；`skill_search`/`skill_load` 按需加载技能）。
+- `suppressedContextSources`：首轮剥离的自动注入 source.kind；`[]` 关闭剥离。
+- `discoveryTools`：晋升后 resident 目录的常驻发现工具——`dev_tool_search`
+  （搜索完整目录并按名解锁，解锁结果下一请求生效且会话内保持）、
+  `skill_search` / `skill_load`（无门控，按需搜索/加载技能说明，替代常驻
+  ~9KB 技能目录）。
 - `maxTokens`：请求 #1 输出预算封顶（0 = 不封顶，opt-in）。
+
+> 0.7.0 破坏性变更：移除 `skillDiscovery` / `instructionHint` /
+> `bootstrap.compactionTools` 三个字段（resident 语义下不再需要：
+> `dev_tool_search` 常驻提供按需发现，无压缩回退、无指令提示补偿）；
+> `bootstrap.discoveryTools` **恢复**为 resident 目录的常驻发现工具
+> （默认 `dev_tool_search` / `skill_search` / `skill_load`）。已保存的旧配置
+> 会自动忽略被移除字段。
 
 `minimalPrompt`（极简提示词层，0.4.0 新增）：
 
