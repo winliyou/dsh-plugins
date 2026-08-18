@@ -85,7 +85,7 @@ for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf", "se
 // 宿主 dsh-client-ui-slots（0.1.0-rc.7+）把 settings.plugin.item 声明为
 // keyed slot，注册缺 key 会让整个 client bundle apply 失败（Failed to load
 // plugins）。key 为卡片编辑的设置 namespace（与 host 侧 serviceKey 一致）。
-// 这里 mock react/slots/remote/locale 真实执行三个包的 client apply。
+// 这里 mock react/slots/remote/locale 真实执行三个配置类包的 client apply。
 {
   const requireCjs = createRequire(import.meta.url);
   const reactStub = {
@@ -187,7 +187,7 @@ for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf", "se
 // ── settings namespace 注册（宿主 rc.7+ 设置页可见性）──────────────────
 // 设置页 describe() 只枚举 ctx.settings.register 注册过的 namespace；未注册
 // 时卡片即使带正确 key 也不渲染。仓库测试环境无 @deepseek-ai/schemastery，
-// 用 stub schema 库直接驱动三个包导出的注册函数。
+// 用 stub schema 库直接驱动三个配置类包导出的注册函数。
 {
   const vrNS = await import(path.join(ROOT, "packages/vision-router/lib/index.mjs"));
   const sbNS = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/index.mjs"));
