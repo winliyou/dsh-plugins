@@ -7,14 +7,16 @@ DSH（DeepSeek Harness）host 层全局插件的 npm 包（monorepo）：
 | `@chaoset/vision-router` | 识图自动降级：纯文本模型收到图片时自动调用视觉模型转述（转述文本附带图片来源标注） |
 | `@chaoset/sandbox-extra-roots` | 沙盒额外允许写入目录（Seatbelt/bwrap/Landlock + fs fence） |
 | `@chaoset/adaptive-perf` | 极简性能自适应：标准/PTC 模式抑制运行时上下文并按需精简工具目录 |
+| `@chaoset/session-archive` | 归档会话管理：浏览、批量恢复或彻底删除归档会话 |
 
-每个包同时提供：
+每个包都提供：
 
 - **host 插件**（`lib/`，纯 ESM，随 harness 加载）
 - **client 插件**（`client/client.cjs`，`window.__ModuleLoader__.load` 格式，无需构建）——
-  在 DSH 设置页「插件配置」标签注册配置卡片
-- **远程配置服务**：设置页 UI 通过 `ctx.remote.<svc>` 读写配置，
-  持久化到 `~/.dsh/plugins/<name>/config.json`，保存后**热生效**（无需重启）
+  配置类插件在 DSH 设置页「插件配置」注册配置卡片；`session-archive` 在侧边栏提供归档面板
+- **远程服务**：配置类插件通过 `ctx.remote.<svc>` 读写配置，持久化到
+  `~/.dsh/plugins/<name>/config.json`，保存后**热生效**（无需重启）；
+  `session-archive` 通过 `ctx.remote.sessionArchive` 提供归档列表/详情/删除/恢复
 - **DSH bundle patch**：每个包自带 `cordis.patch.yml`，通过 `dsh plugin` 安装后
   自动成为 profile bundle 层，无需手改 `cordis.patch.yml`
 
@@ -29,7 +31,8 @@ packages/
 │   ├── client/client.cjs     # 设置页配置卡片（浏览器端）
 │   └── cordis.patch.yml      # bundle patch（dsh plugin 自动应用）
 ├── sandbox-extra-roots/      # @chaoset/sandbox-extra-roots（同上结构）
-└── adaptive-perf/            # @chaoset/adaptive-perf（同上结构）
+├── adaptive-perf/            # @chaoset/adaptive-perf（同上结构）
+└── session-archive/          # @chaoset/session-archive（归档面板）
 ```
 
 ## 开发
@@ -59,6 +62,7 @@ bun test                 # 运行 scripts/test.mjs（config-store / remote / hos
 cd packages/vision-router && bunx npm version patch
 cd ../sandbox-extra-roots && bunx npm version patch
 cd ../adaptive-perf && bunx npm version patch
+cd ../session-archive && bunx npm version patch
 git add -A && git commit -m "fix: ..." && git push
 ```
 
@@ -73,6 +77,7 @@ GitHub Actions（`.github/workflows/publish.yml`）在推送到 `main` 且
 cd packages/vision-router && bunx npm@latest publish --access public
 cd ../sandbox-extra-roots && bunx npm@latest publish --access public
 cd ../adaptive-perf && bunx npm@latest publish --access public
+cd ../session-archive && bunx npm@latest publish --access public
 ```
 
 ## 安装（npm 生态方式）
@@ -86,6 +91,7 @@ cd ../adaptive-perf && bunx npm@latest publish --access public
 dsh plugin --profile web add @chaoset/vision-router
 dsh plugin --profile web add @chaoset/sandbox-extra-roots
 dsh plugin --profile web add @chaoset/adaptive-perf
+dsh plugin --profile web add @chaoset/session-archive
 
 # 指定其他 profile
 dsh plugin --profile tui add @chaoset/vision-router
@@ -94,6 +100,7 @@ dsh plugin --profile tui add @chaoset/vision-router
 dsh plugin --profile web remove @chaoset/vision-router
 dsh plugin --profile web remove @chaoset/sandbox-extra-roots
 dsh plugin --profile web remove @chaoset/adaptive-perf
+dsh plugin --profile web remove @chaoset/session-archive
 ```
 
 > **不要只把包名写进 profile 的 `package.json` 就完事。** `dsh plugin add`
@@ -109,8 +116,8 @@ dsh plugin --profile web remove @chaoset/adaptive-perf
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-perf
-# 然后编辑 package.json，把三个包名追加进 dsh.profile.bundles
+pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-perf @chaoset/session-archive
+# 然后编辑 package.json，把四个包名追加进 dsh.profile.bundles
 ```
 
 ### 从 npm 安装
@@ -121,6 +128,7 @@ pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-p
 dsh plugin --profile web add @chaoset/vision-router
 dsh plugin --profile web add @chaoset/sandbox-extra-roots
 dsh plugin --profile web add @chaoset/adaptive-perf
+dsh plugin --profile web add @chaoset/session-archive
 ```
 
 ### 从 GitHub 安装
@@ -150,6 +158,7 @@ dsh plugin --profile web add https://github.com/owner/repo/releases/download/v1.
 dsh plugin --profile web add @chaoset/vision-router --registry=https://registry.npmmirror.com
 dsh plugin --profile web add @chaoset/sandbox-extra-roots --registry=https://registry.npmmirror.com
 dsh plugin --profile web add @chaoset/adaptive-perf --registry=https://registry.npmmirror.com
+dsh plugin --profile web add @chaoset/session-archive --registry=https://registry.npmmirror.com
 
 # 或者一次性设置 registry
 npm_config_registry=https://registry.npmmirror.com dsh plugin --profile web add @chaoset/vision-router
@@ -160,7 +169,7 @@ npm_config_registry=https://registry.npmmirror.com dsh plugin --profile web add 
 ```bash
 cd ~/.dsh/profiles/web
 pnpm config set registry https://registry.npmmirror.com
-pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-perf
+pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-perf @chaoset/session-archive
 ```
 
 ## 给 AI Agent 的安装指引
@@ -188,12 +197,14 @@ pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-p
    dsh plugin --profile web add @chaoset/vision-router
    dsh plugin --profile web add @chaoset/sandbox-extra-roots
    dsh plugin --profile web add @chaoset/adaptive-perf
+   dsh plugin --profile web add @chaoset/session-archive
    ```
    - 如果这些包还没有发布，需要从本地源码安装，直接把包名换成对应路径：
      ```bash
      dsh plugin --profile web add /absolute/path/to/packages/vision-router
      dsh plugin --profile web add /absolute/path/to/packages/sandbox-extra-roots
      dsh plugin --profile web add /absolute/path/to/packages/adaptive-perf
+     dsh plugin --profile web add /absolute/path/to/packages/session-archive
      ```
    - `dsh plugin` 会自动把声明了 `dsh.bundle` 的包加入
      `dsh.profile.bundles`，并应用包内的 `cordis.patch.yml`。
@@ -202,7 +213,7 @@ pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-p
    ```bash
    dsh plugin --profile web list
    # 或查看组合后的配置里是否出现插件行
-   dsh --profile web --dump-config | grep -E "vision-router|sandbox-extra-roots|adaptive-perf"
+   dsh --profile web --dump-config | grep -E "vision-router|sandbox-extra-roots|adaptive-perf|session-archive"
    ```
 
 5. **启动/重启 DSH**
@@ -216,6 +227,7 @@ pnpm add @chaoset/vision-router @chaoset/sandbox-extra-roots @chaoset/adaptive-p
    dsh plugin --profile web remove @chaoset/vision-router
    dsh plugin --profile web remove @chaoset/sandbox-extra-roots
    dsh plugin --profile web remove @chaoset/adaptive-perf
+   dsh plugin --profile web remove @chaoset/session-archive
    ```
 
 > 注：client bundle 依赖 dsh 浏览器端模块（react、dsh-client-ui-slots 等），

@@ -64,6 +64,18 @@ const DEFAULT_CONFIG = {
 
 export const config = { ...DEFAULT_CONFIG };
 
+/** 配置校验：只接受正整数数值字段，避免脏配置拖垮并发/截断逻辑。 */
+function validateConfig(partial) {
+  if (partial === null || typeof partial !== 'object' || Array.isArray(partial)) {
+    throw new TypeError('session-archive config must be a plain object');
+  }
+  for (const key of ['detailMaxMessages', 'messagePreviewChars', 'titleReadConcurrency']) {
+    if (partial[key] !== undefined && (!Number.isInteger(partial[key]) || partial[key] <= 0)) {
+      throw new TypeError(`session-archive config field "${key}" must be a positive integer`);
+    }
+  }
+}
+
 /** 并发限制器：最多 N 个任务并行，其余排队。 */
 function limitedConcurrency(limit, tasks) {
   const results = new Array(tasks.length);
@@ -243,13 +255,14 @@ export function createArchiveHost(ctx, cfg) {
       const unique = [...new Set(sessionIds)];
       const deleted = [];
       const failed = [];
+      const headers = await persistence.list();
+      const headersById = new Map(headers.map((item) => [item.id, item]));
       for (const sessionId of unique) {
         if (isLive(sessionId)) {
           failed.push({ sessionId, reason: 'live' });
           continue;
         }
-        const headers = await persistence.list();
-        const header = headers.find((item) => item.id === sessionId);
+        const header = headersById.get(sessionId);
         if (header === undefined) {
           // 会话文件已不存在：幂等删除（ghost id 保留在归档集合中）。
           deleted.push(sessionId);
@@ -299,13 +312,20 @@ export function createArchiveHost(ctx, cfg) {
 
 /** 插件 apply：注册远程服务（面板 UI 读写）。 */
 export function apply(ctx, config) {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const patchConfig = config || {};
+  const cfg = { ...DEFAULT_CONFIG, ...patchConfig };
   const store = createConfigStore({
     name,
     defaults: DEFAULT_CONFIG,
-    patchConfig: config,
+    patchConfig,
+    validate: validateConfig,
+    onUpdate: (merged) => {
+      Object.assign(cfg, { ...DEFAULT_CONFIG, ...patchConfig, ...merged });
+    },
   });
-  ctx.effect(() => store.dispose?.(), 'session-archive: store');
+  // 启动时也以 config.json（若有）为权威，和其余插件保持一致。
+  Object.assign(cfg, store.effective());
+  ctx.effect(() => store.dispose?.());
 
   if (SessionArchiveGateway !== null) {
     ctx.plugin(SessionArchiveGateway, { host: createArchiveHost(ctx, cfg), serviceKey: 'sessionArchive' });

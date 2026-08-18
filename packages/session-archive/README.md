@@ -53,11 +53,11 @@ dsh plugin --profile web add @chaoset/session-archive
 | `list()` | — | `{ items: ArchiveRow[] }` |
 | `detail(sessionId)` | 会话 id | `{ sessionId, header, title, messageCount, messages, live }` |
 | `delete(sessionIds[])` | id 数组 | `{ deleted, failed, removedFromArchive }` |
+| `unarchive(sessionIds[])` | id 数组 | `{ restored, removedFromArchive }` |
 
 > `delete` 的 `removedFromArchive` 恒为 0：删除保留归档 ghost id（见上），
 > 侧边栏不会重新显示已删除的会话；`unarchive` 的 `removedFromArchive` 为
 > 实际从归档集合移除的 id 数。
-| `unarchive(sessionIds[])` | id 数组 | `{ restored, removedFromArchive }` |
 
 `ArchiveRow`：`{ sessionId, title, cwd, createdAt, updatedAt, size, live }`。
 

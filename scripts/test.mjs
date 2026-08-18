@@ -1,4 +1,4 @@
-// 两个 host 插件 + config-store + remote 的全量回归测试
+// 全部 host 插件 + config-store + remote 的全量回归测试
 // 运行：bun scripts/test.mjs（依赖由根部 devDependencies 提供）
 import os from "node:os";
 import fs from "node:fs";
