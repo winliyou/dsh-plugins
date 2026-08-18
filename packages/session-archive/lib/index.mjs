@@ -76,6 +76,18 @@ function validateConfig(partial) {
   }
 }
 
+/** 配置归一化：非法/缺失数值回退默认值，保证运行时不会拿到 NaN/负数。 */
+function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
+  const raw = source !== null && typeof source === 'object' && !Array.isArray(source) ? source : {};
+  const merged = { ...defaults, ...raw };
+  const positiveInt = (value, fallback) => Number.isInteger(value) && value > 0 ? value : fallback;
+  return {
+    detailMaxMessages: positiveInt(merged.detailMaxMessages, defaults.detailMaxMessages),
+    messagePreviewChars: positiveInt(merged.messagePreviewChars, defaults.messagePreviewChars),
+    titleReadConcurrency: positiveInt(merged.titleReadConcurrency, defaults.titleReadConcurrency),
+  };
+}
+
 /** 并发限制器：最多 N 个任务并行，其余排队。 */
 function limitedConcurrency(limit, tasks) {
   const results = new Array(tasks.length);
@@ -313,18 +325,18 @@ export function createArchiveHost(ctx, cfg) {
 /** 插件 apply：注册远程服务（面板 UI 读写）。 */
 export function apply(ctx, config) {
   const patchConfig = config || {};
-  const cfg = { ...DEFAULT_CONFIG, ...patchConfig };
+  const cfg = normalizeConfig({ ...DEFAULT_CONFIG, ...patchConfig });
   const store = createConfigStore({
     name,
     defaults: DEFAULT_CONFIG,
     patchConfig,
     validate: validateConfig,
     onUpdate: (merged) => {
-      Object.assign(cfg, { ...DEFAULT_CONFIG, ...patchConfig, ...merged });
+      Object.assign(cfg, normalizeConfig({ ...DEFAULT_CONFIG, ...patchConfig, ...merged }));
     },
   });
   // 启动时也以 config.json（若有）为权威，和其余插件保持一致。
-  Object.assign(cfg, store.effective());
+  Object.assign(cfg, normalizeConfig(store.effective()));
   ctx.effect(() => store.dispose?.());
 
   if (SessionArchiveGateway !== null) {
