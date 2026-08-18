@@ -19,12 +19,18 @@ import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const DSH_HOME = process.env.DSH_HOME?.trim() ? resolve(process.env.DSH_HOME) : join(homedir(), ".dsh");
-const ANCHORS = [
-  join(DSH_HOME, "profiles", "web", "package.json"),
-  join(DSH_HOME, "profiles", "tui", "package.json"),
-  join(DSH_HOME, "profiles", "headless", "package.json"),
-];
+function dshHome() {
+  return process.env.DSH_HOME?.trim() ? resolve(process.env.DSH_HOME) : join(homedir(), ".dsh");
+}
+
+function profileAnchors() {
+  const home = dshHome();
+  return [
+    join(home, "profiles", "web", "package.json"),
+    join(home, "profiles", "tui", "package.json"),
+    join(home, "profiles", "headless", "package.json"),
+  ];
+}
 
 /** 加载一个官方 ESM 包。优先本包依赖树，失败后从 harness profile 解析文件
  * URL 再 import——这样 Node 20 早期版本（尚不支持 require(ESM)）也能工作，
@@ -33,7 +39,7 @@ async function loadPackage(specifier) {
   try {
     return await import(specifier);
   } catch {}
-  for (const base of ANCHORS) {
+  for (const base of profileAnchors()) {
     try {
       const resolved = createRequire(base).resolve(specifier);
       return await import(pathToFileURL(resolved).href);
