@@ -12,7 +12,9 @@
     "dsh",
     "deepseek-harness",
     "plugin",
-    "cordis"
+    "cordis",
+    "session-archive",
+    "archive"
   ],
   "workspaces": [
     "packages/*"
