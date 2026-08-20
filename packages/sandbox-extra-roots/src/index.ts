@@ -32,22 +32,23 @@
 
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import { canonicalPath, isPathUnder, loadLandlock, seatbeltProfileArgs } from "./common.mjs";
-import { createConfigStore } from "./config-store.mjs";
+import type { Context } from "@deepseek-ai/cordis";
+import { canonicalPath, isPathUnder, loadLandlock, seatbeltProfileArgs } from "./common.js";
+import { createConfigStore } from "./config-store.js";
 
 // remote 服务（设置页 UI 的配置读写）可选：typert-protocol 不可用时
 // 动态 import 失败，核心功能（沙盒包装）照常工作。
-let PluginConfigGateway = null;
+let PluginConfigGateway: any = null;
 try {
-  ({ PluginConfigGateway } = await import("./remote.mjs"));
+  ({ PluginConfigGateway } = await import("./remote.js"));
 } catch (error) {
-  console.warn("sandbox-extra-roots: settings gateway unavailable: " + (error && error.message || error));
+  console.warn("sandbox-extra-roots: settings gateway unavailable: " + ((error as Error)?.message ?? String(error)));
 }
 
 // 宿主 settings 体系的 schema 库（dsh-settings 0.1.0-rc.7+ 用 schemastery）。
 // DSH profile 的 hoisted node_modules 直接解析；仓库测试环境无此包时为
 // null，settings namespace 注册段静默跳过（fail-safe）。
-let Schema = null;
+let Schema: any = null;
 try {
   ({ default: Schema } = await import("@deepseek-ai/schemastery"));
 } catch {}
@@ -69,8 +70,8 @@ const STATE = Symbol("sandbox-extra-roots.state");
 const ORIGINAL = Symbol.for("cordis.original");
 
 /** Landlock runner 可执行路径，惰性加载（仅 Linux 且真正进入 apply 时解析）。 */
-let landlockExecPromise = null;
-function getLandlockExec() {
+let landlockExecPromise: Promise<string | null> | null = null;
+function getLandlockExec(): Promise<string | null> | null {
   if (process.platform !== "linux") return null;
   landlockExecPromise ??= loadLandlock()
     .then((landlock) => landlock.launcherPath())
@@ -87,26 +88,26 @@ function getLandlockExec() {
  * 一项失败会拖垮整个设置页。
  * fail-safe（schema 库/服务缺失静默跳过）+ 幂等（重复注册忽略）。
  * 导出以便测试注入 Schema stub。 */
-export function registerSettingsNamespace(ctx, ns, schemaLib, buildSchema, options) {
+export function registerSettingsNamespace(ctx: any, ns: string, schemaLib: any, buildSchema: (z: any) => any, options: any): boolean {
   if (schemaLib === null || schemaLib === undefined) return false;
   if (ctx === null || typeof ctx !== "object" || typeof ctx.inject !== "function") return false;
   try {
-    ctx.inject(["settings"], (settingsCtx) => {
+    ctx.inject(["settings"], (settingsCtx: any) => {
       try {
         settingsCtx.settings.register(ns, buildSchema(schemaLib), options);
       } catch (error) {
-        const message = String(error && error.message || error);
+        const message = String((error as Error)?.message ?? String(error));
         if (!message.includes("already registered")) throw error;
       }
     });
     return true;
   } catch (error) {
-    try { ctx.logger?.warn?.(`sandbox-extra-roots: settings namespace registration skipped: ${error && error.message || error}`); } catch {}
+    try { ctx.logger?.warn?.(`sandbox-extra-roots: settings namespace registration skipped: ${(error as Error)?.message ?? String(error)}`); } catch {}
     return false;
   }
 }
 
-export async function apply(ctx, config) {
+export async function apply(ctx: Context, config?: any): Promise<void> {
   // fail-safe:初始化失败只记录,绝不让本插件拖垮 harness(host 层挂载时
   // entry 异常会导致进程启动失败)。
   try {
@@ -193,7 +194,7 @@ export async function apply(ctx, config) {
     }), { base: cfg });
 
     // remote.set 严格校验：非法数组/相对路径直接拒绝，UI 能立即看到原因。
-    function validateSandboxConfig(partial) {
+    function validateSandboxConfig(partial: any) {
       if (partial === null || typeof partial !== "object" || Array.isArray(partial)) {
         throw new TypeError("sandbox-extra-roots config must be a plain object");
       }
@@ -210,18 +211,18 @@ export async function apply(ctx, config) {
     }
 
     // 只接受绝对路径:相对路径/空值会破坏词法包含判断,直接拒绝并告警。
-    function normalizeRoots(c) {
+    function normalizeRoots(c: any) {
       const roots = Array.isArray(c.extraWritableRoots) ? c.extraWritableRoots : [];
       if (!Array.isArray(c.extraWritableRoots)) {
         ctx.logger?.warn?.("sandbox-extra-roots: extraWritableRoots must be an array of absolute paths; ignoring current config");
       }
       const normalized = roots
-        .filter((root) => {
+        .filter((root: any) => {
           if (typeof root === "string" && root.length > 0 && isAbsolute(root)) return true;
           ctx.logger?.warn?.(`sandbox-extra-roots: ignoring non-absolute extra writable root ${JSON.stringify(root)}`);
           return false;
         })
-        .map((root) => canonicalPath(root));
+        .map((root: any) => canonicalPath(root));
       return [...new Set(normalized)];
     }
 
@@ -229,7 +230,7 @@ export async function apply(ctx, config) {
     // （Landlock 契约里是 “unopenable grant root”），因此只在执行时授予当前
     // 真实存在的目录；Seatbelt 可接受尚不存在的 subpath，fs fence 本身也只在
     // root 存在时才会匹配。目录稍后出现后，下一次 confine 会自动纳入。
-    function existingDirectoryRoots(roots) {
+    function existingDirectoryRoots(roots: string[]) {
       const existing = [];
       for (const root of roots) {
         let valid = false;
@@ -256,14 +257,14 @@ export async function apply(ctx, config) {
     // ── 1. 包装 bash 沙盒的 confine:按 runner 追加额外可写目录 ──
     if (!sandboxState.wrapped) {
       sandboxState.hadOwn = Object.hasOwn(rawSandbox, "confine");
-      const originalConfine = rawSandbox.confine;
+      const originalConfine: any = rawSandbox.confine;
       if (sandboxState.hadOwn) sandboxState.origConfine = originalConfine;
-      const warnOnce = (key, message) => {
+      const warnOnce = (key: string, message: string) => {
         if (sandboxState.warned.has(key)) return;
         sandboxState.warned.add(key);
         ctx.logger?.warn?.(`sandbox-extra-roots: ${message}`);
       };
-      const installedConfine = function confineWithExtraRoots(argv, policy) {
+      const installedConfine = function confineWithExtraRoots(this: any, argv: any, policy: any) {
         const wrapped = originalConfine.call(this, argv, policy);
         if (policy?.mode !== "workspace-write") return wrapped;
         const roots = sandboxState.extraRoots;
@@ -328,15 +329,15 @@ export async function apply(ctx, config) {
     // ── 2. 包装文件系统 fence 的 checkedTarget:额外目录放行 ──
     if (!fsState.wrapped) {
       fsState.hadOwn = Object.hasOwn(rawFs, "checkedTarget");
-      const originalCheckedTarget = rawFs.checkedTarget;
+      const originalCheckedTarget: any = rawFs.checkedTarget;
       if (fsState.hadOwn) fsState.origCheckedTarget = originalCheckedTarget;
-      const installedCheckedTarget = async function checkedTargetWithExtraRoots(target, sandboxPolicy) {
+      const installedCheckedTarget = async function checkedTargetWithExtraRoots(this: any, target: any, sandboxPolicy: any) {
         try {
           return await originalCheckedTarget.call(this, target, sandboxPolicy);
         } catch (error) {
           // 官方白名单拒绝后，再检查是否落在本插件配置的额外根目录内。
           // 这样官方逻辑永远优先执行，后续 DSH 升级也不会因复制实现而漂移。
-          if (error?.code !== "FS_SANDBOX_DENIED") throw error;
+          if ((error as NodeJS.ErrnoException)?.code !== "FS_SANDBOX_DENIED") throw error;
           const policy = sandboxPolicy ?? ctx.sandboxPolicy.resolve();
           if (policy.mode !== "workspace-write") throw error;
           const fresh = await this.resolve(target.displayPath);
@@ -351,6 +352,6 @@ export async function apply(ctx, config) {
       fsState.wrapped = true;
     }
   } catch (error) {
-    ctx.logger?.warn?.(`sandbox-extra-roots: init failed: ${error.message}`);
+    ctx.logger?.warn?.(`sandbox-extra-roots: init failed: ${(error as Error)?.message ?? String(error)}`);
   }
 }

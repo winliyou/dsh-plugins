@@ -1,11 +1,7 @@
-window.__ModuleLoader__.load({
-  id: "@chaoset/sandbox-extra-roots",
-  factory: (require) => {
-    var module = { exports: {} };
-    var exports = module.exports;
-    let react = require("react");
+import * as React from "react";
 
-    var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ser_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ser_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ser_header:hover,.ser_card[data-open=true]>.ser_header{background:var(--dsw-alias-interactive-bg-hover)}.ser_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ser_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ser_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ser_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ser_label{font-size:12px;font-weight:500;line-height:18px}.ser_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:var(--ds-font-family-code,monospace)}.ser_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ser_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ser_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ser_save:disabled{opacity:.4;cursor:default}.ser_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);background:0 0;color:var(--dsw-alias-label-secondary,#666);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px}.ser_discard:disabled{opacity:.4;cursor:default}.ser_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.ser_error{color:var(--dsw-alias-state-error-primary)}";
+var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ser_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ser_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ser_header:hover,.ser_card[data-open=true]>.ser_header{background:var(--dsw-alias-interactive-bg-hover)}.ser_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ser_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ser_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ser_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ser_label{font-size:12px;font-weight:500;line-height:18px}.ser_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:var(--ds-font-family-code,monospace)}.ser_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ser_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ser_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ser_save:disabled{opacity:.4;cursor:default}.ser_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);background:0 0;color:var(--dsw-alias-label-secondary,#666);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px}.ser_discard:disabled{opacity:.4;cursor:default}.ser_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.ser_error{color:var(--dsw-alias-state-error-primary)}";
+
     var tagId = "@chaoset/sandbox-extra-roots/client.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"" + tagId + "\"]") === null) {
       var tag = document.createElement("style");
@@ -41,21 +37,21 @@ window.__ModuleLoader__.load({
       roots: "Extra writable roots (one absolute path per line)"
     };
 
-    function SandboxRootsCard(props) {
+    function SandboxRootsCard(props: any) {
       const t = props.t;
-      const [open, setOpen] = react.useState(false);
-      const [cfg, setCfg] = react.useState(null);
-      const [draft, setDraft] = react.useState(null);
-      const [saving, setSaving] = react.useState(false);
-      const [status, setStatus] = react.useState(null);
+      const [open, setOpen] = React.useState(false);
+      const [cfg, setCfg] = React.useState<any>(null);
+      const [draft, setDraft] = React.useState<any>(null);
+      const [saving, setSaving] = React.useState(false);
+      const [status, setStatus] = React.useState<any>(null);
 
-      react.useEffect(() => {
+      React.useEffect(() => {
         let cancelled = false;
-        props.getConfig().then((value) => {
+        props.getConfig().then((value: any) => {
           if (cancelled) return;
           setCfg(value);
           setDraft(value);
-        }).catch((error) => {
+        }).catch((error: any) => {
           if (!cancelled) setStatus({ kind: "error", text: `${t("loadFailed")}: ${error && error.message || error}` });
         });
         return () => { cancelled = true; };
@@ -72,54 +68,54 @@ window.__ModuleLoader__.load({
         props.setConfig(draft).then(() => {
           setCfg(draft);
           setStatus({ kind: "ok", text: t("saved") });
-        }).catch((error) => {
+        }).catch((error: any) => {
           setStatus({ kind: "error", text: `${t("saveFailed")}: ${error && error.message || error}` });
         }).finally(() => setSaving(false));
       };
 
       const draftText = draft === null ? "" : (draft.extraWritableRoots || []).join("\n");
-      return react.createElement(
+      return React.createElement(
         "li",
         { className: "ser_card", "data-open": open },
-        react.createElement(
+        React.createElement(
           "button",
           { className: "ser_header", type: "button", onClick: () => setOpen(!open), "aria-expanded": open },
-          react.createElement("span", { className: "ser_title" }, t("title")),
-          dirty ? react.createElement("span", { className: "ser_badge" }, t("unsaved")) : null,
-          react.createElement("span", null, open ? "▲" : "▼")
+          React.createElement("span", { className: "ser_title" }, t("title")),
+          dirty ? React.createElement("span", { className: "ser_badge" }, t("unsaved")) : null,
+          React.createElement("span", null, open ? "▲" : "▼")
         ),
-        open ? react.createElement(
+        open ? React.createElement(
           "div",
           { className: "ser_body" },
-          react.createElement("p", { className: "ser_hint" }, t("hint")),
-          react.createElement(
+          React.createElement("p", { className: "ser_hint" }, t("hint")),
+          React.createElement(
             "label",
             { className: "ser_field" },
-            react.createElement("span", { className: "ser_label" }, t("roots")),
-            react.createElement("textarea", {
+            React.createElement("span", { className: "ser_label" }, t("roots")),
+            React.createElement("textarea", {
               className: "ser_textarea",
               value: draftText,
               disabled: draft === null,
-              onChange: (e) => {
+              onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => {
                 const roots = e.target.value.split("\n").map((s) => s.trim()).filter((s) => s.length > 0);
                 setDraft({ ...draft, extraWritableRoots: roots });
               }
             })
           ),
-          react.createElement(
+          React.createElement(
             "div",
             { className: "ser_footer" },
-            react.createElement(
+            React.createElement(
               "span",
               { className: "ser_status" + (status !== null && status.kind === "error" ? " ser_error" : ""), role: "status" },
               status !== null ? status.text : ""
             ),
-            react.createElement(
+            React.createElement(
               "button",
               { className: "ser_discard", type: "button", disabled: saving || draft === null || !dirty, onClick: discard },
               t("discard")
             ),
-            react.createElement(
+            React.createElement(
               "button",
               { className: "ser_save", type: "button", disabled: saving || draft === null || !dirty, onClick: save },
               saving ? t("saving") : t("save")
@@ -136,7 +132,7 @@ window.__ModuleLoader__.load({
     // 永远不存在，客户端插件会一直 pending，web boot 报 "did not activate"。
     // 因此本插件先挂载自己的命名空间，再注册设置卡片。
     const inject = ["slots", "locale", "remote"];
-    const passthroughSchema = { parse: (value) => value };
+    const passthroughSchema = { parse: (value: any) => value };
     const REMOTE_CONTRIBUTION = {
       package: "@chaoset/sandbox-extra-roots",
       descriptors: [
@@ -165,7 +161,7 @@ window.__ModuleLoader__.load({
         }
       ]
     };
-    async function apply(ctx) {
+    async function apply(ctx: any) {
       const t = ctx.locale.bind(NS);
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), "sandbox-extra-roots: dictionaries");
       // 先挂载命名空间，再用 ctx.get 取回服务：cordis 的属性访问（ctx.remote.X）
@@ -174,11 +170,11 @@ window.__ModuleLoader__.load({
       await ctx.remote.$mount(REMOTE_CONTRIBUTION);
       const configService = ctx.get("remote.sandboxExtraRootsConfig");
       if (configService === void 0) throw new Error("sandbox-extra-roots: remote.sandboxExtraRootsConfig did not materialize after mount");
-      const getConfig = () => configService.get().then((result) => {
+      const getConfig = () => configService.get().then((result: any) => {
         if (!result.ok) throw new Error(`sandboxExtraRootsConfig.get failed: ${result.error.code}: ${result.error.message}`);
         return result.value.config;
       });
-      const setConfig = (partial) => configService.set(partial).then((result) => {
+      const setConfig = (partial: any) => configService.set(partial).then((result: any) => {
         if (!result.ok) throw new Error(`sandboxExtraRootsConfig.set failed: ${result.error.code}: ${result.error.message}`);
         return result.value;
       });
@@ -194,8 +190,4 @@ window.__ModuleLoader__.load({
       }, SandboxRootsCard));
     }
 
-    exports.apply = apply;
-    exports.inject = inject;
-    return module.exports;
-  }
-});
+    export { apply, inject };

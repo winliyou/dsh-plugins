@@ -4,7 +4,9 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
-    "sourceMap": false
+    "sourceMap": false,
+    "types": ["node"],
+    "typeRoots": ["./node_modules/@types"]
   },
   "include": ["packages/*/src/**/*.ts"],
   "exclude": ["packages/*/src/**/*.tsx"]

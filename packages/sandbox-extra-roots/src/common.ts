@@ -15,6 +15,7 @@
 
 import { createRequire } from "node:module";
 import { stat } from "node:fs/promises";
+import type { BigIntStats } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -35,7 +36,7 @@ function profileAnchors() {
 /** 加载一个官方 ESM 包。优先本包依赖树，失败后从 harness profile 解析文件
  * URL 再 import——这样 Node 20 早期版本（尚不支持 require(ESM)）也能工作，
  * 且与 harness 解析到同一 realpath、共享模块实例。 */
-async function loadPackage(specifier) {
+async function loadPackage(specifier: string): Promise<any> {
   try {
     return await import(specifier);
   } catch {}
@@ -48,18 +49,18 @@ async function loadPackage(specifier) {
   throw new Error(`cannot resolve ${specifier} (neither package deps nor harness profiles resolve it)`);
 }
 
-const sandbox = await loadPackage("@deepseek-ai/dsh-sandbox");
+const sandbox = (await loadPackage("@deepseek-ai/dsh-sandbox")) as any;
 
 /** @deepseek-ai/dsh-sandbox 命名空间（canonicalPath / writableRoots）。 */
 export const { canonicalPath, writableRoots } = sandbox;
 
 /** 惰性加载 @deepseek-ai/node-addon-landlock-run（仅 Linux 需要）。 */
-export async function loadLandlock() {
+export async function loadLandlock(): Promise<any> {
   return loadPackage("@deepseek-ai/node-addon-landlock-run");
 }
 
 /** 转义一个路径为 SBPL 字符串字面量(与官方实现一致)。 */
-export function sbplString(path) {
+export function sbplString(path: string): string {
   return `"${path.replaceAll("\\", String.raw`\\`).replaceAll("\"", String.raw`\"`)}"`;
 }
 
@@ -78,7 +79,7 @@ export function sbplString(path) {
  * @param extraRoots - 已规范化的额外可写根目录列表。
  * @returns sandbox-exec 的 profile 参数。
  */
-export function seatbeltProfileArgs(policy, extraRoots) {
+export function seatbeltProfileArgs(policy: { mode: string; workspaceRoot?: string }, extraRoots: string[]): string[] {
   const forms = [
     "(version 1)",
     "(allow default)",
@@ -101,16 +102,16 @@ export function seatbeltProfileArgs(policy, extraRoots) {
 
 const MISSING_CODES = new Set(["ENOENT", "ENOTDIR"]);
 
-function isMissing(error) {
-  const code = error.code;
-  return MISSING_CODES.has(code);
+function isMissing(error: unknown) {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code !== void 0 && MISSING_CODES.has(code);
 }
 
-function comparablePath(path, caseSensitive) {
+function comparablePath(path: string, caseSensitive: boolean) {
   return caseSensitive ? path : path.toLowerCase();
 }
 
-function isLexicallyUnder(path, root, caseSensitive) {
+function isLexicallyUnder(path: string, root: string, caseSensitive: boolean) {
   const comparableTarget = comparablePath(path, caseSensitive);
   const comparableRoot = comparablePath(root, caseSensitive);
   if (comparableTarget === comparableRoot) return true;
@@ -118,7 +119,7 @@ function isLexicallyUnder(path, root, caseSensitive) {
   return comparableTarget.startsWith(prefix);
 }
 
-async function statIfPresent(path) {
+async function statIfPresent(path: string) {
   try {
     return await stat(path, { bigint: true });
   } catch (error) {
@@ -127,7 +128,7 @@ async function statIfPresent(path) {
   }
 }
 
-function sameIdentity(left, right) {
+function sameIdentity(left: BigIntStats, right: BigIntStats) {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
@@ -136,7 +137,7 @@ function sameIdentity(left, right) {
  * 词法快路径处理常规拼写;拼写不一致时(如大小写/别名)退化为
  * 沿祖先链比对文件系统身份。
  */
-export async function isPathUnder(path, root, caseSensitive = process.platform !== "win32") {
+export async function isPathUnder(path: string, root: string, caseSensitive: boolean = process.platform !== "win32"): Promise<boolean> {
   if (isLexicallyUnder(path, root, caseSensitive)) return true;
   const rootInfo = await statIfPresent(root);
   if (!rootInfo) return false;

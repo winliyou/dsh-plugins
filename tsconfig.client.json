@@ -7,7 +7,9 @@
     "sourceMap": false,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "jsxImportSource": "react"
+    "jsxImportSource": "react",
+    "types": ["node", "react"],
+    "typeRoots": ["./node_modules/@types"]
   },
   "include": ["packages/*/client/**/*.tsx"]
 }

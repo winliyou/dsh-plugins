@@ -13,7 +13,7 @@
     "LICENSE"
   ],
   "exports": {
-    ".": "./lib/index.mjs",
+    ".": "./lib/index.js",
     "./client": "./client/client.cjs",
     "./typert": "./lib/typert.host.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
@@ -40,8 +40,10 @@
     "@deepseek-ai/node-addon-landlock-run": "^0.1.1"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun ../../scripts/test.mjs",
-    "prepublishOnly": "bun ../../scripts/test.mjs"
+    "prepublishOnly": "bun ../../scripts/build.mjs && bun run test"
   },
   "repository": {
     "type": "git",

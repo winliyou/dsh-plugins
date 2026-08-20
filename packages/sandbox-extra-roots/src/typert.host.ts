@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * typert.host.js — 手写的 Typert host 工件（typert-loader 机制）。
  *
@@ -26,7 +27,7 @@ export const TYPERT = {
       invocation: { kind: 'direct' },
       parameters: [],
       result: codec('@chaoset/sandbox-extra-roots/types#SandboxExtraRootsConfig'),
-      sourceLocation: { file: 'packages/sandbox-extra-roots/lib/remote.mjs', line: 1, column: 1 },
+      sourceLocation: { file: 'packages/sandbox-extra-roots/src/remote.ts', line: 1, column: 1 },
     },
     {
       id: '@chaoset/sandbox-extra-roots#sandboxExtraRootsConfig/set',
@@ -43,7 +44,7 @@ export const TYPERT = {
         },
       ],
       result: codec('@chaoset/sandbox-extra-roots/types#SetResult'),
-      sourceLocation: { file: 'packages/sandbox-extra-roots/lib/remote.mjs', line: 1, column: 1 },
+      sourceLocation: { file: 'packages/sandbox-extra-roots/src/remote.ts', line: 1, column: 1 },
     },
   ],
   model: { services: [], events: [], objects: [] },
