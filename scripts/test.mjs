@@ -39,7 +39,7 @@ check("remote: 标记生效", remoteMethods(fake).some((m) => m.method === "get"
 check("remote: get/set 调用", fake.get().config.b === 200 && fake.set({ b: 300 }).saved === true);
 
 // sandbox 的 config-store 曾把换行写成字面 "\\n"，导致下次 effective() 读到非法 JSON 而丢配置。
-const { createConfigStore: createSandboxConfigStore } = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/config-store.mjs"));
+const { createConfigStore: createSandboxConfigStore } = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/config-store.js"));
 const sandboxStore = createSandboxConfigStore({ name: "sandbox-extra-roots-store-test", defaults: { extraWritableRoots: [] }, patchConfig: {} });
 sandboxStore.set({ extraWritableRoots: ["/tmp/regression"] });
 check("store(sandbox): set 后可重新读取配置", sandboxStore.effective().extraWritableRoots[0] === "/tmp/regression");
@@ -56,15 +56,15 @@ check("store(adaptive): 嵌套默认+patch+json 合并", adaptiveStore.effective
   && adaptiveStore.effective().presets[0] === "code"
   && adaptiveStore.effective().families.delegation.tools[0] === "subagent");
 // 三个包共享实现文件，历史上曾发生 config-store 漂移导致配置丢失；强制保持一致。
+// sandbox-extra-roots 已迁移至 TS（lib/*.js），其与另外两包的实现一致性改由
+// 根 test/ 的 src 对照检查覆盖；此处保留仍共享 .mjs 实现的两包对照。
 const visionStoreSrc = fs.readFileSync(path.join(ROOT, "packages/vision-router/lib/config-store.mjs"), "utf8");
-const sandboxStoreSrc = fs.readFileSync(path.join(ROOT, "packages/sandbox-extra-roots/lib/config-store.mjs"), "utf8");
 const adaptiveStoreSrc = fs.readFileSync(path.join(ROOT, "packages/adaptive-perf/lib/config-store.mjs"), "utf8");
 const visionRemoteSrc = fs.readFileSync(path.join(ROOT, "packages/vision-router/lib/remote.mjs"), "utf8");
-const sandboxRemoteSrc = fs.readFileSync(path.join(ROOT, "packages/sandbox-extra-roots/lib/remote.mjs"), "utf8");
 const adaptiveRemoteSrc = fs.readFileSync(path.join(ROOT, "packages/adaptive-perf/lib/remote.mjs"), "utf8");
-check("shared: config-store/remote 三包保持一致",
-  visionStoreSrc === sandboxStoreSrc && sandboxStoreSrc === adaptiveStoreSrc
-  && visionRemoteSrc === sandboxRemoteSrc && sandboxRemoteSrc === adaptiveRemoteSrc);
+check("shared: config-store/remote 保持一致（vision-router/adaptive-perf）",
+  visionStoreSrc === adaptiveStoreSrc
+  && visionRemoteSrc === adaptiveRemoteSrc);
 
 // ── npm bundle metadata（dsh plugin 自动激活依赖 dsh.bundle.patch）──────
 for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf", "session-archive"]) {
@@ -190,7 +190,7 @@ for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf", "se
 // 用 stub schema 库直接驱动三个配置类包导出的注册函数。
 {
   const vrNS = await import(path.join(ROOT, "packages/vision-router/lib/index.mjs"));
-  const sbNS = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/index.mjs"));
+  const sbNS = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/index.js"));
   const apNS = await import(path.join(ROOT, "packages/adaptive-perf/lib/index.mjs"));
   check("settings: 三包均导出注册函数",
     typeof vrNS.registerSettingsNamespace === "function"
@@ -415,87 +415,6 @@ check("VR: remote 拒绝非法配置", invalidRejected);
   for (const listener of vrEvents["agent/disposed"] ?? []) listener({ agent: textAgent });
   check("VR: agent 销毁释放提示段", disposedAgents.includes("a-text"));
 }
-
-// ── sandbox-extra-roots ────────────────────────────────────────────────
-const { apply: applySandbox } = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/index.mjs"));
-const { canonicalPath, writableRoots } = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/common.mjs"));
-const WS = "/ws";
-const EXTRA = "/tmp/extra";
-function sbpl(roots) {
-  const forms = ["(version 1)", "(allow default)", "(deny file-write*)", '(allow file-write* (literal "/dev/null"))'];
-  forms.push("(allow file-write* " + roots.map((r) => '(subpath "' + r + '")').join(" ") + ")");
-  return forms.join(" ");
-}
-const sandboxMock = {
-  confine(argv, policy) {
-    const roots = writableRoots(policy);
-    return { argv: ["sandbox-exec", "-p", sbpl(roots), "--", ...argv], enforcement: "full", denialSignatures: [], runnerFailureRules: [] };
-  },
-};
-const fsMock = {
-  async resolve(displayPath) { return { targetKey: displayPath }; },
-  async checkedTarget(target) {
-    if (target.displayPath.startsWith("/tmp")) return await this.resolve(target.displayPath);
-    throw Object.assign(new Error("FS_SANDBOX_DENIED"), { code: "FS_SANDBOX_DENIED" });
-  },
-};
-const ctx2 = {
-  sandbox: sandboxMock,
-  fs: fsMock,
-  sandboxPolicy: { resolve: () => ({ mode: "workspace-write", workspaceRoot: WS }) },
-  logger: { warn: () => {} },
-  effect(fn) { fn(); },
-  plugin(Cls, cfg) {
-    const saved = this.reflect;
-    this.reflect = { provide: () => {}, props: {} };
-    try { this.gateway = new Cls(this, cfg); } finally { this.reflect = saved; }
-  },
-};
-await applySandbox(ctx2, { extraWritableRoots: [EXTRA] });
-const out = sandboxMock.confine(["bash", "-c", "x"], { mode: "workspace-write", workspaceRoot: WS });
-check("SER: seatbelt 额外目录+官方根", out.argv[2].includes('(subpath "/tmp/extra")') && out.argv[2].includes('(subpath "/ws")'));
-const granted = await fsMock.checkedTarget({ displayPath: EXTRA + "/foo" });
-check("SER: fs fence 放行", granted.targetKey === EXTRA + "/foo");
-ctx2.gateway.set({ extraWritableRoots: ["/tmp/hot"] });
-const out2 = sandboxMock.confine(["x"], { mode: "workspace-write", workspaceRoot: WS });
-check("SER: remote set 热更新", out2.argv[2].includes('(subpath "/tmp/hot")'));
-let invalidRootRejected = false;
-try { ctx2.gateway.set({ extraWritableRoots: ["relative/path"] }); } catch { invalidRootRejected = true; }
-check("SER: remote 拒绝相对路径", invalidRootRejected);
-
-// bwrap/Landlock 不能绑定不存在的目录，运行时过滤缺失 root。
-const fakeHome2 = fs.mkdtempSync(path.join(os.tmpdir(), "fh2-"));
-const existingExtra = fs.mkdtempSync(path.join(os.tmpdir(), "ser-existing-"));
-const missingExtra = path.join(fakeHome2, "missing-root");
-process.env.HOME = fakeHome2;
-process.env.DSH_HOME = fakeHome2;
-const bwrapMock = {
-  confine(argv, policy) {
-    return { argv: ["bwrap", "--ro-bind", "/", "/", "--", ...argv], enforcement: "full", denialSignatures: [], runnerFailureRules: [] };
-  },
-};
-const ctx3 = {
-  sandbox: bwrapMock,
-  fs: fsMock,
-  sandboxPolicy: { resolve: () => ({ mode: "workspace-write", workspaceRoot: WS }) },
-  logger: { warn: () => {} },
-  effect(fn) { fn(); },
-  plugin(Cls, cfg) {
-    const saved = this.reflect;
-    this.reflect = { provide: () => {}, props: {} };
-    try { this.gateway = new Cls(this, cfg); } finally { this.reflect = saved; }
-  },
-};
-await applySandbox(ctx3, { extraWritableRoots: [missingExtra, existingExtra] });
-const bwrapOut = bwrapMock.confine(["bash", "-c", "x"], { mode: "workspace-write", workspaceRoot: WS });
-const bindArgs = bwrapOut.argv.slice(0, bwrapOut.argv.indexOf("--"));
-const canonicalExistingExtra = canonicalPath(existingExtra);
-const canonicalMissingExtra = canonicalPath(missingExtra);
-check("SER: bwrap 只授予存在的额外目录", bindArgs.includes("--bind") && bindArgs.includes(canonicalExistingExtra) && !bindArgs.includes(canonicalMissingExtra));
-process.env.HOME = fakeHome;
-process.env.DSH_HOME = fakeHome;
-fs.rmSync(fakeHome2, { recursive: true, force: true });
-fs.rmSync(existingExtra, { recursive: true, force: true });
 
 // ── adaptive-perf 自适应引擎（mock ctx 模拟 agent 生命周期）─────────────
 const ap = await import(path.join(ROOT, "packages/adaptive-perf/lib/index.mjs"));
