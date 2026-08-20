@@ -1,5 +1,5 @@
 /**
- * remote.mjs — 插件配置的远程服务（设置页 UI 通过 ctx.remote.<svc> 调用）
+ * remote.ts — 插件配置的远程服务（设置页 UI 通过 ctx.remote.<svc> 调用）
  *
  * DSH 的 Remote 装饰器是 ECMAScript 标准装饰器语法（Node 默认未启用），
  * 这里用"手动构造装饰器上下文"的方式等价调用：Remote(name)(method, context)

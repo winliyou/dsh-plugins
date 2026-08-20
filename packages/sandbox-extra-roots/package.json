@@ -40,9 +40,9 @@
     "@deepseek-ai/node-addon-landlock-run": "^0.1.1"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "bun ../../scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun ../../scripts/test.mjs",
+    "test": "vitest run",
     "prepublishOnly": "bun ../../scripts/build.mjs && bun run test"
   },
   "repository": {

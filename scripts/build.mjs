@@ -12,6 +12,21 @@ function tsc(pkgDir) {
   execFileSync(join(ROOT, "node_modules", ".bin", "tsc"), ["-p", join(pkgDir, "tsconfig.json")], { stdio: "inherit", cwd: ROOT });
 }
 
+// tsgo/tsc 不会把 .d.ts 输入复制到 outDir，src/dsh.d.ts 里的 declare module
+// 增强（ctx.sandbox/fs/sandboxPolicy/settings 等）必须并入 lib/index.d.ts
+// 才能随发布产物提供给消费者。tsgo 7.0.2 拒绝在 .ts 源码里内联这些
+// declare module（TS2310 自引用 / TS2664 可选依赖不可解析），因此由
+// 构建脚本在 tsc 之后把 dsh.d.ts 的内容追加进 lib/index.d.ts。
+function appendDshAugmentations(pkgDir) {
+  const dshDts = join(pkgDir, "src", "dsh.d.ts");
+  const indexPath = join(pkgDir, "lib", "index.d.ts");
+  if (!existsSync(dshDts) || !existsSync(indexPath)) return;
+  const indexContent = readFileSync(indexPath, "utf8");
+  if (indexContent.includes("declare module")) return;
+  const dshContent = readFileSync(dshDts, "utf8");
+  writeFileSync(indexPath, dshContent.trim() + "\n\n" + indexContent);
+}
+
 async function buildClient(pkgDir, pkgName, pkgId) {
   const result = await build({
     entryPoints: [join(pkgDir, "client", "index.tsx")],
@@ -50,6 +65,7 @@ for (const pkg of PACKAGES) {
   }
   const pkgJson = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8"));
   tsc(pkgDir);
+  appendDshAugmentations(pkgDir);
   if (existsSync(join(pkgDir, "client", "index.tsx"))) {
     await buildClient(pkgDir, pkg, pkgJson.name);
   }

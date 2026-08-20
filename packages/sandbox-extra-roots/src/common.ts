@@ -72,7 +72,7 @@ export function sbplString(path: string): string {
  * ⚠️ 官方 seatbeltProfileArgs 在 dsh-sandbox-local 的运行时导出中不存在
  * (profiles.d.ts 有声明但 lib/index.js 未导出),这里只能复制实现。
  * 升级 DSH 时请对照 @deepseek-ai/dsh-sandbox-local/lib/index.js 检查
- * 是否漂移 —— index.mjs 里对每个 confine 调用做了一次"官方 profile 与
+ * 是否漂移 —— index.ts 里对每个 confine 调用做了一次"官方 profile 与
  * 本实现(空额外目录)重建结果一致性"自检,不一致会打 warn 日志。
  *
  * @param policy - 逐调用解析出的沙盒策略(mode/workspaceRoot)。

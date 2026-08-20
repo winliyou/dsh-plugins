@@ -278,7 +278,7 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
             try {
               const official = seatbeltProfileArgs(policy, []);
               if (official[1] !== a[2]) {
-                ctx.logger?.warn?.("sandbox-extra-roots: official seatbelt profile shape changed; plugin may be stale (check common.mjs seatbeltProfileArgs against dsh-sandbox-local)");
+                ctx.logger?.warn?.("sandbox-extra-roots: official seatbelt profile shape changed; plugin may be stale (check common.ts seatbeltProfileArgs against dsh-sandbox-local)");
               }
             } catch {}
           }
