@@ -1,5 +1,5 @@
 /**
- * remote.mjs — 插件配置的远程服务（设置页 UI 通过 ctx.remote.<svc> 调用）
+ * remote.ts — 插件配置的远程服务（设置页 UI 通过 ctx.remote.<svc> 调用）
  *
  * DSH 的 Remote 装饰器是 ECMAScript 标准装饰器语法（Node 默认未启用），
  * 这里用"手动构造装饰器上下文"的方式等价调用：Remote(name)(method, context)
@@ -16,11 +16,13 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { Context } from "@deepseek-ai/cordis";
+import type { ConfigStore } from "./config-store.js";
 
 // @deepseek-ai/dsh-typert-protocol 是 ESM 包。Node 20 早期版本尚不支持
 // require(ESM)，因此统一用 import() 加载；fallback 时先用 createRequire
 // 解析出实际文件，再以 file URL 导入。
-async function loadTypert() {
+async function loadTypert(): Promise<typeof import("@deepseek-ai/dsh-typert-protocol")> {
   try {
     return await import("@deepseek-ai/dsh-typert-protocol");
   } catch {}
@@ -41,24 +43,24 @@ async function loadTypert() {
 
 const { Remote, TypertRemoteService } = await loadTypert();
 
-let pending = [];
+let pending: Array<{ initializers: Array<() => void> }> = [];
 
 /** 手动标记一个类原型方法为 Remote 端点（等价 @Remote(exportName)）。 */
-function markRemoteMethod(proto, method, exportName) {
-  const initializers = [];
+function markRemoteMethod(proto: object, method: string, exportName?: string) {
+  const initializers: Array<() => void> = [];
   const context = {
     kind: "method",
     name: method,
     private: false,
     static: false,
-    addInitializer(fn) { initializers.push(fn); },
-  };
-  Remote(exportName ?? method)(proto[method], context);
+    addInitializer(fn: () => void) { initializers.push(fn); },
+  } as any;
+  Remote(exportName ?? method)((proto as any)[method], context);
   pending.push({ initializers });
 }
 
 /** 执行收集到的标记（mark 以 Object.getPrototypeOf(this) 为原型）。 */
-function runPendingMarks(instance) {
+function runPendingMarks(instance: object) {
   const batch = pending;
   pending = [];
   for (const { initializers } of batch) {
@@ -73,7 +75,8 @@ function runPendingMarks(instance) {
  * @param config - { store: createConfigStore 返回的存储, serviceKey: 远程服务名 }。
  */
 export class PluginConfigGateway extends TypertRemoteService {
-  constructor(ctx, config) {
+  private store: ConfigStore;
+  constructor(ctx: Context, config: { store: ConfigStore; serviceKey: string }) {
     super(ctx, config.serviceKey);
     runPendingMarks(this);
     this.store = config.store;
@@ -81,7 +84,7 @@ export class PluginConfigGateway extends TypertRemoteService {
   get() {
     return { config: this.store.effective() };
   }
-  set(partial) {
+  set(partial: Record<string, any>) {
     if (partial === null || typeof partial !== "object" || Array.isArray(partial)) {
       throw new TypeError("set expects a plain config object");
     }

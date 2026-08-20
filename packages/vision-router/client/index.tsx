@@ -1,9 +1,5 @@
-window.__ModuleLoader__.load({
-  id: "@chaoset/vision-router",
-  factory: (require) => {
-    var module = { exports: {} };
-    var exports = module.exports;
-    let react = require("react");
+import * as React from "react";
+
 
     // ── 样式（注入 style 标签，模仿官方卡片外观）──────────────────────────
     var css = ".vr_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.vr_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.vr_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.vr_header:hover,.vr_card[data-open=true]>.vr_header{background:var(--dsw-alias-interactive-bg-hover)}.vr_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.vr_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.vr_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.vr_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.vr_label{font-size:12px;font-weight:500;line-height:18px}.vr_input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:32px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:0 10px;font-size:13px;line-height:20px}.vr_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:60px}.vr_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.vr_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.vr_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.vr_save:disabled{opacity:.4;cursor:default}.vr_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);background:0 0;color:var(--dsw-alias-label-secondary,#666);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px}.vr_discard:disabled{opacity:.4;cursor:default}.vr_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.vr_error{color:var(--dsw-alias-state-error-primary)}";
@@ -73,9 +69,9 @@ window.__ModuleLoader__.load({
     // DSH 自带输入框在部分版本/场景（如新会话 hero）不会把剪贴板图片加入草稿。
     // 这里在现有会话的输入区挂一个不可见节点，用捕获阶段处理 paste，主动把
     // 剪贴板图片转为 DSH 草稿附件；成功时阻止默认/冒泡，避免重复添加。
-    function PasteImageEnhancer(props) {
-      const rootRef = react.useRef(null);
-      react.useEffect(() => {
+    function PasteImageEnhancer(props: any) {
+      const rootRef = React.useRef<any>(null);
+      React.useEffect(() => {
         const root = rootRef.current;
         if (root === null) return;
         const card = root.closest("[data-composer-card]");
@@ -84,12 +80,12 @@ window.__ModuleLoader__.load({
         const conversation = props.conversation;
         const sessionId = props.session && props.session.sessionId;
         if (conversation === void 0 || sessionId === void 0) return;
-        const onPaste = (event) => {
+        const onPaste = (event: any) => {
           const items = Array.from(event.clipboardData && event.clipboardData.items ? event.clipboardData.items : []);
           const files = items
-            .filter((item) => item.kind === "file")
-            .map((item) => item.getAsFile())
-            .filter((file) => file !== null);
+            .filter((item: any) => item.kind === "file")
+            .map((item: any) => item.getAsFile())
+            .filter((file: any) => file !== null);
           if (files.length === 0) return;
           // 如果剪贴板同时带有文本，交给 DSH 原生逻辑一并处理，避免吞掉文字。
           const text = event.clipboardData && typeof event.clipboardData.getData === "function" ? event.clipboardData.getData("text/plain") : "";
@@ -97,7 +93,7 @@ window.__ModuleLoader__.load({
           try {
             const images = conversation.createDraftImages(files);
             const shell = conversation.input.shell(sessionId);
-            if (!shell.addImages(images.map((image) => image.id))) {
+            if (!shell.addImages(images.map((image: any) => image.id))) {
               conversation.releaseDraftImages(images);
               return;
             }
@@ -110,46 +106,46 @@ window.__ModuleLoader__.load({
         textarea.addEventListener("paste", onPaste, true);
         return () => textarea.removeEventListener("paste", onPaste, true);
       }, [props.conversation, props.session]);
-      return react.createElement("span", { ref: rootRef, style: { display: "none" } });
+      return React.createElement("span", { ref: rootRef, style: { display: "none" } });
     }
 
     // ── 表单字段 ─────────────────────────────────────────────────────────
-    function Field(props) {
-      return react.createElement(
+    function Field(props: any) {
+      return React.createElement(
         "label",
         { className: "vr_field" },
-        react.createElement("span", { className: "vr_label" }, props.label),
+        React.createElement("span", { className: "vr_label" }, props.label),
         props.children,
-        props.hint !== void 0 ? react.createElement("p", { className: "vr_hint" }, props.hint) : null
+        props.hint !== void 0 ? React.createElement("p", { className: "vr_hint" }, props.hint) : null
       );
     }
-    function TextField(props) {
-      return react.createElement(Field, { label: props.label, hint: props.hint },
-        react.createElement("input", {
+    function TextField(props: any) {
+      return React.createElement(Field, { label: props.label, hint: props.hint },
+        React.createElement("input", {
           className: "vr_input",
           value: props.value,
-          onChange: (e) => props.onChange(e.target.value),
+          onChange: (e: any) => props.onChange(e.target.value),
           disabled: props.disabled === true
         })
       );
     }
-    function NumField(props) {
-      const [text, setText] = react.useState(props.value === null || props.value === void 0 ? "" : String(props.value));
-      react.useEffect(() => {
+    function NumField(props: any) {
+      const [text, setText] = React.useState(props.value === null || props.value === void 0 ? "" : String(props.value));
+      React.useEffect(() => {
         setText(props.value === null || props.value === void 0 ? "" : String(props.value));
       }, [props.value]);
       const invalid = text.trim() === "" || !Number.isInteger(Number(text)) || Number(text) <= 0;
-      return react.createElement(Field, {
+      return React.createElement(Field, {
         label: props.label,
         hint: invalid ? `${props.t("invalidPositiveInt")}${props.hint !== void 0 ? ` — ${props.hint}` : ""}` : props.hint
       },
-        react.createElement("input", {
+        React.createElement("input", {
           className: "vr_input",
           type: "number",
           min: "1",
           step: "1",
           value: text,
-          onChange: (e) => {
+          onChange: (e: any) => {
             const next = e.target.value;
             setText(next);
             const nextInvalid = next.trim() === "" || !Number.isInteger(Number(next)) || Number(next) <= 0;
@@ -159,33 +155,33 @@ window.__ModuleLoader__.load({
         })
       );
     }
-    function BoolField(props) {
-      return react.createElement(Field, { label: props.label, hint: props.hint },
-        react.createElement("input", {
+    function BoolField(props: any) {
+      return React.createElement(Field, { label: props.label, hint: props.hint },
+        React.createElement("input", {
           type: "checkbox",
           checked: props.value === true,
-          onChange: (e) => props.onChange(e.target.checked),
+          onChange: (e: any) => props.onChange(e.target.checked),
           disabled: props.disabled === true
         })
       );
     }
 
     // ── 配置卡片 ─────────────────────────────────────────────────────────
-    function VisionRouterCard(props) {
+    function VisionRouterCard(props: any) {
       const t = props.t;
-      const [open, setOpen] = react.useState(false);
-      const [cfg, setCfg] = react.useState(null);
-      const [draft, setDraft] = react.useState(null);
-      const [saving, setSaving] = react.useState(false);
-      const [status, setStatus] = react.useState(null);
+      const [open, setOpen] = React.useState(false);
+      const [cfg, setCfg] = React.useState<any>(null);
+      const [draft, setDraft] = React.useState<any>(null);
+      const [saving, setSaving] = React.useState(false);
+      const [status, setStatus] = React.useState<any>(null);
 
-      react.useEffect(() => {
+      React.useEffect(() => {
         let cancelled = false;
-        props.getConfig().then((value) => {
+        props.getConfig().then((value: any) => {
           if (cancelled) return;
           setCfg(value);
           setDraft(value);
-        }).catch((error) => {
+        }).catch((error: any) => {
           if (!cancelled) setStatus({ kind: "error", text: `${t("loadFailed")}: ${error && error.message || error}` });
         });
         return () => { cancelled = true; };
@@ -204,15 +200,15 @@ window.__ModuleLoader__.load({
         props.setConfig(draft).then(() => {
           setCfg(draft);
           setStatus({ kind: "ok", text: t("saved") });
-        }).catch((error) => {
+        }).catch((error: any) => {
           setStatus({ kind: "error", text: `${t("saveFailed")}: ${error && error.message || error}` });
         }).finally(() => setSaving(false));
       };
 
-      return react.createElement(
+      return React.createElement(
         "li",
         { className: "vr_card", "data-open": open },
-        react.createElement(
+        React.createElement(
           "button",
           {
             className: "vr_header",
@@ -220,98 +216,98 @@ window.__ModuleLoader__.load({
             onClick: () => setOpen(!open),
             "aria-expanded": open
           },
-          react.createElement("span", { className: "vr_title" }, t("title")),
-          dirty ? react.createElement("span", { className: "vr_badge" }, t("unsaved")) : null,
-          react.createElement("span", null, open ? "▲" : "▼")
+          React.createElement("span", { className: "vr_title" }, t("title")),
+          dirty ? React.createElement("span", { className: "vr_badge" }, t("unsaved")) : null,
+          React.createElement("span", null, open ? "▲" : "▼")
         ),
-        open ? react.createElement(
+        open ? React.createElement(
           "div",
           { className: "vr_body" },
-          react.createElement("p", { className: "vr_hint" }, t("hint")),
-          react.createElement(TextField, {
+          React.createElement("p", { className: "vr_hint" }, t("hint")),
+          React.createElement(TextField, {
             label: t("visionProvider"),
             hint: t("fieldVisionProvider"),
             value: draft === null ? "" : draft.visionProvider,
             disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, visionProvider: v })
+            onChange: (v: any) => setDraft({ ...draft, visionProvider: v })
           }),
-          react.createElement(TextField, {
+          React.createElement(TextField, {
             label: t("visionModel"),
             hint: t("fieldVisionModel"),
             value: draft === null ? "" : draft.visionModel,
             disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, visionModel: v })
+            onChange: (v: any) => setDraft({ ...draft, visionModel: v })
           }),
-          react.createElement(BoolField, {
+          React.createElement(BoolField, {
             label: t("autoDiscover"),
             value: draft === null ? false : draft.autoDiscover,
             disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, autoDiscover: v })
+            onChange: (v: any) => setDraft({ ...draft, autoDiscover: v })
           }),
-          react.createElement(BoolField, {
+          React.createElement(BoolField, {
             label: t("sourceHint"),
             hint: t("fieldSourceHint"),
             value: draft === null ? false : draft.sourceHint,
             disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, sourceHint: v })
+            onChange: (v: any) => setDraft({ ...draft, sourceHint: v })
           }),
-          react.createElement(NumField, {
+          React.createElement(NumField, {
             t,
             label: t("maxVisionTokens"),
             value: draft === null ? null : draft.maxVisionTokens,
             disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, maxVisionTokens: v })
+            onChange: (v: any) => setDraft({ ...draft, maxVisionTokens: v })
           }),
-          react.createElement(NumField, {
+          React.createElement(NumField, {
             t,
             label: t("compressImageBytes"),
             value: draft === null ? null : draft.compressImageBytes,
             disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, compressImageBytes: v })
+            onChange: (v: any) => setDraft({ ...draft, compressImageBytes: v })
           }),
-          react.createElement(NumField, {
+          React.createElement(NumField, {
             t,
             label: t("compressMaxDimension"),
             value: draft === null ? null : draft.compressMaxDimension,
             disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, compressMaxDimension: v })
+            onChange: (v: any) => setDraft({ ...draft, compressMaxDimension: v })
           }),
-          react.createElement(NumField, {
+          React.createElement(NumField, {
             t,
             label: t("compressTargetBytes"),
             value: draft === null ? null : draft.compressTargetBytes,
             disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, compressTargetBytes: v })
+            onChange: (v: any) => setDraft({ ...draft, compressTargetBytes: v })
           }),
-          react.createElement(NumField, {
+          React.createElement(NumField, {
             t,
             label: t("compressFallbackDimension"),
             value: draft === null ? null : draft.compressFallbackDimension,
             disabled: draft === null,
-            onChange: (v) => setDraft({ ...draft, compressFallbackDimension: v })
+            onChange: (v: any) => setDraft({ ...draft, compressFallbackDimension: v })
           }),
-          react.createElement(Field, { label: t("prompt") },
-            react.createElement("textarea", {
+          React.createElement(Field, { label: t("prompt") },
+            React.createElement("textarea", {
               className: "vr_textarea",
               value: draft === null ? "" : draft.prompt,
               disabled: draft === null,
-              onChange: (e) => setDraft({ ...draft, prompt: e.target.value })
+              onChange: (e: any) => setDraft({ ...draft, prompt: e.target.value })
             })
           ),
-          react.createElement(
+          React.createElement(
             "div",
             { className: "vr_footer" },
-            react.createElement(
+            React.createElement(
               "span",
               { className: "vr_status" + (status !== null && status.kind === "error" ? " vr_error" : ""), role: "status" },
               status !== null ? status.text : ""
             ),
-            react.createElement(
+            React.createElement(
               "button",
               { className: "vr_discard", type: "button", disabled: saving || draft === null || !dirty, onClick: discard },
               t("discard")
             ),
-            react.createElement(
+            React.createElement(
               "button",
               { className: "vr_save", type: "button", disabled: saving || draft === null || invalid || !dirty, onClick: save },
               saving ? t("saving") : t("save")
@@ -328,7 +324,7 @@ window.__ModuleLoader__.load({
     // 不存在，客户端插件会一直 pending，web boot 报 "did not activate"。
     // 因此本插件先挂载自己的命名空间，再注册设置卡片。
     const inject = ["slots", "locale", "remote"];
-    const passthroughSchema = { parse: (value) => value };
+    const passthroughSchema = { parse: (value: any) => value };
     const REMOTE_CONTRIBUTION = {
       package: "@chaoset/vision-router",
       descriptors: [
@@ -357,7 +353,7 @@ window.__ModuleLoader__.load({
         }
       ]
     };
-    async function apply(ctx) {
+    async function apply(ctx: any) {
       const t = ctx.locale.bind(NS);
       ctx.effect(() => ctx.locale.register(NS, { zh, en }), "vision-router: dictionaries");
       // 先挂载命名空间，再用 ctx.get 取回服务：cordis 的属性访问（ctx.remote.X）
@@ -366,11 +362,11 @@ window.__ModuleLoader__.load({
       await ctx.remote.$mount(REMOTE_CONTRIBUTION);
       const configService = ctx.get("remote.visionRouterConfig");
       if (configService === void 0) throw new Error("vision-router: remote.visionRouterConfig did not materialize after mount");
-      const getConfig = () => configService.get().then((result) => {
+      const getConfig = () => configService.get().then((result: any) => {
         if (!result.ok) throw new Error(`visionRouterConfig.get failed: ${result.error.code}: ${result.error.message}`);
         return result.value.config;
       });
-      const setConfig = (partial) => configService.set(partial).then((result) => {
+      const setConfig = (partial: any) => configService.set(partial).then((result: any) => {
         if (!result.ok) throw new Error(`visionRouterConfig.set failed: ${result.error.code}: ${result.error.message}`);
         return result.value;
       });
@@ -394,8 +390,4 @@ window.__ModuleLoader__.load({
       }, PasteImageEnhancer));
     }
 
-    exports.apply = apply;
-    exports.inject = inject;
-    return module.exports;
-  }
-});
+export { apply, inject };

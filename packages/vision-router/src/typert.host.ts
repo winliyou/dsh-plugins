@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * typert.host.js — 手写的 Typert host 工件（typert-loader 机制）。
  *
@@ -33,7 +34,7 @@ export const TYPERT = {
       invocation: { kind: 'direct' },
       parameters: [],
       result: codec('@chaoset/vision-router/types#VisionConfig'),
-      sourceLocation: { file: 'packages/vision-router/lib/remote.mjs', line: 1, column: 1 },
+      sourceLocation: { file: 'packages/vision-router/src/remote.ts', line: 1, column: 1 },
     },
     {
       id: '@chaoset/vision-router#visionRouterConfig/set',
@@ -50,7 +51,7 @@ export const TYPERT = {
         },
       ],
       result: codec('@chaoset/vision-router/types#SetResult'),
-      sourceLocation: { file: 'packages/vision-router/lib/remote.mjs', line: 1, column: 1 },
+      sourceLocation: { file: 'packages/vision-router/src/remote.ts', line: 1, column: 1 },
     },
   ],
   model: { services: [], events: [], objects: [] },
