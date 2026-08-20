@@ -19,25 +19,8 @@ function check(name, cond, detail) {
 }
 
 // ── config-store + remote ──────────────────────────────────────────────
-const { createConfigStore } = await import(path.join(ROOT, "packages/vision-router/lib/config-store.mjs"));
-const { PluginConfigGateway } = await import(path.join(ROOT, "packages/vision-router/lib/remote.mjs"));
-const { remoteMethods } = await import("@deepseek-ai/dsh-typert-protocol");
-
-const updates = [];
-const store = createConfigStore({
-  name: "vision-router",
-  defaults: { a: 1, b: 2 },
-  patchConfig: { b: 20 },
-  onUpdate: (merged) => updates.push(merged),
-});
-check("store: 合并默认+patch", store.effective().a === 1 && store.effective().b === 20);
-const next = store.set({ b: 200 });
-check("store: set 持久化+热更新回调", next.b === 200 && updates.length === 1);
-const fake = Object.create(PluginConfigGateway.prototype);
-fake.store = store;
-check("remote: 标记生效", remoteMethods(fake).some((m) => m.method === "get") && remoteMethods(fake).some((m) => m.method === "set"));
-check("remote: get/set 调用", fake.get().config.b === 200 && fake.set({ b: 300 }).saved === true);
-
+// vision-router 的 config-store/remote 回归已迁移至
+// packages/vision-router/test/vision.test.ts。
 // sandbox 的 config-store 曾把换行写成字面 "\\n"，导致下次 effective() 读到非法 JSON 而丢配置。
 const { createConfigStore: createSandboxConfigStore } = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/config-store.js"));
 const sandboxStore = createSandboxConfigStore({ name: "sandbox-extra-roots-store-test", defaults: { extraWritableRoots: [] }, patchConfig: {} });
@@ -55,16 +38,10 @@ adaptiveStore.set({ enabled: false });
 check("store(adaptive): 嵌套默认+patch+json 合并", adaptiveStore.effective().enabled === false
   && adaptiveStore.effective().presets[0] === "code"
   && adaptiveStore.effective().families.delegation.tools[0] === "subagent");
-// 三个包共享实现文件，历史上曾发生 config-store 漂移导致配置丢失；强制保持一致。
-// sandbox-extra-roots 已迁移至 TS（lib/*.js），其与另外两包的实现一致性将由
-// 根 test/ 的 src 对照检查覆盖（重构收尾任务）；此处保留仍共享 .mjs 实现的两包对照。
-const visionStoreSrc = fs.readFileSync(path.join(ROOT, "packages/vision-router/lib/config-store.mjs"), "utf8");
-const adaptiveStoreSrc = fs.readFileSync(path.join(ROOT, "packages/adaptive-perf/lib/config-store.mjs"), "utf8");
-const visionRemoteSrc = fs.readFileSync(path.join(ROOT, "packages/vision-router/lib/remote.mjs"), "utf8");
-const adaptiveRemoteSrc = fs.readFileSync(path.join(ROOT, "packages/adaptive-perf/lib/remote.mjs"), "utf8");
-check("shared: config-store/remote 保持一致（vision-router/adaptive-perf）",
-  visionStoreSrc === adaptiveStoreSrc
-  && visionRemoteSrc === adaptiveRemoteSrc);
+// 三个包共享实现文件，历史上曾发生 config-store 漂移导致配置丢失。vision-router
+// 与 sandbox-extra-roots 均已迁移至 TS（lib/*.js），其与 adaptive-perf 的实现
+// 一致性由根 test/ 的 src 对照检查覆盖（重构收尾任务）；adaptive-perf 的对照
+// 在自适应引擎迁移任务中处理。
 
 // ── npm bundle metadata（dsh plugin 自动激活依赖 dsh.bundle.patch）──────
 for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf", "session-archive"]) {
@@ -187,233 +164,14 @@ for (const name of ["vision-router", "sandbox-extra-roots", "adaptive-perf", "se
 // ── settings namespace 注册（宿主 rc.7+ 设置页可见性）──────────────────
 // 设置页 describe() 只枚举 ctx.settings.register 注册过的 namespace；未注册
 // 时卡片即使带正确 key 也不渲染。仓库测试环境无 @deepseek-ai/schemastery，
-// 用 stub schema 库直接驱动三个配置类包导出的注册函数。
+// 用 stub schema 库直接驱动两个配置类包导出的注册函数（vision-router 的
+// 注册回归已随其迁移至 vitest）。
 {
-  const vrNS = await import(path.join(ROOT, "packages/vision-router/lib/index.mjs"));
   const sbNS = await import(path.join(ROOT, "packages/sandbox-extra-roots/lib/index.js"));
   const apNS = await import(path.join(ROOT, "packages/adaptive-perf/lib/index.mjs"));
-  check("settings: 三包均导出注册函数",
-    typeof vrNS.registerSettingsNamespace === "function"
-    && typeof sbNS.registerSettingsNamespace === "function"
+  check("settings: 两包均导出注册函数",
+    typeof sbNS.registerSettingsNamespace === "function"
     && typeof apNS.registerSettingsNamespace === "function");
-  const stubZ = {
-    object: (fields) => ({ stub: "object", fields }),
-    any: () => ({ stub: "any" }),
-    string: () => ({ stub: "string" }),
-  };
-  const registered = [];
-  const regCtx = {
-    inject(names, fn) { if (names.includes("settings")) fn(regCtx); },
-    settings: { register(ns, schema, options) { registered.push({ ns, schema, options }); } },
-    logger: { warn: () => {} },
-  };
-  check("settings: 注册 namespace 并传 buildSchema 产物与 base",
-    vrNS.registerSettingsNamespace(regCtx, "visionRouterConfig", stubZ, (z) => z.object({ a: z.string() }), { base: { a: "v" } }) === true
-      && registered.length === 1 && registered[0].ns === "visionRouterConfig" && registered[0].schema.stub === "object"
-      && registered[0].options !== undefined && registered[0].options.base.a === "v");
-  regCtx.settings.register = () => { throw new Error('settings namespace "visionRouterConfig" is already registered'); };
-  check("settings: 重复注册静默忽略（HMR/多挂载点幂等）",
-    vrNS.registerSettingsNamespace(regCtx, "visionRouterConfig", stubZ, (z) => z.object({})) === true);
-  check("settings: schema 库缺失跳过", vrNS.registerSettingsNamespace(regCtx, "x", null, (z) => z.any()) === false);
-  check("settings: ctx 无 inject 跳过", vrNS.registerSettingsNamespace({}, "x", stubZ, (z) => z.any()) === false);
-}
-
-// ── vision-router ──────────────────────────────────────────────────────
-const { apply: applyVision } = await import(path.join(ROOT, "packages/vision-router/lib/index.mjs"));
-const calls = { transcription: 0, downstream: [], vision: [] };
-const CATALOG = {
-  "zai-open": [
-    { id: "glm-4v-flash", name: "GLM-4V-Flash", inputModalities: ["text", "image"] },
-    { id: "glm-5.2", name: "GLM-5.2", inputModalities: ["text"] },
-  ],
-  "deepseek": [{ id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", inputModalities: ["text"] }],
-};
-const llmMock = {
-  async listModels(provider) { return CATALOG[provider] ?? []; },
-  async listProviders() { return [{ id: "zai-open" }, { id: "deepseek" }]; },
-  async resolveModelInfo(provider, model) {
-    const entry = (CATALOG[provider] ?? []).find((m) => m.id === model);
-    return entry ? { provider, id: model, name: entry.name, ...(entry.inputModalities ? { inputModalities: entry.inputModalities } : {}) } : { provider, id: model, name: model };
-  },
-  streamWithRegistration(options) {
-    if (options.messages && options.messages.length === 1 && options.messages[0].role === "user" && options.messages[0].content.some((b) => b.type === "image")) {
-      calls.transcription += 1;
-      calls.vision.push(options);
-      return (async function* () { yield { type: "text-delta", text: "图片转述结果" }; yield { type: "finish", reason: { kind: "success" } }; })();
-    }
-    calls.downstream.push(options);
-    return (async function* () { yield { type: "text-delta", text: "主模型回复" }; yield { type: "finish", reason: { kind: "success" } }; })();
-  },
-  stream(options) { return this.streamWithRegistration(options); },
-};
-const appended = [];
-const vrEvents = {}; // event -> [listeners]
-const ctx = {
-  llm: llmMock,
-  sessions: { get: (id) => id === "s9" ? { log: [{ type: "step/start", data: { turn: 3, step: 0 } }], append: (t, d) => appended.push({ t, d }) } : undefined },
-  attachments: undefined,
-  logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
-  get(name) { return this[name]; },
-  on(event, listener) { (vrEvents[event] ??= []).push(listener); },
-  effect(fn) { fn(); },
-  plugin(Cls, cfg) {
-    const saved = this.reflect;
-    this.reflect = { provide: () => {}, props: {} };
-    try { this.gateway = new Cls(this, cfg); } finally { this.reflect = saved; }
-  },
-};
-applyVision(ctx, { visionProvider: "zai-open", visionModel: "glm-4v-flash" });
-const mi = await llmMock.resolveModelInfo("deepseek", "deepseek-v4-flash");
-check("VR: resolveModelInfo 补 image", mi.inputModalities.includes("image"));
-const imageBlock = { type: "image", attachment: { attachmentId: "a1", mediaType: "image/png", bytes: 10, width: 10, height: 10 } };
-const withImage = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [imageBlock] }] };
-for await (const c of llmMock.streamWithRegistration(withImage)) {}
-check("VR: 含图转述+替换", calls.transcription === 1 && calls.downstream[0].messages[0].content[0].type === "text");
-const progressCount = appended.filter((a) => a.t === "assistant/chunk" && a.d.chunk.text.includes("已收到图片")).length;
-check("VR: 提示 1 次", progressCount === 1);
-check("VR: 转述请求使用详尽 prompt（逐字转录指引）", calls.vision[0].messages[0].content[0].text.includes("逐字转录"));
-
-// ── vision-router 追问重看（re-look）───────────────────────────────────
-// 用户追问图片细节：历史图片带着最新问题重新交给视觉模型（对齐原生多模态
-// 每轮带原图重新看图的行为），转述请求文本携带"用户当前最新的问题"。
-const followupReq = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [
-  { role: "user", content: [imageBlock] },
-  { role: "assistant", content: [{ type: "text", text: "这张图是一个示例。" }] },
-  { role: "user", content: [{ type: "text", text: "左下角写的是什么？" }] },
-] };
-for await (const c of llmMock.streamWithRegistration(followupReq)) {}
-check("VR: 追问触发历史图片重新转述", calls.transcription === 2);
-const followVisionText = calls.vision[1].messages[0].content[0].text;
-check("VR: 重转述请求携带最新问题", followVisionText.includes("用户当前最新的问题") && followVisionText.includes("左下角写的是什么？"));
-check("VR: 追问时重新提示", appended.filter((a) => a.t === "assistant/chunk" && a.d.chunk.text.includes("已收到图片")).length === 2);
-// 上下文不变（重试、agent 工具循环中间轮）命中缓存：不重复转述、不提示。
-const visionBeforeRetry = calls.transcription;
-const appendedBeforeRetry = appended.length;
-for await (const c of llmMock.streamWithRegistration(followupReq)) {}
-check("VR: 上下文不变命中缓存", calls.transcription === visionBeforeRetry && appended.length === appendedBeforeRetry);
-
-const reAsk = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [
-  { role: "user", content: [{ type: "text", text: "图片里的文字是什么？" }, imageBlock] },
-] };
-for await (const c of llmMock.streamWithRegistration(reAsk)) {}
-check("VR: 同一图片+不同问题不误用缓存", calls.transcription === 3);
-const rawPasteBlock = { type: "image", mediaType: "image/png", data: "aGVsbG8=", name: "clipboard.png" };
-const rawPaste = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [rawPasteBlock] }] };
-for await (const c of llmMock.streamWithRegistration(rawPaste)) {}
-check("VR: 粘贴 raw image 块不崩溃并转述", calls.transcription === 4 && calls.downstream.at(-1).messages[0].content[0].type === "text");
-
-// ── vision-router 来源标注（sourceHint）────────────────────────────────
-// 粘贴/拖入的图片：转述文本后附带"无磁盘源文件，不要搜索"提示与显示名。
-const clipCaption = calls.downstream.at(-1).messages[0].content[0].text;
-check("VR: 粘贴图片标注来源（显示名+勿搜索）",
-  clipCaption.includes("clipboard.png") && clipCaption.includes("不存在于文件系统") && clipCaption.includes("不要尝试在文件系统里搜索"));
-
-// read_image 工具结果内的图片：来源标注提取 <path> 信封中的文件路径，信封文本保留。
-const toolImage = { type: "image", attachment: { attachmentId: "a2", mediaType: "image/png", bytes: 10, width: 10, height: 10 } };
-const readImageMsg = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [
-  { type: "tool-result", toolCallId: "c1", content: [
-    { type: "text", text: "<path>/tmp/shot.png</path>\n<type>image</type>\n<content>\nimage/png image, 10x10 px, 10 bytes\n</content>" },
-    toolImage,
-  ] },
-] }] };
-for await (const c of llmMock.streamWithRegistration(readImageMsg)) {}
-const toolResult = calls.downstream.at(-1).messages[0].content[0];
-check("VR: read_image 图片标注文件路径",
-  toolResult.content[1].type === "text" && toolResult.content[1].text.includes("read_image 从文件读取：/tmp/shot.png"));
-check("VR: read_image 信封保留", toolResult.content[0].text.includes("<path>/tmp/shot.png</path>"));
-
-// 本地附件副本：sha256 attachmentId + $DSH_HOME 下存在对象文件时标注落盘路径。
-const durableHome = fs.mkdtempSync(path.join(os.tmpdir(), "vr-durable-"));
-const sha = "ab".repeat(32);
-const objectFile = path.join(durableHome, "attachments", "v1", "objects", "ab", sha);
-fs.mkdirSync(path.dirname(objectFile), { recursive: true });
-fs.writeFileSync(objectFile, "png");
-process.env.DSH_HOME = durableHome;
-const durableImage = { type: "image", attachment: { attachmentId: `sha256:${sha}`, mediaType: "image/png", bytes: 3, width: 4, height: 4 } };
-for await (const c of llmMock.streamWithRegistration({ provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [durableImage] }] })) {}
-const durableCaption = calls.downstream.at(-1).messages[0].content[0].text;
-check("VR: 本地附件副本路径标注", durableCaption.includes(objectFile) && durableCaption.includes("原图副本"));
-// 恢复 fakeHome 隔离（bun 的 os.homedir() 不读 $HOME，DSH_HOME 必须显式指回）。
-process.env.DSH_HOME = fakeHome;
-fs.rmSync(durableHome, { recursive: true, force: true });
-
-// sourceHint 关闭后不再附带来源标注（转述本身不受影响）。
-ctx.gateway.set({ sourceHint: false });
-const hintOffImage = { type: "image", attachment: { attachmentId: "a4", mediaType: "image/png", bytes: 10, width: 10, height: 10 } };
-for await (const c of llmMock.streamWithRegistration({ provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [hintOffImage] }] })) {}
-const hintOffCaption = calls.downstream.at(-1).messages[0].content[0].text;
-check("VR: sourceHint 关闭不附带来源", hintOffCaption.includes("图片转述结果") && hintOffCaption.includes("[图片 1]") && !hintOffCaption.includes("[图片 1｜"));
-ctx.gateway.set({ sourceHint: true });
-let hintRejected = false;
-try { ctx.gateway.set({ sourceHint: "yes" }); } catch { hintRejected = true; }
-check("VR: sourceHint 拒绝非法值", hintRejected === true);
-
-// ── vision-router 多图位置保留 ─────────────────────────────────────────
-// 一条消息里多张图与文本交错：每张图原位置替换为带编号的占位（来源内联），
-// 联合转述正文放在首张图的位置，"哪张图对应哪段话"的语义不丢失。
-const imgA5 = { type: "image", attachment: { attachmentId: "a5", mediaType: "image/png", bytes: 10, width: 10, height: 10 } };
-const imgA6 = { type: "image", attachment: { attachmentId: "a6", mediaType: "image/jpeg", bytes: 10, width: 10, height: 10 } };
-for await (const c of llmMock.streamWithRegistration({ provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [{ role: "user", content: [
-  { type: "text", text: "对比这两张图" }, imgA5, { type: "text", text: "中间的说明" }, imgA6,
-] }] })) {}
-const multiBlocks = calls.downstream.at(-1).messages[0].content;
-check("VR: 多图逐位替换保留位置",
-  multiBlocks.length === 4
-  && multiBlocks[1].text.startsWith("[图片 1｜") && multiBlocks[1].text.includes("图片转述结果")
-  && multiBlocks[2].text === "中间的说明"
-  && multiBlocks[3].text.startsWith("[图片 2｜") && !multiBlocks[3].text.includes("图片转述结果"));
-check("VR: 多图联合转述头", multiBlocks[1].text.includes("[视觉模型对全部 2 张图片的分析"));
-check("VR: 联合转述一次请求带全部图", calls.vision.at(-1).messages[0].content.filter((b) => b.type === "image").length === 2);
-
-// ── vision-router agent 场景（tool-result 无顶层文本）─────────────────
-// read_image 的 tool-result 消息没有顶层文本："用户当前关注"向前回溯到本次
-// 任务描述并带入转述；agent 工具循环的后续轮次上下文不变，命中缓存。
-const agentToolImage = { type: "image", attachment: { attachmentId: "a8", mediaType: "image/png", bytes: 10, width: 10, height: 10 } };
-const agentReq = { provider: "deepseek", model: "deepseek-v4-flash", sessionId: "s9", messages: [
-  { role: "user", content: [{ type: "text", text: "看看这个目录里的截图配色" }] },
-  { role: "user", content: [{ type: "tool-result", toolCallId: "c9", content: [agentToolImage] }] },
-] };
-for await (const c of llmMock.streamWithRegistration(agentReq)) {}
-check("VR: agent tool-result 图回溯任务文本", calls.vision.at(-1).messages[0].content[0].text.includes("用户当前最新的问题") && calls.vision.at(-1).messages[0].content[0].text.includes("看看这个目录里的截图配色"));
-const agentVisionCount = calls.transcription;
-for await (const c of llmMock.streamWithRegistration(agentReq)) {}
-check("VR: agent 中间轮命中缓存", calls.transcription === agentVisionCount);
-
-check("VR: remote 网关注册", ctx.gateway !== undefined && ctx.gateway.get().config.visionProvider === "zai-open");
-let invalidRejected = false;
-try { ctx.gateway.set({ maxVisionTokens: -1 }); } catch { invalidRejected = true; }
-check("VR: remote 拒绝非法配置", invalidRejected);
-
-// ── vision-router 能力提示注入（纯文本模型认知补全）─────────────────────
-// 纯文本模型的 read_image 自我排除（工具描述要求 image input）会让模型转而
-// 用 python 猜测图片内容；注入提示段纠正认知。多模态模型不注入。
-{
-  const sectionCalls = []; // { agentId, section }
-  const disposedAgents = [];
-  function makeHintAgent(id, provider, model) {
-    return {
-      id,
-      options: { provider, model },
-      ctx: { systemPrompt: { section(section) { sectionCalls.push({ id, section }); return () => disposedAgents.push(id); } } },
-    };
-  }
-  const textAgent = makeHintAgent("a-text", "deepseek", "deepseek-v4-flash");
-  const visionAgent = makeHintAgent("a-vision", "zai-open", "glm-4v-flash");
-  const noRouteAgent = makeHintAgent("a-noroute", undefined, undefined);
-  for (const listener of vrEvents["agent/created"] ?? []) {
-    listener({ agent: textAgent });
-    listener({ agent: visionAgent });
-    listener({ agent: noRouteAgent });
-  }
-  await new Promise((resolve) => setTimeout(resolve, 20)); // 注入异步查模型目录
-  const textSections = sectionCalls.filter((c) => c.id === "a-text");
-  check("VR: 纯文本模型注入能力提示",
-    textSections.length === 1 && textSections[0].section.name === "vision-router:capability"
-      && textSections[0].section.text.includes("read_image") && textSections[0].section.text.includes("转述"));
-  check("VR: 多模态模型不注入", sectionCalls.filter((c) => c.id === "a-vision").length === 0);
-  check("VR: 无模型路由不注入", sectionCalls.filter((c) => c.id === "a-noroute").length === 0);
-  for (const listener of vrEvents["agent/disposed"] ?? []) listener({ agent: textAgent });
-  check("VR: agent 销毁释放提示段", disposedAgents.includes("a-text"));
 }
 
 // ── adaptive-perf 自适应引擎（mock ctx 模拟 agent 生命周期）─────────────
