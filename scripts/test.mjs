@@ -56,8 +56,8 @@ check("store(adaptive): 嵌套默认+patch+json 合并", adaptiveStore.effective
   && adaptiveStore.effective().presets[0] === "code"
   && adaptiveStore.effective().families.delegation.tools[0] === "subagent");
 // 三个包共享实现文件，历史上曾发生 config-store 漂移导致配置丢失；强制保持一致。
-// sandbox-extra-roots 已迁移至 TS（lib/*.js），其与另外两包的实现一致性改由
-// 根 test/ 的 src 对照检查覆盖；此处保留仍共享 .mjs 实现的两包对照。
+// sandbox-extra-roots 已迁移至 TS（lib/*.js），其与另外两包的实现一致性将由
+// 根 test/ 的 src 对照检查覆盖（重构收尾任务）；此处保留仍共享 .mjs 实现的两包对照。
 const visionStoreSrc = fs.readFileSync(path.join(ROOT, "packages/vision-router/lib/config-store.mjs"), "utf8");
 const adaptiveStoreSrc = fs.readFileSync(path.join(ROOT, "packages/adaptive-perf/lib/config-store.mjs"), "utf8");
 const visionRemoteSrc = fs.readFileSync(path.join(ROOT, "packages/vision-router/lib/remote.mjs"), "utf8");

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { apply, name, inject } from "../lib/index.js";
+import { apply } from "../lib/index.js";
 import { canonicalPath, writableRoots } from "../lib/common.js";
 
 const prevHome = process.env.HOME;
@@ -44,7 +44,6 @@ function makeFsMock() {
   return {
     async resolve(displayPath: string) { return { targetKey: displayPath }; },
     async checkedTarget(target: any) {
-      if (target.displayPath.startsWith("/tmp")) return await this.resolve(target.displayPath);
       throw Object.assign(new Error("FS_SANDBOX_DENIED"), { code: "FS_SANDBOX_DENIED" });
     },
   };
@@ -79,12 +78,17 @@ describe("sandbox-extra-roots host (Seatbelt)", () => {
 
   it("seatbelt 额外目录+官方根", () => {
     const out = sandboxMock.confine(["bash", "-c", "x"], { mode: "workspace-write", workspaceRoot: WS });
-    expect(out.argv[2].includes('(subpath "/tmp/extra")') && out.argv[2].includes('(subpath "/ws")')).toBe(true);
+    expect(out.argv[2]).toContain('(subpath "/tmp/extra")');
+    expect(out.argv[2]).toContain('(subpath "/ws")');
   });
 
-  it("fs fence 放行", async () => {
+  it("fs fence 放行额外根目录", async () => {
     const granted = await fsMock.checkedTarget({ displayPath: EXTRA + "/foo" });
     expect(granted.targetKey).toBe(EXTRA + "/foo");
+  });
+
+  it("fs fence 仍拒绝非额外路径", async () => {
+    await expect(fsMock.checkedTarget({ displayPath: "/tmp/other/bar" })).rejects.toThrow("FS_SANDBOX_DENIED");
   });
 
   it("remote set 热更新", () => {
@@ -94,9 +98,7 @@ describe("sandbox-extra-roots host (Seatbelt)", () => {
   });
 
   it("remote 拒绝相对路径", () => {
-    let invalidRootRejected = false;
-    try { ctx.gateway.set({ extraWritableRoots: ["relative/path"] }); } catch { invalidRootRejected = true; }
-    expect(invalidRootRejected).toBe(true);
+    expect(() => ctx.gateway.set({ extraWritableRoots: ["relative/path"] })).toThrow(/absolute path/);
   });
 });
 
@@ -120,7 +122,9 @@ describe("sandbox-extra-roots host (bwrap)", () => {
       const bindArgs = bwrapOut.argv.slice(0, bwrapOut.argv.indexOf("--"));
       const canonicalExistingExtra = canonicalPath(existingExtra);
       const canonicalMissingExtra = canonicalPath(missingExtra);
-      expect(bindArgs.includes("--bind") && bindArgs.includes(canonicalExistingExtra) && !bindArgs.includes(canonicalMissingExtra)).toBe(true);
+      expect(bindArgs).toContain("--bind");
+      expect(bindArgs).toContain(canonicalExistingExtra);
+      expect(bindArgs).not.toContain(canonicalMissingExtra);
     } finally {
       process.env.HOME = fakeHome;
       process.env.DSH_HOME = fakeHome;
