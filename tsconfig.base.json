@@ -14,8 +14,6 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": false,
-    "outDir": "lib",
-    "rootDir": "src"
+    "exactOptionalPropertyTypes": false
   }
 }
