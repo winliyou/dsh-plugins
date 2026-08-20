@@ -2,3 +2,7 @@ node_modules/
 *.log
 .DS_Store
 packages/*/config.json
+
+# build artifacts
+packages/*/lib/
+packages/*/client/client.cjs
