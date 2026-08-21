@@ -16,8 +16,8 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
     // ── 字典 ─────────────────────────────────────────────────────────────
     const NS = "settings.plugins.visionRouter";
     const zh = {
-      title: "识图降级（vision-router）",
-      hint: "纯文本模型收到图片时自动调用视觉模型转述。",
+      title: "图片能力（vision-router）",
+      hint: "为纯文本模型开启图片能力（read_image 可用），读图由模型自行决定。",
       unsaved: "有未保存的修改",
       discard: "放弃修改",
       saving: "保存中…",
@@ -26,23 +26,14 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       saved: "已保存，下次请求生效",
       loadFailed: "读取配置失败",
       invalidPositiveInt: "请输入正整数",
-      visionProvider: "视觉模型提供方",
-      visionModel: "视觉模型",
-      autoDiscover: "自动发现（配置的模型不可用时）",
-      sourceHint: "来源标注（转述文本附带图片来源说明）",
-      fieldSourceHint: "read_image 的图片标注文件路径；粘贴/拖入的图片提示“无磁盘文件，请勿搜索”，并尽量给出 DSH 保存的原图副本路径",
-      maxVisionTokens: "转述输出上限（token）",
       compressImageBytes: "压缩触发字节数",
       compressMaxDimension: "压缩最大边长（px）",
       compressTargetBytes: "压缩目标字节数",
-      compressFallbackDimension: "回退压缩边长（px）",
-      prompt: "转述提示词",
-      fieldVisionProvider: "视觉模型所在 provider（如 zai-open）",
-      fieldVisionModel: "必须真实支持图片输入（如 glm-4v-flash）"
+      compressFallbackDimension: "回退压缩边长（px）"
     };
     const en = {
-      title: "Image routing (vision-router)",
-      hint: "Transcribe images via a vision model when the session model is text-only.",
+      title: "Image capability (vision-router)",
+      hint: "Enables image capability for text-only models (read_image available); the model decides when to read.",
       unsaved: "Unsaved changes",
       discard: "Discard",
       saving: "Saving…",
@@ -51,19 +42,10 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       saved: "Saved; takes effect on the next request",
       loadFailed: "Failed to load config",
       invalidPositiveInt: "Enter a positive integer",
-      visionProvider: "Vision provider",
-      visionModel: "Vision model",
-      autoDiscover: "Auto-discover (when configured model is unavailable)",
-      sourceHint: "Annotate image source in transcription",
-      fieldSourceHint: "read_image images get their file path; pasted/dragged images get a \"no on-disk file, do not search\" note plus the stored copy path when resolvable",
-      maxVisionTokens: "Max transcription tokens",
       compressImageBytes: "Compress trigger bytes",
       compressMaxDimension: "Compress max dimension (px)",
       compressTargetBytes: "Compress target bytes",
-      compressFallbackDimension: "Fallback compress dimension (px)",
-      prompt: "Transcription prompt",
-      fieldVisionProvider: "Provider that hosts the vision model (e.g. zai-open)",
-      fieldVisionModel: "Must declare image input (e.g. glm-4v-flash)"
+      compressFallbackDimension: "Fallback compress dimension (px)"
     };
 
     // ── 粘贴图片增强 ────────────────────────────────────────────────────
@@ -120,16 +102,6 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
         props.hint !== void 0 ? React.createElement("p", { className: "vr_hint" }, props.hint) : null
       );
     }
-    function TextField(props: any) {
-      return React.createElement(Field, { label: props.label, hint: props.hint },
-        React.createElement("input", {
-          className: "vr_input",
-          value: props.value,
-          onChange: (e: any) => props.onChange(e.target.value),
-          disabled: props.disabled === true
-        })
-      );
-    }
     function NumField(props: any) {
       const [text, setText] = React.useState(props.value === null || props.value === void 0 ? "" : String(props.value));
       React.useEffect(() => {
@@ -152,16 +124,6 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
             const nextInvalid = next.trim() === "" || !Number.isInteger(Number(next)) || Number(next) <= 0;
             props.onChange(nextInvalid ? null : Number(next));
           },
-          disabled: props.disabled === true
-        })
-      );
-    }
-    function BoolField(props: any) {
-      return React.createElement(Field, { label: props.label, hint: props.hint },
-        React.createElement("input", {
-          type: "checkbox",
-          checked: props.value === true,
-          onChange: (e: any) => props.onChange(e.target.checked),
           disabled: props.disabled === true
         })
       );
@@ -189,7 +151,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       }, []);
 
       const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(cfg);
-      const invalid = draft !== null && ["maxVisionTokens", "compressImageBytes", "compressMaxDimension", "compressTargetBytes", "compressFallbackDimension"]
+      const invalid = draft !== null && ["compressImageBytes", "compressMaxDimension", "compressTargetBytes", "compressFallbackDimension"]
         .some((key) => !Number.isInteger(draft[key]) || draft[key] <= 0);
       const discard = () => {
         setDraft(cfg);
@@ -225,40 +187,6 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
           "div",
           { className: "vr_body" },
           React.createElement("p", { className: "vr_hint" }, t("hint")),
-          React.createElement(TextField, {
-            label: t("visionProvider"),
-            hint: t("fieldVisionProvider"),
-            value: draft === null ? "" : draft.visionProvider,
-            disabled: draft === null,
-            onChange: (v: any) => setDraft({ ...draft, visionProvider: v })
-          }),
-          React.createElement(TextField, {
-            label: t("visionModel"),
-            hint: t("fieldVisionModel"),
-            value: draft === null ? "" : draft.visionModel,
-            disabled: draft === null,
-            onChange: (v: any) => setDraft({ ...draft, visionModel: v })
-          }),
-          React.createElement(BoolField, {
-            label: t("autoDiscover"),
-            value: draft === null ? false : draft.autoDiscover,
-            disabled: draft === null,
-            onChange: (v: any) => setDraft({ ...draft, autoDiscover: v })
-          }),
-          React.createElement(BoolField, {
-            label: t("sourceHint"),
-            hint: t("fieldSourceHint"),
-            value: draft === null ? false : draft.sourceHint,
-            disabled: draft === null,
-            onChange: (v: any) => setDraft({ ...draft, sourceHint: v })
-          }),
-          React.createElement(NumField, {
-            t,
-            label: t("maxVisionTokens"),
-            value: draft === null ? null : draft.maxVisionTokens,
-            disabled: draft === null,
-            onChange: (v: any) => setDraft({ ...draft, maxVisionTokens: v })
-          }),
           React.createElement(NumField, {
             t,
             label: t("compressImageBytes"),
@@ -287,14 +215,6 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
             disabled: draft === null,
             onChange: (v: any) => setDraft({ ...draft, compressFallbackDimension: v })
           }),
-          React.createElement(Field, { label: t("prompt") },
-            React.createElement("textarea", {
-              className: "vr_textarea",
-              value: draft === null ? "" : draft.prompt,
-              disabled: draft === null,
-              onChange: (e: any) => setDraft({ ...draft, prompt: e.target.value })
-            })
-          ),
           React.createElement(
             "div",
             { className: "vr_footer" },

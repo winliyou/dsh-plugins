@@ -1,40 +1,20 @@
 /**
- * vision-router — 图片自动降级路由插件（@chaoset/vision-router）
+ * vision-router — 图片多模态能力注入插件（@chaoset/vision-router）
  *
- * 当会话模型（如 deepseek-v4-flash 等纯文本模型）收到包含图片的请求时，
- * 自动把图片交给配置的视觉模型（默认 zai-open / glm-4v-flash，智谱官方
- * 免费视觉模型）转述为文本描述，再把描述文本交给原模型继续处理。用户和
- * agent 都无需手动切换模型。
- *
- * 实现（都在 dsh-llm 的 service 实例上，幂等、可卸载）：
- *   1. 能力声明：包装 resolveModelInfo，为纯文本模型补充 image 输入
- *      模态声明——会话入口（prompt 检查、模型切换检查）与 read_image
- *      工具都以此判断"模型能否处理图片"，本插件保证图片会被转述，因此
- *      入口放行。
- *   2. 请求转述：包装 streamWithRegistration（llm.stream 与 agent loop
- *      prepareCall().stream() 两条路径的汇聚点）。请求含图片且目标模型
- *      原生不支持图片时，把每条含图消息交给视觉模型转述，将 image block
- *      替换为文本描述块后再向下游分发；否则原样透传。目标模型的原生能力
- *      通过 listModels 读取（不受 resolveModelInfo 包装影响）。
- *   3. 追问重看（re-look）：转述上下文与缓存键纳入"用户当前关注"——请求
- *      中最后一条带非空文本的 user 消息。用户追问图片细节时，历史图片会
- *      带着新问题重新交给视觉模型分析（与原生多模态每轮带原图重新看图对
- *      齐）；上下文未变时（重试、agent 工具循环的中间轮）命中缓存不重复
- *      调用。多条含图消息并行转述，降低多图场景的等待时间。
- *   4. 来源标注（sourceHint）：图片原位置替换为带编号的占位标记，来源
- *      （read_image 的 <path> 信封文件路径 / 粘贴图"磁盘无源文件，不要
- *      搜索"提示 / DSH 本地附件副本落盘路径）内联在标记里；多张图片各自
- *      保留出现位置，联合转述正文放在首张图片的位置，主模型既知道每个
- *      位置有一张图，也不必浪费轮次去文件系统里找（可能不存在的）文件。
+ * 本插件不做任何图片理解/转述：读图完全交给主模型自行调用 read_image。
+ * 插件只做三件事，均为"让模型具备读图能力"，绝不替模型看图片：
+ *   1. 能力声明：包装 resolveModelInfo，为纯文本模型补充 image 输入模态声明，
+ *      让会话入口与 read_image 工具门禁放行——模型"看得到图"才会去决定读不读。
+ *   2. 能力提示：对纯文本模型路由的 agent 注入系统提示，告知 read_image 可用，
+ *      引导模型用 read_image 而非 python/脚本猜测图片内容；原生多模态模型不注入。
+ *   3. 大图压缩：包装 attachments.saveImage，超过阈值的大图/超像素图自动压缩，
+ *      让图片能进入会话并被 read_image 读取（服务端预处理，不涉及图片理解）。
  *
  * 配置：cordis.patch.yml 的 config（安装默认）与
  *       ~/.dsh/plugins/vision-router/config.json（设置页 UI，权威）合并。
- *
- * 本文件不依赖任何 dsh 内部包（纯 ESM + ctx.llm），可独立安装。
+ * 仅含压缩相关字段。本文件不依赖任何 dsh 内部包（纯 ESM + ctx.llm）。
  */
 
-import { createHash } from 'node:crypto';
-import { stat as fsStat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -42,7 +22,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import { createConfigStore } from './config-store.js';
 
 // remote 服务（设置页 UI 的配置读写）可选：typert-protocol 不可用时
-// 动态 import 失败，核心功能（转述/压缩）照常工作。
+// 动态 import 失败，核心功能（能力声明/提示/压缩）照常工作。
 let PluginConfigGateway: any = null;
 try {
   ({ PluginConfigGateway } = await import('./remote.js'));
@@ -60,24 +40,11 @@ try {
 
 export const name = 'vision-router';
 
-/** attachments 为可选服务（apply 内 ctx.get 获取），不参与 inject，避免组合缺服务时启动失败。 */
-export const inject = ['llm', 'sessions'];
+/** 本插件依赖 llm（能力声明/提示）；attachments 为可选服务，由 ctx.get 获取。 */
+export const inject = ['llm'];
 
 /** 默认配置。apply 时与 YAML 传入的 config 合并（cordis 不合并小写 config 导出）。 */
 const DEFAULT_CONFIG = {
-  /** 视觉模型路由；留空且 autoDiscover 开启时自动发现。 */
-  visionProvider: 'zai-open',
-  visionModel: 'glm-4v-flash',
-  /** 配置的视觉模型不可用时，自动从已注册模型里找第一个支持图片的。 */
-  autoDiscover: true,
-  /** 转述请求的最大输出 token。 */
-  maxVisionTokens: 2048,
-  /** 转述提示词；{count} 替换为图片数量。默认为"详尽转述"模板：转述结果
-   * 供一个看不到图片的模型使用，因此要求逐字转录文字、报告数值与空间
-   * 关系，并在篇幅受限时优先保文字与数值。 */
-  prompt: '用户发来了 {count} 张图片。请先直接回答用户针对图片提出的问题（若有），再为一位无法看到图片的 AI 助手详尽转述图片内容：逐字转录图中全部可见文字（保留原文语言，按阅读顺序）；报告图表的类型、坐标轴与具体数值；描述主要物体/人物及其空间位置关系（上下左右、前景背景）与颜色风格；多张图片按出现顺序分别说明并指出相互关系。篇幅有限时，优先保证文字转录与数值的完整准确。请用中文回答。',
-  /** 转述文本后附带图片来源说明（文件路径 / 粘贴无源文件提示 / 本地副本路径）。 */
-  sourceHint: true,
   /** 超过该字节数的图片在保存前自动压缩（sharp）。 */
   compressImageBytes: 4 * 1024 * 1024,
   /** 压缩后的最大像素边长（fit inside）。视觉模型按 512px 切块计 token，
@@ -97,7 +64,7 @@ const HARD_MAX_SOURCE_IMAGE_BYTES = 64 * 1024 * 1024;
 const HARD_MAX_SOURCE_IMAGE_PIXELS = 64_000_000;
 
 /** 轻量配置校验/归一化：不引入 schema 依赖，但避免 config.json 或 remote.set
- * 写入错误类型后在转述路径上抛 TypeError。非法字段回退默认值。 */
+ * 写入错误类型后在压缩路径上抛 TypeError。非法字段回退默认值。 */
 function positiveInteger(value: number, fallback: number): number {
   return Number.isInteger(value) && value > 0 ? value : fallback;
 }
@@ -107,12 +74,6 @@ function normalizeVisionConfig(source: any) {
   const merged = { ...DEFAULT_CONFIG, ...raw };
   return {
     ...merged,
-    visionProvider: typeof merged.visionProvider === 'string' ? merged.visionProvider.trim() : '',
-    visionModel: typeof merged.visionModel === 'string' ? merged.visionModel.trim() : '',
-    autoDiscover: typeof merged.autoDiscover === 'boolean' ? merged.autoDiscover : DEFAULT_CONFIG.autoDiscover,
-    maxVisionTokens: positiveInteger(merged.maxVisionTokens, DEFAULT_CONFIG.maxVisionTokens),
-    prompt: typeof merged.prompt === 'string' && merged.prompt.trim().length > 0 ? merged.prompt : DEFAULT_CONFIG.prompt,
-    sourceHint: typeof merged.sourceHint === 'boolean' ? merged.sourceHint : DEFAULT_CONFIG.sourceHint,
     compressImageBytes: positiveInteger(merged.compressImageBytes, DEFAULT_CONFIG.compressImageBytes),
     compressMaxDimension: positiveInteger(merged.compressMaxDimension, DEFAULT_CONFIG.compressMaxDimension),
     compressTargetBytes: positiveInteger(merged.compressTargetBytes, DEFAULT_CONFIG.compressTargetBytes),
@@ -125,19 +86,7 @@ function validateVisionConfig(partial: any) {
   if (partial === null || typeof partial !== 'object' || Array.isArray(partial)) {
     throw new TypeError('vision-router config must be a plain object');
   }
-  const stringFields = ['visionProvider', 'visionModel', 'prompt'];
-  for (const key of stringFields) {
-    if (partial[key] !== void 0 && (typeof partial[key] !== 'string' || (key === 'prompt' ? partial[key].trim().length === 0 : false))) {
-      throw new TypeError(`vision-router config field "${key}" must be a non-empty string`);
-    }
-  }
-  if (partial.autoDiscover !== void 0 && typeof partial.autoDiscover !== 'boolean') {
-    throw new TypeError('vision-router config field "autoDiscover" must be a boolean');
-  }
-  if (partial.sourceHint !== void 0 && typeof partial.sourceHint !== 'boolean') {
-    throw new TypeError('vision-router config field "sourceHint" must be a boolean');
-  }
-  const intFields = ['maxVisionTokens', 'compressImageBytes', 'compressMaxDimension', 'compressTargetBytes', 'compressFallbackDimension'];
+  const intFields = ['compressImageBytes', 'compressMaxDimension', 'compressTargetBytes', 'compressFallbackDimension'];
   for (const key of intFields) {
     if (partial[key] !== void 0 && !(Number.isInteger(partial[key]) && partial[key] > 0)) {
       throw new TypeError(`vision-router config field "${key}" must be a positive integer`);
@@ -151,147 +100,6 @@ const STATE = Symbol('vision-router.state');
 const ORIGINAL = Symbol.for('cordis.original');
 /** attachments 包装标记（挂在底层 attachment 实例上）。 */
 const ATTACHMENTS_KEY = Symbol.for('vision-router.attachments');
-
-/** 递归判断内容里是否含图片（含嵌套在 tool-result 里的）。 */
-function hasImage(content: any): boolean {
-  if (!Array.isArray(content)) return false;
-  return content.some((block: any) => {
-    if (block === null || typeof block !== 'object') return false;
-    if (isImageBlock(block)) return true;
-    if (block.type === 'tool-result') return hasImage(block.content);
-    return false;
-  });
-}
-
-/** 判断请求消息列表（message.content 数组）里是否含图片。 */
-function messagesHaveImage(messages: any): boolean {
-  return Array.isArray(messages) && messages.some((message: any) => message !== null && typeof message === 'object' && hasImage(message.content));
-}
-
-/** 判断一个内容块是否为图片块（兼容 DSH 的 image 与部分客户端粘贴产生的 file 块）。 */
-function isImageBlock(block: any): boolean {
-  if (block === null || typeof block !== 'object') return false;
-  if (block.type === 'image') return true;
-  if (block.type !== 'file') return false;
-  const mediaType = typeof block.mediaType === 'string' ? block.mediaType : block.mimeType;
-  return typeof mediaType === 'string' && mediaType.startsWith('image/');
-}
-
-/** 从 tool-result 顶层的文本块里提取 read_image 信封中的 <path>（若有）。 */
-function toolResultPath(content: any): string | undefined {
-  if (!Array.isArray(content)) return void 0;
-  for (const block of content) {
-    if (block === null || typeof block !== 'object' || block.type !== 'text' || typeof block.text !== 'string') continue;
-    const match = /<path>([^<]+)<\/path>/.exec(block.text);
-    if (match !== null) return match[1];
-  }
-  return void 0;
-}
-
-/** 递归收集图片块及其来源（chat=对话粘贴/拖入；tool=工具结果，path 为
- * read_image 读取的文件路径），返回该条消息的文本（只取顶层 text 块拼接）。 */
-function collectImages(content: any, out: any[], origin?: any): string {
-  if (!Array.isArray(content)) return '';
-  const scope = origin ?? { kind: 'chat' };
-  let text = '';
-  for (const block of content) {
-    if (block === null || typeof block !== 'object') continue;
-    if (isImageBlock(block)) out.push({ image: block, origin: scope });
-    else if (block.type === 'text') text += block.text;
-    else if (block.type === 'tool-result') collectImages(block.content, out, { kind: 'tool', path: toolResultPath(block.content) ?? scope.path });
-  }
-  return text;
-}
-
-/** 把图片块按收集顺序逐个替换为 replacements[i] 的文本块，保留每张图片
- * 原本的出现位置（多图与文本交错时"哪张图对应哪段话"的语义不丢失）。
- * 遍历顺序与 collectImages 的前序 DFS 严格一致，索引一一对应。 */
-function replaceImages(content: any, replacements: any[]): any {
-  let changed = false;
-  let index = 0;
-  const walk = (blocks: any[]): any[] => {
-    const out = [];
-    for (const block of blocks) {
-      if (block === null || typeof block !== 'object') {
-        out.push(block);
-        continue;
-      }
-      if (isImageBlock(block)) {
-        changed = true;
-        const replacement = replacements[index];
-        index += 1;
-        if (typeof replacement === 'string' && replacement.length > 0) {
-          out.push({ type: 'text', text: replacement });
-        }
-        continue;
-      }
-      if (block.type === 'tool-result' && hasImage(block.content)) {
-        out.push({ ...block, content: walk(block.content) });
-        continue;
-      }
-      out.push(block);
-    }
-    return out;
-  };
-  const out = walk(content);
-  return changed ? out : content;
-}
-
-/** 提取请求中"用户当前关注"：从后往前第一条带非空顶层文本的 user 消息。
- * 追问场景它是最新问题（触发历史图片带新问题重新转述）；agent 工具循环
- * 里 tool-result 消息没有顶层文本，向前回溯到本次任务描述。 */
-function latestUserText(messages: any): string {
-  if (!Array.isArray(messages)) return '';
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (message === null || typeof message !== 'object' || message.role !== 'user') continue;
-    if (!Array.isArray(message.content)) continue;
-    let text = '';
-    for (const block of message.content) {
-      if (block !== null && typeof block === 'object' && block.type === 'text' && typeof block.text === 'string') text += block.text;
-    }
-    text = text.trim();
-    if (text.length > 0) return text;
-  }
-  return '';
-}
-
-/** 消费一个 chunk 流，拼接文本；error/aborted finish 时抛错（带 signal 时以信号为准）。 */
-async function collectText(iterable: any, signal: any): Promise<string> {
-  let text = '';
-  let finished = false;
-  for await (const chunk of iterable) {
-    if (chunk.type === 'text-delta') {
-      text += chunk.text;
-      continue;
-    }
-    if (chunk.type !== 'finish' || chunk.reason === void 0) continue;
-    finished = true;
-    if (chunk.reason.kind === 'aborted') {
-      if (signal !== void 0 && signal.aborted) signal.throwIfAborted();
-      throw new Error('vision transcription aborted');
-    }
-    if (chunk.reason.kind === 'error') {
-      const failure = chunk.reason.failure;
-      throw new Error(`vision transcription failed: ${failure?.message || 'unknown error'} (${failure?.code || 'UNKNOWN'})`);
-    }
-  }
-  if (!finished) throw new Error('vision transcription stream ended without a terminal finish chunk');
-  return text;
-}
-
-/** 终态失败 chunk，与 dsh-llm 的 adapterFailureChunk 形状一致。 */
-function failChunk(error: any, signal: any): any {
-  const aborted = signal?.aborted === true || error?.code === 'ABORTED' || error?.name === 'AbortError';
-  const failure = {
-    message: error?.message || String(error),
-    code: aborted ? 'ABORTED' : 'VISION_ROUTER_FAILED',
-  };
-  return {
-    type: 'finish',
-    reason: aborted ? { kind: 'aborted', failure } : { kind: 'error', failure },
-  };
-}
 
 /** 加载 sharp：优先包内 optionalDependencies，失败回退 harness 依赖树。 */
 let sharpModule: any = null;
@@ -391,67 +199,10 @@ export async function exceedsMaxPixels(buffer: any, maxPixels: any, fallback: bo
   }
 }
 
-/** 向会话消息流追加一条可见的进度提示（assistant/chunk，不进入模型历史，
- * 最终被主模型输出覆盖）。返回是否成功（无会话或找不到 step 时静默跳过）。 */
-function progressChunk(ctx: Context, sessionId: any, text: string): boolean {
-  try {
-    if (sessionId === void 0) return false;
-    const session = ctx.sessions.get(sessionId);
-    if (session === void 0) return false;
-    let turn = void 0;
-    let step = void 0;
-    const events = session.log ?? session.events ?? [];
-    for (let i = events.length - 1; i >= 0; i -= 1) {
-      const event = events[i];
-      if (event && event.type === 'step/start' && event.data !== void 0) {
-        turn = event.data.turn;
-        step = event.data.step;
-        break;
-      }
-    }
-    if (turn === void 0 || step === void 0) return false;
-    session.append('assistant/chunk', {
-      turn,
-      step,
-      chunk: { type: 'text-delta', index: 0, text },
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** 注入给纯文本模型 agent 的能力提示段：纠正"我不支持图片"的自我认知，
- * 引导模型用 read_image 而不是 python 猜测图片内容。文本面向模型，保持
- * 精炼（每会话常驻上下文成本）。 */
-const CAPABILITY_HINT = `## 图片能力（本部署）
-
-本部署配有视觉转述层：进入你会话的任何图片（对话框粘贴/拖入，或 read_image 工具读取的文件）都会先由视觉模型转述为详尽文本（逐字转录图内文字、图表数值与空间布局）再交给你。read_image 工具描述中的 image input 要求在本部署已由转述层满足——需要理解 PNG/JPEG/WebP/GIF 文件的内容时直接用 read_image，不要用 python/脚本去猜测或分析图片。
-
-需要更多细节时：直接追问即可，历史图片会自动带着你的新问题重新分析；也可以对图片文件做预处理（如放大、裁剪局部）后再次 read_image。`;
-
-/** 对纯文本模型路由的 agent 注入能力提示段（agent/created）。
- * 模型路由取 agent.options（与宿主 read_image 门禁同源字段）；原生支持
- * 图片的模型不注入。fail-safe：任何异常只记日志。 */
-async function injectCapabilityHint(ctx: Context, state: any, agent: any): Promise<void> {
-  try {
-    const provider = agent?.options?.provider;
-    const model = agent?.options?.model;
-    const sp = agent?.ctx?.systemPrompt;
-    if (provider === void 0 || model === void 0 || sp === void 0 || typeof sp.section !== 'function') return;
-    const supportsImage = await targetSupportsImage(ctx, state, { provider, model });
-    if (supportsImage) return;
-    const disposer = sp.section({ name: 'vision-router:capability', order: 45, text: CAPABILITY_HINT });
-    if (typeof disposer === 'function') state.promptDisposers.set(agent.id, disposer);
-  } catch (error) {
-    try { ctx.logger?.warn?.(`vision-router: capability hint skipped: ${(error as Error)?.message ?? String(error)}`); } catch {}
-  }
-}
-
 /** 判断目标模型原生是否支持图片输入。
- * 不用 resolveModelInfo（它可能被本插件或历史挂载的包装增强过，导致误判），
- * 而是直接读模型目录 listModels —— adapter 的目录数据未被增强。
- * 无法确认时视为不支持（保守转述）。 */
+ * 直接读模型目录 listModels——adapter 的目录数据未被任何包装增强，结果最准。
+ * 这里仅用于能力提示：原生多模态模型不需要额外提示，纯文本模型需要提示
+ * read_image 可用。无法确认时按纯文本模型处理（保守提示）。 */
 async function targetSupportsImage(ctx: Context, state: any, options: any): Promise<boolean> {
   const cacheKey = `${options.provider}\u0000${options.model}`;
   const cached = state.targetImageCache.get(cacheKey);
@@ -468,316 +219,32 @@ async function targetSupportsImage(ctx: Context, state: any, options: any): Prom
   return supported;
 }
 
-/** 解析视觉模型路由：配置优先，失败时按配置决定自动发现。
- * 校验必须基于未被包装的模型目录（listModels）——本插件的 resolveModelInfo
- * 包装会给"声明了模态数组但不含 image"的模型补上 image，若用它校验，
- * 配置成纯文本模型会被误判为可用，转述请求必然失败且 autoDiscover 不触发。 */
-async function resolveVisionModel(ctx: Context, state: any): Promise<any> {
-  const cfg = state.cfg;
-  if (cfg.visionProvider && cfg.visionModel) {
-    try {
-      const models = await ctx.llm.listModels(cfg.visionProvider);
-      const entry = models.find((model: any) => model.id === cfg.visionModel);
-      if (entry !== void 0 && entry.inputModalities !== void 0 && entry.inputModalities.includes('image')) {
-        return { provider: cfg.visionProvider, model: cfg.visionModel, name: entry.name || cfg.visionModel };
-      }
-      throw new Error(`configured vision model ${cfg.visionProvider}/${cfg.visionModel} does not declare image input`);
-    } catch (error) {
-      if (!cfg.autoDiscover) throw error;
-      ctx.logger.warn(`vision-router: configured vision model unavailable (${(error as Error)?.message ?? String(error)}); auto-discovering`);
-    }
-  }
-  if (!cfg.autoDiscover) throw new Error('vision-router: no vision model configured (set visionProvider/visionModel or enable autoDiscover)');
-  // autoDiscover 结果缓存：避免每个含图请求都遍历所有 provider 的模型目录；
-  // 配置变化（热更新）时缓存键不匹配自动失效。
-  const cached = state.visionModelCache;
-  if (cached !== null && cached.cfgProvider === cfg.visionProvider && cached.cfgModel === cfg.visionModel) {
-    return cached.route;
-  }
-  for (const provider of await ctx.llm.listProviders()) {
-    let models;
-    try { models = await ctx.llm.listModels(provider.id); } catch { continue; }
-    for (const model of models) {
-      if (model.inputModalities !== void 0 && model.inputModalities.includes('image')) {
-        const route = { provider: provider.id, model: model.id, name: model.name || model.id };
-        state.visionModelCache = { cfgProvider: cfg.visionProvider, cfgModel: cfg.visionModel, route };
-        return route;
-      }
-    }
-  }
-  throw new Error('vision-router: no image-capable model found; add one to the model catalog (e.g. zai-open / glm-4v-flash) or set visionProvider/visionModel');
-}
+/** 注入给纯文本模型 agent 的能力提示段：纠正“我不支持图片”的自我认知，
+ * 引导模型在需要读图时直接调用 read_image，而不是用 python/脚本猜测。 */
+const CAPABILITY_HINT = `## 图片能力（本部署）
 
-/** 基于一次路由决策的异步生成器：转述含图消息后调用 down(新 options)。
- * 含图消息并行转述（多图等待时间取决于最慢一次视觉调用，而非累加）。 */
-async function* routeOnce(ctx: Context, state: any, options: any, down: any): AsyncGenerator<any, void, unknown> {
-  let supportsImage;
+当前部署已为纯文本模型开放 read_image 工具所需的图片输入能力。需要查看或分析用户消息中的图片、工作区或工具返回的 PNG/JPEG/WebP/GIF 图片文件时，请直接调用 read_image 读取对应附件/文件，不要用 python/脚本去猜测或分析图片内容。是否读图、什么时候读图由你根据用户意图自行决定。`;
+
+/** 对纯文本模型路由的 agent 注入能力提示段（agent/created）。
+ * 模型路由取 agent.options；原生支持图片的模型不注入。fail-safe：任何异常只记日志。 */
+async function injectCapabilityHint(ctx: Context, state: any, agent: any): Promise<void> {
   try {
-    supportsImage = await targetSupportsImage(ctx, state, options);
-  } catch {
-    supportsImage = false;
-  }
-  if (supportsImage) {
-    yield* down(options);
-    return;
-  }
-  let vision;
-  try {
-    vision = await resolveVisionModel(ctx, state);
+    const provider = agent?.options?.provider;
+    const model = agent?.options?.model;
+    const sp = agent?.ctx?.systemPrompt;
+    if (provider === void 0 || model === void 0 || sp === void 0 || typeof sp.section !== 'function') return;
+    const supportsImage = await targetSupportsImage(ctx, state, { provider, model });
+    if (supportsImage) return;
+    const disposer = sp.section({ name: 'vision-router:capability', order: 45, text: CAPABILITY_HINT });
+    if (typeof disposer === 'function') state.promptDisposers.set(agent.id, disposer);
   } catch (error) {
-    ctx.logger.error(`vision-router: ${(error as Error)?.message ?? String(error)}`);
-    yield failChunk(error, options.signal);
-    return;
+    try { ctx.logger?.warn?.(`vision-router: capability hint skipped: ${(error as Error)?.message ?? String(error)}`); } catch {}
   }
-  // 追问重看：转述上下文与缓存键都纳入"用户当前关注"。追问时缓存未命中
-  // → 历史图片带着新问题重新转述；上下文未变（重试、agent 工具循环）时
-  // 命中缓存，不打扰。
-  const followup = latestUserText(options.messages);
-  // 进度提示按请求去重：并行转述多条消息（或一次追问触发多张历史图重转）
-  // 时只提示一次；全部命中缓存则不提示。
-  const progress = { shown: false };
-  let messages;
-  try {
-    messages = await Promise.all(options.messages.map((message: any) => {
-      if (message === null || typeof message !== 'object' || !hasImage(message.content)) return message;
-      return transcribeMessage(ctx, state, vision, message, options.sessionId, options.signal, followup, progress);
-    }));
-  } catch (error) {
-    ctx.logger.error(`vision-router: transcription failed for ${vision.provider}/${vision.model}: ${(error as Error)?.message ?? String(error)}`);
-    yield failChunk(error, options.signal);
-    return;
-  }
-  const changed = messages.some((message: any, i: number) => message !== options.messages[i]);
-  if (!changed) {
-    yield* down(options);
-    return;
-  }
-  const routed = { ...options, messages };
-  ctx.logger.info(`vision-router: routed image message(s) to ${vision.provider}/${vision.model} for ${options.provider}/${options.model}`);
-  yield* down(routed);
-}
-
-/** 取一个图片块的稳定标识，用于转述缓存；兼容 attachment ref 与粘贴产生的 raw data。 */
-function imageStableId(image: any): string {
-  const att = image && image.attachment;
-  if (att !== null && typeof att === 'object') {
-    if (typeof att.attachmentId === 'string' && att.attachmentId.length > 0) return att.attachmentId;
-    if (typeof att.id === 'string' && att.id.length > 0) return att.id;
-  }
-  if (image && typeof image.data === 'string' && image.data.length > 0) {
-    return `${image.mediaType || 'image'}:${createHash('sha256').update(image.data).digest('hex')}`;
-  }
-  if (image && typeof image === 'object') {
-    try { return JSON.stringify(image); } catch { return String(Math.random()); }
-  }
-  return String(image);
-}
-
-/** 本地附件存储（dsh-attachment-local）的对象布局：attachmentId 形如
- * sha256:<64hex> 时落盘路径可推导（$DSH_HOME/attachments/v1/objects/<前2位>/<全hash>）。
- * 其他后端或非内容寻址引用返回 null，来源说明退化为不带副本路径。 */
-function attachmentObjectPath(attachmentId: any): string | null {
-  if (typeof attachmentId !== 'string') return null;
-  const match = /^sha256:([a-f0-9]{64})$/.exec(attachmentId);
-  if (match === null) return null;
-  const hash = match[1]!;
-  const dshHome = process.env.DSH_HOME?.trim() ? resolve(process.env.DSH_HOME) : join(homedir(), '.dsh');
-  return join(dshHome, 'attachments', 'v1', 'objects', hash.slice(0, 2), hash);
-}
-
-/** 描述一张图片的来源，随转述文本交给主模型——让它不必自己去文件系统里找图：
- * read_image 的图给出文件路径；粘贴/拖入的图明确说明磁盘上没有源文件。 */
-async function describeImageSource(image: any, origin: any): Promise<string> {
-  const att = image !== null && typeof image === 'object' ? image.attachment : void 0;
-  const ref = att !== null && typeof att === 'object' ? att : {};
-  const name = typeof ref.name === 'string' && ref.name.length > 0 ? ref.name
-    : (typeof image?.name === 'string' && image.name.length > 0 ? image.name : '');
-  const mediaType = typeof ref.mediaType === 'string' ? ref.mediaType
-    : (typeof image?.mediaType === 'string' ? image.mediaType : '');
-  const parts = [];
-  if (origin.kind === 'tool' && origin.path !== void 0) {
-    parts.push(`read_image 从文件读取：${origin.path}`);
-  } else if (origin.kind === 'tool') {
-    parts.push('工具结果携带的图片（未提供文件路径）');
-  } else {
-    parts.push(`用户在对话框粘贴/拖入的图片：磁盘上没有该图片的源文件（剪贴板粘贴的图片不存在于文件系统中），不要尝试在文件系统里搜索或定位它${name !== '' ? `；显示名 "${name}"` : ''}`);
-  }
-  const meta = [];
-  if (mediaType !== '') meta.push(mediaType);
-  if (Number.isInteger(ref.width) && Number.isInteger(ref.height)) meta.push(`${ref.width}×${ref.height} px`);
-  if (meta.length > 0) parts.push(meta.join('，'));
-  const objectPath = attachmentObjectPath(ref.attachmentId);
-  if (objectPath !== null) {
-    try {
-      if ((await fsStat(objectPath)).isFile() === true) {
-        parts.push(`DSH 保存的原图副本：${objectPath}（无扩展名；如需用 read_image 重新查看，先复制为带 .png/.jpg 等扩展名的文件）`);
-      }
-    } catch {}
-  }
-  return parts.join('；');
-}
-
-/** 解码可能带 data URL 前缀的 base64 图片数据。 */
-function decodeBase64Image(value: string): Uint8Array {
-  let base64 = value;
-  if (base64.startsWith('data:')) {
-    const comma = base64.indexOf(',');
-    if (comma !== -1) base64 = base64.slice(comma + 1);
-  }
-  return Uint8Array.from(Buffer.from(base64, 'base64'));
-}
-
-/** 把粘贴/上传产生的 raw image 块补成 DSH 视觉模型需要的 attachment 形式。 */
-async function normalizeImageBlock(ctx: Context, image: any): Promise<any> {
-  if (image === null || typeof image !== 'object') return image;
-  try {
-    const att = image.attachment;
-    if (att !== null && typeof att === 'object') {
-      if (typeof att.attachmentId === 'string' && att.attachmentId.length > 0) {
-        return image.type === 'file' ? { ...image, type: 'image' } : image;
-      }
-      if (typeof att.id === 'string' && att.id.length > 0) {
-        return { ...image, type: 'image', attachment: { ...att, attachmentId: att.id } };
-      }
-    }
-    const mediaType = typeof image.mediaType === 'string' ? image.mediaType : (image.type === 'file' && typeof image.mimeType === 'string' ? image.mimeType : '');
-    const hasRaw = image.data !== void 0 || image.bytes !== void 0;
-    if (mediaType.startsWith('image/') && hasRaw) {
-      const attService = typeof ctx.get === 'function' ? ctx.get('attachments') : ctx.attachments;
-      if (attService !== void 0 && typeof attService.saveImage === 'function') {
-        let data;
-        if (typeof image.data === 'string') {
-          data = decodeBase64Image(image.data);
-        } else if (image.data instanceof Uint8Array) {
-          data = image.data;
-        } else if (image.data instanceof ArrayBuffer) {
-          data = new Uint8Array(image.data);
-        } else if (typeof image.bytes === 'string') {
-          data = decodeBase64Image(image.bytes);
-        } else if (image.bytes instanceof Uint8Array) {
-          data = image.bytes;
-        }
-        if (data !== void 0) {
-          const saved = await attService.saveImage({
-            data,
-            mediaType,
-            ...(typeof image.name === 'string' && image.name.length > 0 ? { name: image.name } : {}),
-          });
-          return { ...image, type: 'image', attachment: saved, data: void 0, bytes: void 0 };
-        }
-      }
-    }
-    if (image.type === 'file' && mediaType.startsWith('image/')) {
-      return { ...image, type: 'image' };
-    }
-  } catch (error) {
-    try { ctx.logger?.warn?.(`vision-router: normalize image block failed: ${(error as Error)?.message ?? String(error)}`); } catch {}
-  }
-  return image;
-}
-
-/** 转述一条含图消息，返回图片被替换为文本后的新消息。
- * followup 为"用户当前关注"（请求中最后一条带非空文本的 user 消息），
- * 纳入缓存键并作为转述上下文：追问细节时缓存未命中，历史图片带着新
- * 问题重新交给视觉模型——对齐原生多模态"每轮请求都带原图"的行为。
- * progress 为请求级共享的去重标记，仅本次请求第一次真实转述时提示。 */
-async function transcribeMessage(ctx: Context, state: any, vision: any, message: any, sessionId: any, signal: any, followup: any, progress: any): Promise<any> {
-  const cfg = state.cfg;
-  const images: any[] = [];
-  const ownText = collectImages(message.content, images).trim();
-  if (images.length === 0) return message;
-  const normalizedImages = await Promise.all(images.map((entry: any) => normalizeImageBlock(ctx, entry.image)));
-
-  const cache = state.captionCache;
-  // 缓存键不能只由图片决定：同一张图配不同用户问题/提示词会得到不同转述，
-  // 只按图片 ID 缓存会让第二个问题错误复用第一个问题的回答。这里把视觉模型
-  // 路由、提示词、消息文本与"用户当前关注"一起纳入摘要——followup 变化
-  // （追问、编辑重发）即视为需要重新看图；上下文不变（重试、agent 工具
-  // 循环的中间轮）则命中缓存，不重复调用视觉模型。
-  const cacheMaterial = JSON.stringify({
-    provider: vision.provider,
-    model: vision.model,
-    prompt: cfg.prompt,
-    userText: ownText,
-    followup: followup ?? '',
-    imageIds: normalizedImages.map(imageStableId),
-  });
-  const cacheKey = `${sessionId ?? 'anon'}:${createHash('sha256').update(cacheMaterial).digest('hex')}`;
-  const cached = cache.get(cacheKey);
-  let caption;
-  if (cached !== void 0) {
-    caption = cached;
-  } else {
-    // 仅在实际发起转述时显示进度（含失败原因），且每次请求只提示一次，
-    // 避免追问触发多张历史图重转时刷屏；全部命中缓存时不打扰。
-    if (progress === void 0 || !progress.shown) {
-      if (progress !== void 0) progress.shown = true;
-      progressChunk(ctx, sessionId, '🖼️ 已收到图片，正在分析…');
-    }
-    const segments = [cfg.prompt.replace('{count}', String(normalizedImages.length))];
-    if (ownText.length > 0) segments.push(`用户发送图片时的说明：${ownText}`);
-    if (typeof followup === 'string' && followup.length > 0 && followup !== ownText) {
-      segments.push(`用户当前最新的问题（请重点围绕它重新查看图片）：${followup}`);
-    }
-    const parts = [{ type: 'text', text: segments.join('\n\n') }, ...normalizedImages];
-    const visionOptions = {
-      provider: vision.provider,
-      model: vision.model,
-      messages: [{ role: 'user', content: parts }],
-      maxTokens: cfg.maxVisionTokens,
-      ...(sessionId === void 0 ? {} : { sessionId }),
-      ...(signal === void 0 ? {} : { signal }),
-    };
-    state.transcribing.add(visionOptions);
-    try {
-      caption = (await collectText(ctx.llm.stream(visionOptions), signal)).trim();
-    } catch (error) {
-      progressChunk(ctx, sessionId, `⚠️ 图片分析失败：${(error as Error)?.message ?? String(error)}`);
-      throw error;
-    } finally {
-      state.transcribing.delete(visionOptions);
-    }
-    if (caption.length === 0) caption = '（视觉模型未返回描述）';
-    if (cache.size >= 300) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== void 0) cache.delete(oldest);
-    }
-    cache.set(cacheKey, caption);
-  }
-
-  // 来源标注在缓存之外逐请求计算：同一张图（缓存命中）随上下文不同可能
-  // 有不同来源描述（如先是粘贴、后又经 read_image 从文件读入）。来源内联
-  // 到每张图片的占位标记里，多图各自保留出现位置；联合转述正文放在首张
-  // 图片的位置（视觉模型一次看到全部图，便于对比类问题）。
-  let sources: any[] = [];
-  if (cfg.sourceHint) {
-    sources = await Promise.all(normalizedImages.map((image: any, i: number) =>
-      describeImageSource(image, images[i].origin).catch((error: any) => {
-        try { ctx.logger?.warn?.(`vision-router: source hint failed: ${(error as Error)?.message ?? String(error)}`); } catch {}
-        return '';
-      })));
-  }
-  const header = images.length > 1
-    ? `[视觉模型对全部 ${images.length} 张图片的分析（按 [图片 N] 出现顺序）]`
-    : '[视觉模型图片分析]';
-  const replacements = normalizedImages.map((_, i: number) => {
-    const label = typeof sources[i] === 'string' && sources[i].length > 0
-      ? `[图片 ${i + 1}｜${sources[i]}]`
-      : `[图片 ${i + 1}]`;
-    return i === 0 ? `${label}\n\n${header}\n${caption}` : label;
-  });
-
-  const replaced = replaceImages(message.content, replacements);
-  return replaced === message.content ? message : { ...message, content: replaced };
 }
 
 /** 把配置 namespace 注册进宿主 settings 体系（dsh-settings 0.1.0-rc.7+）。
  * 设置页 describe() 只枚举 settings.register 注册过的 namespace；本插件
  * 的卡片读写不经过宿主 settings 文档，注册只为让卡片出现在设置页。
- * options.base 必传当前生效配置快照：宿主 resolve = schema(mergeLayers(base,
- * section))，schema 无默认值时 base 缺失会让 describe() 的 value 为
- * undefined，而设置页 wire 校验要求 value 非空（invalid_type: nonoptional），
- * 一项失败会拖垮整个设置页。
  * fail-safe（schema 库/服务缺失静默跳过）+ 幂等（重复注册忽略）。
  * 导出以便测试注入 Schema stub。 */
 export function registerSettingsNamespace(ctx: any, ns: string, schemaLib: any, buildSchema: (z: any) => any, options: any): boolean {
@@ -814,16 +281,7 @@ export function apply(ctx: Context, config?: any): void {
       cfg: null,
       origResolveModelInfo: null,
       installedResolveModelInfo: null,
-      origStreamWithRegistration: null,
-      installedStreamWithRegistration: null,
       resolveWrapped: false,
-      streamWrapped: false,
-      /** 转述中的请求（防递归）。 */
-      transcribing: new WeakSet(),
-      /** 转述缓存：sessionId:hash -> caption，避免同一会话/同一问题重复转述。 */
-      captionCache: new Map(),
-      /** autoDiscover 路由缓存（配置键变化自动失效）。 */
-      visionModelCache: null,
       /** 目标模型图片能力缓存（provider/model -> boolean）。 */
       targetImageCache: new Map(),
       /** 已注入能力提示的 agent（agentId -> section disposer）。 */
@@ -848,10 +306,8 @@ export function apply(ctx: Context, config?: any): void {
         }
         state.disposers = [];
         state.resolveWrapped = false;
-        state.streamWrapped = false;
         state.installedResolveModelInfo = null;
-        state.installedStreamWithRegistration = null;
-        state.visionModelCache = null;
+        state.targetImageCache.clear();
         try { delete raw[STATE]; } catch {}
       }
     });
@@ -866,26 +322,20 @@ export function apply(ctx: Context, config?: any): void {
       warn: (message) => ctx.logger?.warn?.(`vision-router: ${message}`),
       onUpdate: (merged) => {
         state.cfg = normalizeVisionConfig({ ...patchConfig, ...merged });
-        state.visionModelCache = null; // 视觉路由可能变化，失效缓存
       },
     });
     state.cfg = normalizeVisionConfig(store.effective());
 
-    // 模型目录可能随时注册/注销（HMR、provider 配置变更）。autoDiscover
-    // 缓存的是 provider/model 路由，目录变化后必须失效，否则会一直使用
-    // 已下线的视觉模型。监听器随本插件 fiber 自动销毁。
+    // 模型目录可能随时注册/注销（HMR、provider 配置变更）。目录变化后必须
+    // 失效目标模型能力缓存，否则能力提示会基于已下线/新增的模型状态。
     ctx.on?.('llm/adapters-updated', () => {
-      state.visionModelCache = null;
       state.targetImageCache.clear();
     });
 
     // ── 能力提示（模型认知补全）──────────────────────────────────────────
-    // 纯文本模型的自我认知是"我不支持图片"，而 read_image 的工具描述写着
-    // "Requires the current model to accept image input"——模型据此自我排除，
-    // 面对"分析图片"类任务转而用 python 猜测图片内容，转述层无从介入。
-    // 这里对纯文本模型路由的 agent 注入一段系统提示，告知转述层存在、
-    // read_image 可放心使用；原生多模态模型不注入（无谓噪声）。
-    // 注册在 early-return 幂等检查之前，跨挂载点安全（监听随 fiber 销毁）。
+    // 纯文本模型通常自认“不支持图片”，不会主动使用 read_image；这里对纯文本
+    // 模型路由的 agent 注入一段系统提示，告知 read_image 可用、由模型自行决定
+    // 何时读图。原生多模态模型不注入（无谓噪声）。监听随本插件 fiber 自动销毁。
     ctx.on?.('agent/created', ({ agent }: any) => {
       void injectCapabilityHint(ctx, state, agent);
     });
@@ -907,23 +357,17 @@ export function apply(ctx: Context, config?: any): void {
     // 带了正确的 key 也不渲染。注册只提供 describe 元数据；卡片的实际读写
     // 仍走上面的 config gateway（config.json 权威、热更新）。
     registerSettingsNamespace(ctx, 'visionRouterConfig', Schema, (z) => z.object({
-      visionProvider: z.string().default(DEFAULT_CONFIG.visionProvider),
-      visionModel: z.string().default(DEFAULT_CONFIG.visionModel),
-      autoDiscover: z.boolean().default(DEFAULT_CONFIG.autoDiscover),
-      maxVisionTokens: z.number().default(DEFAULT_CONFIG.maxVisionTokens),
-      prompt: z.string().default(DEFAULT_CONFIG.prompt),
-      sourceHint: z.boolean().default(DEFAULT_CONFIG.sourceHint),
       compressImageBytes: z.number().default(DEFAULT_CONFIG.compressImageBytes),
       compressMaxDimension: z.number().default(DEFAULT_CONFIG.compressMaxDimension),
       compressTargetBytes: z.number().default(DEFAULT_CONFIG.compressTargetBytes),
       compressFallbackDimension: z.number().default(DEFAULT_CONFIG.compressFallbackDimension),
     }), { base: state.cfg });
 
-    // ── 0) 包装 attachments.saveImage：大图/超像素图自动压缩 ──────────────────
+    // ── 大图压缩：包装 attachments.saveImage ──────────────────────────────
     // 与 llm 包装相互独立：每次 apply 都尝试（attachments 后挂载也能补装），
     // 已包装（ATTACHMENTS_KEY 标记）则跳过。图片先在浏览器端按 limits 检查、
     // 在服务端 saveImage 校验。本插件把超过阈值（字节或解码像素）的图片压缩
-    // 后再保存（sharp），让大图也能进入会话并送达视觉模型。fail-safe：压缩
+    // 后再保存（sharp），让大图也能进入会话并送达 read_image。fail-safe：压缩
     // 不可用/失败时保持原样（由放宽后的 limits 放行）。
     const att = ctx.get('attachments');
     if (att !== void 0) {
@@ -989,69 +433,41 @@ export function apply(ctx: Context, config?: any): void {
       }
     }
 
-    if (state.resolveWrapped && state.streamWrapped) {
+    if (state.resolveWrapped) {
       ctx.logger.debug('vision-router: already active on this llm instance; config refreshed');
       return;
     }
 
-    // ── 1) 包装 resolveModelInfo：为纯文本模型补充 image 模态声明 ──────────────
-    if (!state.resolveWrapped) {
-      // 用底层实例绑定：traceable 代理的方法 proxy 无法携带正确的 this（其
-      // 内部依赖 this.ctx），bind 在 raw 上才能让原方法拿到 llm 实例自身。
-      state.origResolveModelInfo = raw.resolveModelInfo.bind(raw);
-      const orig = state.origResolveModelInfo;
-      const installed = async (provider: any, model: any, signal: any) => {
-        try {
-          const info = await orig(provider, model, signal);
-          if (info) {
-            // 本插件保证含图请求会被转述，因此把"未声明 image"的模型一律补上
-            // image 模态（含 inputModalities 未声明的模型），让会话入口与
-            // read_image 门禁放行；请求路径仍按 listModels 保守判定并转述。
-            const modalities = Array.isArray(info.inputModalities) ? info.inputModalities : [];
-            if (!modalities.includes('image')) {
-              return { ...info, inputModalities: [...modalities, 'image'] };
-            }
+    // ── 包装 resolveModelInfo：为纯文本模型补充 image 模态 ──────────────
+    // 本插件保证图片可由 read_image 读取，因此把"未声明 image"的模型一律补上
+    // image 模态（含 inputModalities 未声明的模型），让会话入口与 read_image
+    // 门禁放行；模型是否真正读图由其自行决定（调用 read_image）。
+    state.origResolveModelInfo = raw.resolveModelInfo.bind(raw);
+    const orig = state.origResolveModelInfo;
+    const installed = async (provider: any, model: any, signal: any) => {
+      try {
+        const info = await orig(provider, model, signal);
+        if (info) {
+          const modalities = Array.isArray(info.inputModalities) ? info.inputModalities : [];
+          if (!modalities.includes('image')) {
+            return { ...info, inputModalities: [...modalities, 'image'] };
           }
-          return info;
-        } catch (error) {
-          // fail-safe：解析失败时原样抛出，不吞错误
-          throw error;
         }
-      };
-      state.installedResolveModelInfo = installed;
-      llm.resolveModelInfo = installed;
-      state.resolveWrapped = true;
-      state.disposers.push(() => {
-        // 所有权判断：只有当前值仍是本插件安装的包装时才还原（避免覆盖后装者的包装）。
-        if (llm.resolveModelInfo === state.installedResolveModelInfo) llm.resolveModelInfo = state.origResolveModelInfo;
-        state.installedResolveModelInfo = null;
-      });
-    }
-
-    // ── 2) 包装 streamWithRegistration：含图且目标模型原生不支持时转述 ────────
-    if (!state.streamWrapped) {
-      state.origStreamWithRegistration = raw.streamWithRegistration.bind(raw);
-      const origSWR = state.origStreamWithRegistration;
-      const installed = function (options: any, prepared: any) {
-        try {
-          if (state.transcribing.has(options)) return origSWR(options, prepared);
-          if (options.messages === void 0 || !messagesHaveImage(options.messages)) return origSWR(options, prepared);
-          return routeOnce(ctx, state, options, (routed: any) => origSWR(routed, prepared));
-        } catch (error) {
-          // fail-safe：路由出错时原样转发，不让模型请求失败
-          try { ctx.logger.error(`vision-router: routing error (passthrough): ${(error as Error)?.message ?? String(error)}`); } catch {}
-          return origSWR(options, prepared);
-        }
-      };
-      state.installedStreamWithRegistration = installed;
-      llm.streamWithRegistration = installed;
-      state.streamWrapped = true;
-      state.disposers.push(() => {
-        if (llm.streamWithRegistration === state.installedStreamWithRegistration) llm.streamWithRegistration = state.origStreamWithRegistration;
-        state.installedStreamWithRegistration = null;
-      });
-    }
+        return info;
+      } catch (error) {
+        // fail-safe：解析失败时原样抛出，不吞错误
+        throw error;
+      }
+    };
+    state.installedResolveModelInfo = installed;
+    llm.resolveModelInfo = installed;
+    state.resolveWrapped = true;
+    state.disposers.push(() => {
+      // 所有权判断：只有当前值仍是本插件安装的包装时才还原（避免覆盖后装者的包装）。
+      if (llm.resolveModelInfo === state.installedResolveModelInfo) llm.resolveModelInfo = state.origResolveModelInfo;
+      state.installedResolveModelInfo = null;
+    });
   } catch (error) {
-    try { ctx.logger.error(`vision-router: init failed (harness continues without image routing): ${(error as Error)?.message ?? String(error)}`); } catch {}
+    try { ctx.logger.error(`vision-router: init failed (harness continues without capability injection): ${(error as Error)?.message ?? String(error)}`); } catch {}
   }
 }

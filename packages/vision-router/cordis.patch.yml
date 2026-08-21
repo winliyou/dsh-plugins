@@ -11,7 +11,7 @@
     - id: vision-router
       name: '@chaoset/vision-router'
       config:
-        visionProvider: zai-open
-        visionModel: glm-4v-flash
-        autoDiscover: true
-        maxVisionTokens: 2048
+        compressImageBytes: 4194304
+        compressMaxDimension: 1600
+        compressTargetBytes: 2097152
+        compressFallbackDimension: 1200

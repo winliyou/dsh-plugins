@@ -5,9 +5,12 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
 var css = [
   ".sa_badge{width:100%;height:49px;color:var(--dsw-alias-label-primary);cursor:pointer;background:0 0;border:none;border-radius:12px;align-items:center;gap:8px;padding:0 8px 0 6px;font-family:inherit;font-size:14px;display:inline-flex;overflow:hidden}",
   ".sa_badge:hover{background:var(--dsw-alias-interactive-bg-hover)}",
-  ".sa_badgeIcon{flex:none;font-size:15px;line-height:20px}",
+  ".sa_badgeIcon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;color:var(--dsw-alias-label-primary)}",
+  ".sa_badgeIcon svg{width:18px;height:18px;display:block}",
   ".sa_badgeLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}",
   ".sa_badgeCount{color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:none;margin-left:auto;font-size:12px;line-height:16px}",
+  ".sa_badge--collapsed{width:auto;justify-content:center;padding:0}",
+  ".sa_badge--collapsed .sa_badgeLabel,.sa_badge--collapsed .sa_badgeCount{display:none}",
   ".sa_panel{z-index:30;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);width:440px;max-width:calc(100vw - 24px);max-height:62vh;box-shadow:var(--dsw-shadow-lv2);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border-radius:12px;flex-direction:column;display:flex;position:fixed;bottom:128px;left:12px;overflow:hidden}",
   ".sa_header{box-sizing:border-box;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);flex:none;justify-content:space-between;align-items:center;min-height:44px;padding:8px 12px;display:flex}",
   ".sa_title{color:var(--dsw-alias-label-primary);font-size:13px;font-weight:500;line-height:20px}",
@@ -71,11 +74,11 @@ const zh = {
   selectAll: "全选",
   selected: "已选 {n} 项",
   restore: "恢复所选",
-  restoreDone: "已恢复 {n} 个会话",
+  restoreDone: "已恢复 {n} 个归档会话",
   restoreFailed: "恢复失败",
   delete: "删除所选",
   deleteConfirm: "再次点击确认删除",
-  deleteDone: "已删除 {n} 个会话",
+  deleteDone: "已删除 {n} 个归档会话",
   deleteFailed: "部分删除失败：{n} 个",
   confirmAll: "确认删除全部 {n} 个？",
   noSelection: "请先勾选会话",
@@ -103,11 +106,11 @@ const en = {
   selectAll: "Select all",
   selected: "{n} selected",
   restore: "Restore",
-  restoreDone: "Restored {n} sessions",
+  restoreDone: "Restored {n} archived sessions",
   restoreFailed: "Restore failed",
   delete: "Delete",
   deleteConfirm: "Click again to confirm delete",
-  deleteDone: "Deleted {n} sessions",
+  deleteDone: "Deleted {n} archived sessions",
   deleteFailed: "Some deletions failed: {n}",
   confirmAll: "Delete all {n}?",
   noSelection: "Select sessions first",
@@ -143,6 +146,28 @@ function shortId(id: any) {
 function ArchivePanel(props: any) {
   const t = props.t;
   const call = props.call;
+  // 侧边栏收起（icon rail）时，DSH 通过 wide=false 告知（侧边栏 footer 注入点
+  // 下发的是 wide，而非 collapsed）。以 wide 为准；仅当宿主未下发 wide 时，才用
+  // ResizeObserver 观察所在格宽度（<80px 视为收起）兜底，避免窄格把文字标签挤变形。
+  const wideExplicit = typeof props.wide === "boolean" ? props.wide : void 0;
+  const [narrow, setNarrow] = React.useState(false);
+  const collapsed = wideExplicit === void 0 ? narrow : !wideExplicit;
+  const badgeRef = React.useRef<any>(null);
+  React.useEffect(() => {
+    const el = badgeRef.current?.parentElement;
+    if (el === undefined || el === null || typeof (globalThis as any).ResizeObserver === "undefined") return;
+    const ro = new (globalThis as any).ResizeObserver((entries: any[]) => {
+      for (const entry of entries) {
+        const w = entry.contentRect?.width ?? el.clientWidth;
+        setNarrow(w > 0 && w < 80);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // 有显式 wide 时完全以宿主状态为准，避免 ResizeObserver 的窄格判断在
+  // 展开后仍残留，导致展开态误用 collapsed 样式（图标不居中、文字丢失）。
+  const iconOnly = collapsed;
   const rootRef = React.useRef<any>(null);
   const [open, setOpen] = React.useState(false);
   const [items, setItems] = React.useState<any[]>([]);
@@ -170,8 +195,34 @@ function ArchivePanel(props: any) {
   }, [call, t]);
 
   React.useEffect(() => {
-    if (open) load();
+    if (open) { setNotice(null); load(); }
   }, [open, load]);
+
+  // 后台静默刷新归档计数：侧边栏徽标要在「聊天列表里出现归档」时就同步显示数量，
+  // 而不是等到打开弹窗才更新。面板打开时由上面的 load() 负责，这里只在关闭态轮询，
+  // 避免刷新打断用户在面板里的勾选/操作；同时监听标签页重新可见。
+  const refreshSilently = React.useCallback(async () => {
+    try {
+      const result = await call("list");
+      setItems(Array.isArray(result.items) ? result.items : []);
+    } catch {}
+  }, [call]);
+  React.useEffect(() => {
+    if (open) return;
+    refreshSilently();
+    const id = globalThis.setInterval(refreshSilently, 5000);
+    const onVis = () => { if (document.visibilityState === "visible") refreshSilently(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+  }, [open, refreshSilently]);
+
+  // 提示（如「已恢复/已删除 N 个会话」）几秒后自动消失，避免残留误导用户，
+  // 也避免删除全部归档后仍挂着上一条提示。
+  React.useEffect(() => {
+    if (notice === null) return;
+    const id = globalThis.setTimeout(() => setNotice(null), 4000);
+    return () => clearTimeout(id);
+  }, [notice]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -271,19 +322,26 @@ function ArchivePanel(props: any) {
   return React.createElement(
     "div",
     { className: "sa_root", ref: rootRef },
-    React.createElement(
-      "button",
-      {
-        className: "sa_badge",
-        type: "button",
-        onClick: () => setOpen(!open),
-        "aria-expanded": open,
-        title: t("badge")
-      },
-      React.createElement("span", { className: "sa_badgeIcon", "aria-hidden": true }, "🗂"),
-      React.createElement("span", { className: "sa_badgeLabel" }, t("badge")),
-      React.createElement("span", { className: "sa_badgeCount" }, String(items.length))
-    ),
+      React.createElement(
+        "button",
+        {
+          ref: badgeRef,
+          className: "sa_badge" + (iconOnly ? " sa_badge--collapsed" : ""),
+          type: "button",
+          onClick: () => setOpen(!open),
+          "aria-expanded": open,
+          title: t("badge")
+        },
+        React.createElement("span", { className: "sa_badgeIcon", "aria-hidden": true },
+          React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" },
+            React.createElement("rect", { x: 3, y: 4, width: 18, height: 4, rx: 1 }),
+            React.createElement("path", { d: "M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" }),
+            React.createElement("path", { d: "M10 12h4" })
+          )
+        ),
+        iconOnly ? null : React.createElement("span", { className: "sa_badgeLabel" }, t("badge")),
+        iconOnly ? null : React.createElement("span", { className: "sa_badgeCount" }, String(items.length))
+      ),
     open ? React.createElement(
       "div",
       { className: "sa_panel" },

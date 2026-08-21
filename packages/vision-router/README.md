@@ -1,30 +1,21 @@
-# @chaoset/vision-router — DSH 识图自动降级插件
+# @chaoset/vision-router — DSH 图片能力注入插件
 
-让 **任何 preset** 的会话在**纯文本模型**（deepseek-v4-flash 等）下也能处理图片：
-请求含图片而当前模型不支持时，自动调用视觉模型（默认 `zai-open / glm-4v-flash`，
-智谱官方**免费**视觉模型）转述为文本，再交给原模型继续分析。
+让 **纯文本模型**（deepseek-v4-flash 等）也能在需要时“看图”：插件不替主模型分析图片，
+而是把 `read_image` 工具所需的图片输入能力开放给纯文本模型，**是否读图、什么时候读图
+完全由主模型自行决定**。需要时主模型直接调用 `read_image` 读取图片/附件，不需要时不会
+产生任何额外的图片分析请求或“已收到图片，正在分析”之类的自动提示。
 
-- 拖入或粘贴到对话框的图片 → 自动转述；agent 用 `read_image` 读到的图片 → 自动转述
-- **能力提示（capability hint）**：对纯文本模型的会话注入系统提示段，告知模型
-  转述层存在、`read_image` 可放心使用（工具描述的 image input 要求已由本部署满足），
-  不要用 python/脚本猜测图片内容——补全"模型不知道自己能看图"的认知缺口；
-  原生多模态模型不注入
-- **追问重看（re-look）**：用户追问图片细节时，历史图片自动带着最新问题重新交给
-  视觉模型分析（对齐原生多模态"每轮请求都带原图"的行为）；上下文不变时
-  （重试、agent 工具循环中间轮）命中 `sessionId+图片+问题` 缓存，不重复调用
-- **详尽转述**：默认提示词要求逐字转录图中文字、报告图表数值与空间位置关系，
-  并在篇幅受限时优先保证文字与数值准确——转述结果供一个看不到图片的模型使用
-- **多图位置保留**：每张图片原位置替换为带编号的占位标记，来源内联；
-  联合转述正文放在首张图片位置；多条含图消息并行转述
-- **图片来源标注**：`read_image` 的图片给出文件路径；粘贴/拖入的图片
-  明确提示"磁盘上没有源文件，不要搜索"，并尽量给出 DSH 保存的原图副本路径
-  （`$DSH_HOME/attachments/v1/objects/…`，sha256 attachmentId 可推导时），
-  避免主模型浪费轮次去找一个（剪贴板图片根本不存在的）文件
-- 普通文本请求零影响（直接透传，历史图片已缓存时不打扰）
-- 大图自动压缩（字节或像素超限触发；mediaType 按输出字节实际检测；
-  PNG/WebP/GIF 优先保持原格式）
+- **能力声明（resolveModelInfo）**：为纯文本模型补充 `image` 输入模态，让会话入口
+  与 `read_image` 工具门禁放行
+- **能力提示（能力提示注入）**：对纯文本模型路由的 agent 注入一段精简系统提示，告知
+  `read_image` 可用、用 `read_image` 读图而不是用 python/脚本猜测；原生多模态模型
+  不注入
+- **大图压缩（attachments.saveImage）**：超过阈值的大图/超像素图自动压缩，让图片
+  能进入会话并被 `read_image` 读取（服务端预处理，不涉及图片理解）
+- 普通文本/历史图片请求**零影响**：插件不包装 `streamWithRegistration`，不扫描会话历史，
+  不自动转述图片，也不显示转述进度
 - 压缩路径有 64 MiB / 64 MP 硬上限，超大图按原始附件限制拒绝，避免解压炸弹
-- **fail-safe**：插件任何内部错误只记日志并透传，不会拖垮 harness
+- **fail-safe**：插件内部错误只记日志并透传，不会拖垮 harness
 
 ## 安装（npm 生态方式）
 
@@ -62,17 +53,11 @@ dsh plugin --profile web remove @chaoset/vision-router
 1. 插件内置默认值
 2. bundle patch 中 `cordis.patch.yml` 的 config
 3. 用户 profile/home 的 `cordis.patch.yml` 覆盖
-4. **DSH 设置页 → 插件配置 → 识图降级**（保存到 `$DSH_HOME/plugins/vision-router/config.json`，
+4. **DSH 设置页 → 插件配置 → 图片能力**（保存到 `$DSH_HOME/plugins/vision-router/config.json`，
    立即热生效，无需重启）
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| `visionProvider` | `zai-open` | 视觉模型所在 provider |
-| `visionModel` | `glm-4v-flash` | 视觉模型 id（必须真实声明 image 输入，否则报错） |
-| `autoDiscover` | `true` | 配置的模型不可用时自动寻找支持图片的模型 |
-| `sourceHint` | `true` | 图片占位标记内联来源说明（read_image 文件路径 / 粘贴无源文件提示 / 本地副本路径） |
-| `maxVisionTokens` | `2048` | 转述输出上限（不要超过所选视觉模型的输出上限） |
-| `prompt` | 内置模板 | 转述提示词，`{count}` 为图片数；默认为"详尽转述"模板（逐字转录文字、报告数值与空间关系） |
 | `compressImageBytes` | `4194304` | 压缩触发字节数 |
 | `compressMaxDimension` | `1600` | 压缩最大边长（px） |
 | `compressTargetBytes` | `2097152` | 压缩目标字节数 |
@@ -80,19 +65,11 @@ dsh plugin --profile web remove @chaoset/vision-router
 
 ## 实现要点
 
-- 包装 `resolveModelInfo` 为纯文本模型补充 `image` 模态（read_image 门禁放行），
-  但视觉模型校验与请求路由基于未被包装的 `listModels`（配置成纯文本模型会直接报错）
-- 包装 `streamWithRegistration`（llm.stream 与 agent loop 两条路径的汇聚点）：
-  含图且目标模型原生不支持时转述，替换 image block 为文本后透传
-- **追问重看（re-look）**：转述上下文与缓存键纳入"用户当前关注"（请求中最后一条
-  带非空文本的 user 消息）。用户追问图片细节时，历史图片带着新问题重新交给视觉模型
-  分析——对齐原生多模态"每轮请求都带原图"的行为；上下文不变（重试、agent 工具循环
-  中间轮）时命中缓存，不重复调用
-- 多条含图消息**并行转述**，多图场景的等待时间取决于最慢一次视觉调用而非累加
-- 多图**逐位替换**：每张图片原位置替换为带编号的占位标记（来源内联），
-  联合转述正文放在首张图片位置，"哪张图对应哪段话"的语义不丢失
-- 进度提示仅在**真正发起转述**时显示，且每次请求只提示一次
-  （追问触发多张历史图重转也不刷屏；缓存命中的历史图片不打扰）
-- 来源标注不进缓存、逐请求计算：同一张图先是粘贴、后又经 `read_image` 读入时，
-  两个位置各自得到正确的来源描述
-- 主请求取消时转述随之中止（signal 透传）
+- 包装 `resolveModelInfo` 为纯文本模型补充 `image` 模态（会话入口与 `read_image` 门禁
+  放行），模型是否真正读图由其自行决定
+- 通过 `agent/created` 给纯文本模型路由的 agent 注入能力提示；原生多模态模型不注入，
+  `agent/disposed` 时释放对应 system prompt section
+- **不包装 `streamWithRegistration`**：插件不自动转述消息里的图片，也不根据历史图片
+  触发视觉模型调用
+- 包装 `attachments.saveImage`：大图/超像素图在落盘前压缩，确保图片能进入会话并被
+  `read_image` 读取（预处理，非理解）
