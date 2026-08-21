@@ -36,15 +36,16 @@
 
 import { stat, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { createConfigStore } from './config-store.mjs';
+import type { Context } from '@deepseek-ai/cordis';
+import { createConfigStore } from './config-store.js';
 
 // remote 服务（侧边栏面板 UI 的读写）可选：typert-protocol 不可用时
 // 动态 import 失败，仅面板不可用，host 逻辑不注册（无其他消费者）。
-let SessionArchiveGateway = null;
+let SessionArchiveGateway: any = null;
 try {
-  ({ SessionArchiveGateway } = await import('./remote.mjs'));
+  ({ SessionArchiveGateway } = await import('./remote.js'));
 } catch (error) {
-  console.warn('session-archive: remote gateway unavailable: ' + (error && error.message || error));
+  console.warn('session-archive: remote gateway unavailable: ' + ((error as Error)?.message ?? String(error)));
 }
 
 export const name = 'session-archive';
@@ -65,7 +66,7 @@ const DEFAULT_CONFIG = {
 export const config = { ...DEFAULT_CONFIG };
 
 /** 配置校验：只接受正整数数值字段，避免脏配置拖垮并发/截断逻辑。 */
-function validateConfig(partial) {
+function validateConfig(partial: any) {
   if (partial === null || typeof partial !== 'object' || Array.isArray(partial)) {
     throw new TypeError('session-archive config must be a plain object');
   }
@@ -77,10 +78,10 @@ function validateConfig(partial) {
 }
 
 /** 配置归一化：非法/缺失数值回退默认值，保证运行时不会拿到 NaN/负数。 */
-function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
+function normalizeConfig(source: any, defaults: any = DEFAULT_CONFIG): Record<string, any> {
   const raw = source !== null && typeof source === 'object' && !Array.isArray(source) ? source : {};
   const merged = { ...defaults, ...raw };
-  const positiveInt = (value, fallback) => Number.isInteger(value) && value > 0 ? value : fallback;
+  const positiveInt = (value: any, fallback: any) => Number.isInteger(value) && value > 0 ? value : fallback;
   return {
     detailMaxMessages: positiveInt(merged.detailMaxMessages, defaults.detailMaxMessages),
     messagePreviewChars: positiveInt(merged.messagePreviewChars, defaults.messagePreviewChars),
@@ -89,20 +90,21 @@ function normalizeConfig(source, defaults = DEFAULT_CONFIG) {
 }
 
 /** 并发限制器：最多 N 个任务并行，其余排队。 */
-function limitedConcurrency(limit, tasks) {
+function limitedConcurrency(limit: number, tasks: Array<() => Promise<any>>): Promise<any[]> {
   const results = new Array(tasks.length);
   let cursor = 0;
   const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
     while (cursor < tasks.length) {
       const at = cursor++;
-      results[at] = await tasks[at]();
+      const task = tasks[at]!;
+      results[at] = await task();
     }
   });
   return Promise.all(workers).then(() => results);
 }
 
 /** 从事件流折叠最新会话标题（与 dsh-session-title 相同的折叠规则）。 */
-function foldTitle(events) {
+function foldTitle(events: any[]): string | null {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (event && event.type === 'session/title') {
@@ -114,7 +116,7 @@ function foldTitle(events) {
 }
 
 /** 从一条消息（Message 结构）提取纯文本（text 块拼接，忽略图片/工具块）。 */
-function messageText(message, maxChars) {
+function messageText(message: any, maxChars: number): string {
   if (!message || !Array.isArray(message.content)) return '';
   let text = '';
   for (const block of message.content) {
@@ -130,12 +132,12 @@ function messageText(message, maxChars) {
  * 构造归档管理 host 逻辑（绑定 ctx 与配置）。
  * 只读操作失败各自容错：单个会话的标题/详情读取失败不拖垮列表。
  */
-export function createArchiveHost(ctx, cfg) {
+export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
   const registry = ctx.workspaceRegistry;
   const persistence = ctx.sessionPersistence;
 
   /** 当前归档集合快照。 */
-  const archivedSet = () => new Set(
+  const archivedSet = (): Set<string> => new Set(
     typeof registry.archivedSessionIds === 'function'
       ? registry.archivedSessionIds()
       : (Array.isArray(registry.archivedSessionIds) ? registry.archivedSessionIds : []),
@@ -148,16 +150,16 @@ export function createArchiveHost(ctx, cfg) {
    * 若把内存存在当作 live，归档面板会永远显示"运行中"且无法勾选删除。
    * 因此 live 仅对"内存存在且**未归档**"的会话为真（防将来误用），
    * 归档面板中恒为 false。 */
-  const isLive = (sessionId) =>
+  const isLive = (sessionId: string) =>
     ctx.sessions.get(sessionId) !== undefined && !archivedSet().has(sessionId);
 
   /** 归档瞬间的生成流兜底：会话仍在内存且文件最近有写入（60s 内）时
    * 视为忙碌——删除文件后进行中的请求会把半截日志 append 回来。 */
-  const isBusy = (sessionId, file) =>
+  const isBusy = (sessionId: string, file: { path: string; size: number; mtimeMs: number } | null) =>
     file !== null && ctx.sessions.get(sessionId) !== undefined && Date.now() - file.mtimeMs < 60_000;
 
   /** 从归档集合移除若干 id（恢复用；删除不调用——见 deleteArchived），返回实际移除的 id。 */
-  async function removeFromArchiveSet(ids) {
+  async function removeFromArchiveSet(ids: string[]): Promise<string[]> {
     const set = new Set(ids);
     const canWrite =
       registry !== undefined &&
@@ -165,7 +167,7 @@ export function createArchiveHost(ctx, cfg) {
       typeof registry.requireState === 'function' &&
       typeof registry.setState === 'function';
     if (!canWrite) return []; // 降级：仅删文件，列表按存在性过滤幽灵 id
-    let removedIds = [];
+    let removedIds: string[] = [];
     await registry.enqueueOperation(async () => {
       const state = registry.requireState();
       const current = Array.isArray(state.archivedSessionIds) ? state.archivedSessionIds : [];
@@ -177,7 +179,7 @@ export function createArchiveHost(ctx, cfg) {
   }
 
   /** 归档会话的文件信息（路径 + stat），会话文件缺失时返回 null。 */
-  async function fileInfo(header) {
+  async function fileInfo(header: any): Promise<{ path: string; size: number; mtimeMs: number } | null> {
     try {
       const location = persistence.locate(header);
       if (location === undefined || typeof location.path !== 'string' || location.path.length === 0) return null;
@@ -189,7 +191,7 @@ export function createArchiveHost(ctx, cfg) {
   }
 
   /** 单个归档会话的展示行。标题读取失败回退 null（面板显示目录名）。 */
-  async function rowFor(sessionId, header) {
+  async function rowFor(sessionId: string, header: any) {
     const file = await fileInfo(header);
     let title = null;
     try {
@@ -213,8 +215,8 @@ export function createArchiveHost(ctx, cfg) {
       const archived = [...archivedSet()];
       if (archived.length === 0) return { items: [] };
       const headers = await persistence.list();
-      const byId = new Map(headers.map((header) => [header.id, header]));
-      const rows = [];
+      const byId = new Map<string, any>(headers.map((header) => [header.id, header] as [string, any]));
+      const rows: Array<{ sessionId: string; header: any }> = [];
       for (const sessionId of archived) {
         const header = byId.get(sessionId);
         if (header === undefined) continue; // 幽灵 id：会话文件已不存在
@@ -225,7 +227,7 @@ export function createArchiveHost(ctx, cfg) {
     },
 
     /** 读取一个归档会话的只读详情（标题 + 文本消息）。 */
-    async detail(sessionId) {
+    async detail(sessionId: string) {
       const { meta, events } = await persistence.readFrom(sessionId, 0);
       const title = foldTitle(events);
       const messages = [];
@@ -263,7 +265,7 @@ export function createArchiveHost(ctx, cfg) {
      * "恢复"。ghost id 由 list() 的存在性过滤隐藏，面板与侧边栏均不再
      * 显示该会话；`removedFromArchive` 因此恒为 0。
      */
-    async deleteArchived(sessionIds) {
+    async deleteArchived(sessionIds: string[]) {
       const unique = [...new Set(sessionIds)];
       const deleted = [];
       const failed = [];
@@ -294,7 +296,7 @@ export function createArchiveHost(ctx, cfg) {
           await rm(dirname(file.path), { recursive: true, force: true });
           deleted.push(sessionId);
         } catch (error) {
-          failed.push({ sessionId, reason: error && error.message ? String(error.message) : 'delete-failed' });
+          failed.push({ sessionId, reason: (error as Error)?.message ?? 'delete-failed' });
         }
       }
       return { deleted, failed, removedFromArchive: 0 };
@@ -305,7 +307,7 @@ export function createArchiveHost(ctx, cfg) {
      * 持久化文件的会话：文件已删的 ghost id（已彻底删除的会话）拒绝恢复，
      * 避免删除后的会话再次出现在侧边栏对话列表。
      */
-    async unarchive(sessionIds) {
+    async unarchive(sessionIds: string[]) {
       const unique = [...new Set(sessionIds)];
       const headers = await persistence.list();
       const restorable = [];
@@ -323,7 +325,7 @@ export function createArchiveHost(ctx, cfg) {
 }
 
 /** 插件 apply：注册远程服务（面板 UI 读写）。 */
-export function apply(ctx, config) {
+export function apply(ctx: Context, config?: any): any {
   const patchConfig = config || {};
   const cfg = normalizeConfig({ ...DEFAULT_CONFIG, ...patchConfig });
   const store = createConfigStore({

@@ -16,19 +16,34 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, re
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 
+export interface ConfigStoreOptions {
+  name: string;
+  defaults: Record<string, any>;
+  patchConfig: Record<string, any>;
+  onUpdate?: (merged: Record<string, any>, next: Record<string, any>) => void;
+  validate?: (partial: Record<string, any>) => void;
+  warn?: (message: string) => void;
+}
+
+export interface ConfigStore {
+  file: string;
+  effective(): Record<string, any>;
+  set(partial: Record<string, any>): Record<string, any>;
+}
+
 /**
  * 创建配置存储。
  * @param options - { name, defaults, patchConfig, onUpdate,
  *   validate?: (partial) => void, warn?: (message) => void }
  */
-export function createConfigStore(options) {
+export function createConfigStore(options: ConfigStoreOptions): ConfigStore {
   // 与 harness 的 DSH_HOME 约定保持一致：默认 ~/.dsh，可用 $DSH_HOME 覆盖。
   const dshHome = process.env.DSH_HOME?.trim() ? resolve(process.env.DSH_HOME) : join(homedir(), ".dsh");
   const file = join(dshHome, "plugins", options.name, "config.json");
   const warn = options.warn ?? (() => {});
   let readWarningShown = false;
 
-  function readJson() {
+  function readJson(): Record<string, any> {
     try {
       if (!existsSync(file)) return {};
       const parsed = JSON.parse(readFileSync(file, "utf8"));
@@ -44,19 +59,19 @@ export function createConfigStore(options) {
     } catch (error) {
       if (!readWarningShown) {
         readWarningShown = true;
-        warn(`failed to read config file ${file}: ${error?.message || error}; using empty config`);
+        warn(`failed to read config file ${file}: ${(error as Error)?.message ?? String(error)}; using empty config`);
       }
       return {};
     }
   }
 
   /** 当前生效配置（默认 + patch + json 合并）。 */
-  function effective() {
+  function effective(): Record<string, any> {
     return { ...options.defaults, ...options.patchConfig, ...readJson() };
   }
 
   /** 保存部分配置到 config.json 并触发热更新，返回新的生效配置。 */
-  function set(partial) {
+  function set(partial: Record<string, any>): Record<string, any> {
     if (partial === null || typeof partial !== "object" || Array.isArray(partial)) {
       throw new TypeError("set expects a plain config object");
     }
@@ -65,7 +80,7 @@ export function createConfigStore(options) {
     mkdirSync(dirname(file), { recursive: true });
 
     const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-    let fd;
+    let fd: number | undefined;
     try {
       fd = openSync(tmp, "w", 0o600);
       writeFileSync(fd, JSON.stringify(merged, null, 2) + "\n", "utf8");
@@ -88,7 +103,7 @@ export function createConfigStore(options) {
     try {
       options.onUpdate?.(merged, next);
     } catch (error) {
-      warn(`onUpdate failed after config save: ${error?.message || error}`);
+      warn(`onUpdate failed after config save: ${(error as Error)?.message ?? String(error)}`);
     }
     return next;
   }
