@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
 
     // ── 样式（注入 style 标签，模仿官方卡片外观）──────────────────────────
     var css = ".ap_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ap_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ap_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ap_header:hover,.ap_card[data-open=true]>.ap_header{background:var(--dsw-alias-interactive-bg-hover)}.ap_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ap_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ap_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ap_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ap_label{font-size:12px;font-weight:500;line-height:18px}.ap_input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:32px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:0 10px;font-size:13px;line-height:20px}.ap_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.ap_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ap_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ap_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ap_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:0 0;color:inherit}.ap_status{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);flex:1}.ap_status.ap_error{color:var(--dsw-alias-state-danger-primary)}";
@@ -416,7 +417,7 @@ import * as React from "react";
     // 因此本插件先挂载自己的命名空间，再注册设置卡片。
     const inject: any[] = ["slots", "locale", "remote"];
     const passthroughSchema = { parse: (value: any) => value };
-    const REMOTE_CONTRIBUTION = {
+    const REMOTE_CONTRIBUTION: TypertRemoteContribution = {
       package: "@chaoset/adaptive-perf",
       descriptors: [
         {

@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
 
 // ── 样式（注入 style 标签，复用 DSH 设计变量）────────────────────────
 var css = [
@@ -411,7 +412,7 @@ function ArchivePanel(props: any) {
 // ctx.remote.$mount(contribution) 显式挂载（官方 dsh-api-remotes 即如此）。
 const inject = ["slots", "locale", "remote"];
 const passthroughSchema = { parse: (value: any) => value };
-const REMOTE_CONTRIBUTION = {
+const REMOTE_CONTRIBUTION: TypertRemoteContribution = {
   package: "@chaoset/session-archive",
   descriptors: [
     { id: "@chaoset/session-archive#sessionArchive/list", service: "sessionArchive", namespace: "sessionArchive", method: "list", invocation: { kind: "direct" }, parameters: [], result: { mode: "strict", typeSymbol: "sessionArchive/list:result", schema: passthroughSchema } },

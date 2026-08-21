@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
 
 
     // ── 样式（注入 style 标签，模仿官方卡片外观）──────────────────────────
@@ -325,7 +326,7 @@ import * as React from "react";
     // 因此本插件先挂载自己的命名空间，再注册设置卡片。
     const inject = ["slots", "locale", "remote"];
     const passthroughSchema = { parse: (value: any) => value };
-    const REMOTE_CONTRIBUTION = {
+    const REMOTE_CONTRIBUTION: TypertRemoteContribution = {
       package: "@chaoset/vision-router",
       descriptors: [
         {
