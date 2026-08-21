@@ -39,7 +39,7 @@
     "build": "bun ../../scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun ../../scripts/build.mjs && vitest run",
-    "prepublishOnly": "bun ../../scripts/build.mjs"
+    "prepublishOnly": "bun run test"
   },
   "repository": {
     "type": "git",

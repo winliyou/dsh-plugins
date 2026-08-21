@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { apply } from "../lib/index.js";
-import { canonicalPath, writableRoots } from "../lib/common.js";
+import { apply } from "../src/index.js";
+import { canonicalPath, writableRoots } from "../src/common.js";
 
 const prevHome = process.env.HOME;
 const prevDshHome = process.env.DSH_HOME;

@@ -3,9 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { remoteMethods } from "@deepseek-ai/dsh-typert-protocol";
-import { apply, registerSettingsNamespace } from "../lib/index.js";
-import { createConfigStore } from "../lib/config-store.js";
-import { PluginConfigGateway } from "../lib/remote.js";
+import { apply, registerSettingsNamespace } from "../src/index.js";
+import { createConfigStore } from "../src/config-store.js";
+import { PluginConfigGateway } from "../src/remote.js";
 
 const prevHome = process.env.HOME;
 const prevDshHome = process.env.DSH_HOME;

@@ -25,10 +25,12 @@ DSH（DeepSeek Harness）host 层全局插件的 npm 包（monorepo）：
 ```
 packages/
 ├── vision-router/            # @chaoset/vision-router
-│   ├── lib/index.mjs         # host 插件（转述路由 + 压缩 + 配置网关）
-│   ├── lib/config-store.mjs  # 配置持久化（config.json）
-│   ├── lib/remote.mjs        # TypertRemoteService（无装饰器语法的手动标记）
-│   ├── client/client.cjs     # 设置页配置卡片（浏览器端）
+│   ├── src/index.ts          # host 插件（转述路由 + 压缩 + 配置网关）
+│   ├── src/config-store.ts   # 配置持久化（config.json）
+│   ├── src/remote.ts         # TypertRemoteService（无装饰器语法的手动标记）
+│   ├── client/index.tsx      # 设置页配置卡片（浏览器端源码）
+│   ├── client/client.cjs     # 设置页配置卡片（esbuild 打包产物，git 忽略）
+│   ├── lib/                   # tsc 编译产物（*.js + *.d.ts，git 忽略）
 │   └── cordis.patch.yml      # bundle patch（dsh plugin 自动应用）
 ├── sandbox-extra-roots/      # @chaoset/sandbox-extra-roots（同上结构）
 ├── adaptive-perf/            # @chaoset/adaptive-perf（同上结构）
@@ -41,7 +43,10 @@ packages/
 
 ```bash
 bun install              # 安装依赖（含测试用的 @deepseek-ai/dsh-typert-protocol）
-bun test                 # 运行 scripts/test.mjs（config-store / remote / host 插件回归）
+bun run build            # tsc 编译各包 src/ → lib/，esbuild 打包 client/ → client.cjs
+bun run typecheck        # 全仓类型检查（host + client）
+bun run test:ci          # 构建 + 运行全部 vitest 回归（CI 使用）
+bun run test             # 运行 vitest 回归（需先 build；test:ci 会先构建）
 ```
 
 ## 版本管理与发布
