@@ -126,34 +126,34 @@ const en = {
 };
 
 // ── 工具函数 ─────────────────────────────────────────────────────────
-function formatBytes(bytes, t) {
+function formatBytes(bytes: any, t: any) {
   if (bytes < 1024) return t("sizeBytes").replace("{n}", String(bytes));
   if (bytes < 1024 * 1024) return t("sizeKB").replace("{n}", (bytes / 1024).toFixed(1));
   return t("sizeMB").replace("{n}", (bytes / (1024 * 1024)).toFixed(1));
 }
-function formatTime(ms) {
+function formatTime(ms: any) {
   try { return new Date(ms).toLocaleString(); } catch { return String(ms); }
 }
-function shortId(id) {
+function shortId(id: any) {
   return id.length > 12 ? id.slice(0, 12) + "…" : id;
 }
 
 // ── 归档面板 ─────────────────────────────────────────────────────────
-function ArchivePanel(props) {
+function ArchivePanel(props: any) {
   const t = props.t;
   const call = props.call;
-  const rootRef = React.useRef(null);
+  const rootRef = React.useRef<any>(null);
   const [open, setOpen] = React.useState(false);
-  const [items, setItems] = React.useState([]);
+  const [items, setItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState(null);
-  const [selected, setSelected] = React.useState(new Set());
-  const [expanded, setExpanded] = React.useState(null);
-  const [details, setDetails] = React.useState(new Map());
-  const [detailLoading, setDetailLoading] = React.useState(new Set());
+  const [error, setError] = React.useState<any>(null);
+  const [selected, setSelected] = React.useState<Set<any>>(new Set());
+  const [expanded, setExpanded] = React.useState<any>(null);
+  const [details, setDetails] = React.useState<Map<any, any>>(new Map());
+  const [detailLoading, setDetailLoading] = React.useState<Set<any>>(new Set());
   const [busy, setBusy] = React.useState(false);
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
-  const [notice, setNotice] = React.useState(null);
+  const [notice, setNotice] = React.useState<any>(null);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -161,7 +161,7 @@ function ArchivePanel(props) {
     try {
       const result = await call("list");
       setItems(Array.isArray(result.items) ? result.items : []);
-    } catch (loadError) {
+    } catch (loadError: any) {
       setError(t("loadFailed") + ": " + (loadError && loadError.message || loadError));
     } finally {
       setLoading(false);
@@ -174,7 +174,7 @@ function ArchivePanel(props) {
 
   React.useEffect(() => {
     if (!open) return;
-    const onPointerDown = (event) => {
+    const onPointerDown = (event: any) => {
       if (rootRef.current !== null && !rootRef.current.contains(event.target)) {
         setOpen(false);
       }
@@ -186,14 +186,14 @@ function ArchivePanel(props) {
   const selectable = items.filter((item) => !item.live);
   const allSelected = selectable.length > 0 && selectable.every((item) => selected.has(item.sessionId));
 
-  const toggleAll = (checked) => {
+  const toggleAll = (checked: any) => {
     if (checked) {
       setSelected(new Set(selectable.map((item) => item.sessionId)));
     } else {
       setSelected(new Set());
     }
   };
-  const toggleOne = (sessionId, checked) => {
+  const toggleOne = (sessionId: any, checked: any) => {
     setSelected((current) => {
       const next = new Set(current);
       if (checked) next.add(sessionId); else next.delete(sessionId);
@@ -201,7 +201,7 @@ function ArchivePanel(props) {
     });
   };
 
-  const toggleDetail = (item) => {
+  const toggleDetail = (item: any) => {
     if (expanded === item.sessionId) {
       setExpanded(null);
       return;
@@ -209,9 +209,9 @@ function ArchivePanel(props) {
     setExpanded(item.sessionId);
     if (!details.has(item.sessionId)) {
       setDetailLoading((current) => new Set(current).add(item.sessionId));
-      call("detail", item.sessionId).then((detail) => {
+      call("detail", item.sessionId).then((detail: any) => {
         setDetails((current) => new Map(current).set(item.sessionId, detail));
-      }).catch((detailError) => {
+      }).catch((detailError: any) => {
         setDetails((current) => new Map(current).set(item.sessionId, {
           error: t("detailLoadFailed") + ": " + (detailError && detailError.message || detailError)
         }));
@@ -225,7 +225,7 @@ function ArchivePanel(props) {
     }
   };
 
-  const runBatch = async (action, doneKey, failKey) => {
+  const runBatch = async (action: any, doneKey: any, failKey: any) => {
     const ids = [...selected];
     if (ids.length === 0) {
       setNotice({ kind: "warn", text: t("noSelection") });
@@ -249,7 +249,7 @@ function ArchivePanel(props) {
       setSelected(new Set());
       setConfirmingDelete(false);
       await load();
-    } catch (actionError) {
+    } catch (actionError: any) {
       setNotice({ kind: "error", text: t(failKey).replace("{n}", "?") + ": " + (actionError && actionError.message || actionError) });
     } finally {
       setBusy(false);
@@ -350,7 +350,7 @@ function ArchivePanel(props) {
                   checked: selected.has(item.sessionId),
                   disabled: busy || item.live,
                   title: item.live ? t("runningHint") : void 0,
-                  onChange: (e) => toggleOne(item.sessionId, e.target.checked)
+                  onChange: (e: any) => toggleOne(item.sessionId, e.target.checked)
                 }),
                 React.createElement(
                   "span",
@@ -391,7 +391,7 @@ function ArchivePanel(props) {
                 detail === void 0 ? null :
                   detail.error !== void 0 ? React.createElement("p", { className: "sa_error" }, detail.error) :
                   detail.messages.length === 0 ? React.createElement("p", { className: "sa_empty" }, t("noMessages")) :
-                  detail.messages.map((message, index) => React.createElement(
+                  detail.messages.map((message: any, index: any) => React.createElement(
                     "div",
                     { className: "sa_msg", key: index },
                     React.createElement("span", { className: "sa_msgRole" }, message.role === "user" ? t("user") : t("assistant") + " · " + formatTime(message.time)),
@@ -410,7 +410,7 @@ function ArchivePanel(props) {
 // DSH 客户端的 remote.<ns> 服务不会自动生成：必须由客户端代码用
 // ctx.remote.$mount(contribution) 显式挂载（官方 dsh-api-remotes 即如此）。
 const inject = ["slots", "locale", "remote"];
-const passthroughSchema = { parse: (value) => value };
+const passthroughSchema = { parse: (value: any) => value };
 const REMOTE_CONTRIBUTION = {
   package: "@chaoset/session-archive",
   descriptors: [
@@ -420,13 +420,13 @@ const REMOTE_CONTRIBUTION = {
     { id: "@chaoset/session-archive#sessionArchive/unarchive", service: "sessionArchive", namespace: "sessionArchive", method: "unarchive", invocation: { kind: "direct" }, parameters: [{ name: "sessionIds", wire: "sessionIds", source: "json", codec: { mode: "strict", typeSymbol: "sessionArchive/unarchive:sessionIds", schema: passthroughSchema } }], result: { mode: "strict", typeSymbol: "sessionArchive/unarchive:result", schema: passthroughSchema } }
   ]
 };
-async function apply(ctx) {
+async function apply(ctx: any) {
   const t = ctx.locale.bind(NS);
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), "session-archive: dictionaries");
   await ctx.remote.$mount(REMOTE_CONTRIBUTION);
   const archiveService = ctx.get("remote.sessionArchive");
   if (archiveService === void 0) throw new Error("session-archive: remote.sessionArchive did not materialize after mount");
-  const call = (method, ...args) => archiveService[method](...args).then((result) => {
+  const call = (method: any, ...args: any[]) => archiveService[method](...args).then((result: any) => {
     if (!result.ok) throw new Error(method + " failed: " + result.error.code + ": " + result.error.message);
     return result.value;
   });
