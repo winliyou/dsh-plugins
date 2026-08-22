@@ -33,7 +33,7 @@
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
-import { canonicalPath, isPathUnder, loadLandlock, seatbeltProfileArgs } from "./common.js";
+import { canonicalPath, isPathUnder, loadLandlock, sandboxAvailable, seatbeltProfileArgs } from "./common.js";
 import { createConfigStore } from "./config-store.js";
 
 // remote 服务（设置页 UI 的配置读写）可选：typert-protocol 不可用时
@@ -193,6 +193,14 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
       extraWritableRoots: z.array(z.string()).default([]),
     }), { base: cfg });
 
+    // 官方 dsh-sandbox 解析失败(包缺失/file:// 部署三个 profile anchor 都
+    // 找不到)时降级为"插件不存在":跳过全部包装,只留一条高音量告警。
+    // 绝不能让静态导入链的异常逃出 apply——那会拖垮 harness 启动。
+    if (!sandboxAvailable) {
+      ctx.logger?.warn?.("sandbox-extra-roots: @deepseek-ai/dsh-sandbox unavailable; plugin degraded to no-op, sandbox NOT extended");
+      return;
+    }
+
     // remote.set 严格校验：非法数组/相对路径直接拒绝，UI 能立即看到原因。
     function validateSandboxConfig(partial: any) {
       if (partial === null || typeof partial !== "object" || Array.isArray(partial)) {
@@ -222,7 +230,7 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
           ctx.logger?.warn?.(`sandbox-extra-roots: ignoring non-absolute extra writable root ${JSON.stringify(root)}`);
           return false;
         })
-        .map((root: any) => canonicalPath(root));
+        .map((root: any) => typeof canonicalPath === "function" ? canonicalPath(root) : root);
       return [...new Set(normalized)];
     }
 

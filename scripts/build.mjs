@@ -1,12 +1,17 @@
 // 全仓构建：每包 tsc 编译 src/ → lib/，esbuild 打包 client/index.tsx → client/client.cjs
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PACKAGES = ["sandbox-extra-roots", "adaptive-perf", "session-archive"];
+// 包列表从目录派生而非硬编码:硬编码清单在增删包时必然漂移
+// (vision-router 删除时就漏改过这里,导致构建直接 ENOENT)。
+const PACKAGES = readdirSync(join(ROOT, "packages"), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
 
 function tsc(pkgDir) {
   execFileSync(join(ROOT, "node_modules", ".bin", "tsc"), ["-p", join(pkgDir, "tsconfig.json")], { stdio: "inherit", cwd: ROOT });

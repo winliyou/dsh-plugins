@@ -245,13 +245,24 @@ export function normalizeConfig(source: any, defaults: any = DEFAULT_CONFIG): an
     ? raw.families
     : defaults.families;
   for (const [id, fam] of Object.entries(defaults.families as Record<string, any>)) {
-    const candidate = rawFamilies[id] !== null && typeof rawFamilies[id] === 'object' && !Array.isArray(rawFamilies[id])
+    const candidate = rawFamilies[id] !== null && typeof rawFamilies[id] === 'object' && Array.isArray(rawFamilies[id]) === false
       ? rawFamilies[id]
       : fam;
     families[id] = {
       enabled: boolValue(candidate.enabled, fam.enabled),
       tools: stringList(candidate.tools, fam.tools),
       keywords: stringList(candidate.keywords, fam.keywords),
+    };
+  }
+  // 自定义工具族(UI 与 validateConfig 都允许任意 id):不合并进来的话,
+  // 用户在设置页新建的族会"保存成功"却被静默丢弃,永不生效。
+  for (const [id, cand] of Object.entries(rawFamilies as Record<string, any>)) {
+    if (Object.prototype.hasOwnProperty.call(defaults.families, id)) continue;
+    if (cand === null || typeof cand !== 'object' || Array.isArray(cand)) continue;
+    families[id] = {
+      enabled: boolValue(cand.enabled, true),
+      tools: stringList(cand.tools, []),
+      keywords: stringList(cand.keywords, []),
     };
   }
   const rawBootstrap = raw.bootstrap !== null && typeof raw.bootstrap === 'object' && !Array.isArray(raw.bootstrap)
@@ -820,10 +831,13 @@ export function filterBootstrapMessages(messages: any, suppressedSources: any): 
   return kept.length === messages.length ? messages : kept;
 }
 
-/** 首轮输出预算：未晋升 → 封顶；已晋升 → 若仍带着封顶值则剥离。 */
-export function applyBootstrapBudget(config: any, promoted: any, maxTokens: any): any {
+/** 首轮输出预算：未晋升 → 封顶；已晋升 → 若仍带着封顶值则剥离。
+ * 剥离条件是"值等于当前配置的 cap 或本会话曾写入过的任何旧 cap":
+ * 用户在晋升前后改过 cap 的话,header 里残留的是旧值,只比对当前值
+ * 会永远剥不掉,会话将永久带着过期封顶。 */
+export function applyBootstrapBudget(config: any, promoted: any, maxTokens: any, previousCaps: any[] = []): any {
   if (!promoted) return { ...config, maxTokens };
-  if (config?.maxTokens === maxTokens) {
+  if ([maxTokens, ...previousCaps].includes(config?.maxTokens)) {
     const { maxTokens: _drop, ...rest } = config;
     return rest;
   }
@@ -1034,6 +1048,10 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
         try { disposer(); } catch {}
         a.familyDisposers.delete(familyId);
       }
+      // 族 restrict 释放后还须重算 bootstrap deny:两层 restrict 取交集,
+      // 不重算的话升级信号对 bootstrap 阶段的会话完全无效。幂等由
+      // bootstrapKey 保证(keep 变化才会重挂)。
+      syncBootstrap(a);
       info(`agent ${a.agent.id}: escalated family "${familyId}" (${trigger})`);
     }
 
@@ -1066,20 +1084,27 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
      * 时静默降级：不挂载，退回旧行为（仅收窄目录）。
      */
     function syncRealPair(a: any) {
+      const active = cfg.enabled && cfg.bootstrap.enabled && cfg.bootstrap.realPair
+        && realPairModules !== null && process.platform !== 'win32';
+      // 幂等键:onUpdate 对每个活跃会话都会调用本函数,若无条件销毁重建,
+      // 改任何无关开关都会杀掉持久 PTY bash 的工作目录/环境变量/后台进程。
+      // 期望态未变化时直接跳过(与 syncBootstrap 的 bootstrapKey 同一模式)。
+      const cwd = a.agent.session?.header?.cwd ?? null;
+      const key = active ? 'on:' + String(cwd) : 'off';
+      if (a.realPairKey === key) return;
       for (const dispose of a.realPairDisposers) {
         try { dispose(); } catch {}
       }
       a.realPairDisposers = [];
-      const active = cfg.enabled && cfg.bootstrap.enabled && cfg.bootstrap.realPair
-        && realPairModules !== null && process.platform !== 'win32';
       if (active) {
-        const mounts = realPairMounts(realPairModules, a.agent.session?.header?.cwd);
+        const mounts = realPairMounts(realPairModules, cwd);
         a.realPairDisposers = mountRealPair(a.agent, mounts, warn);
         if (a.realPairDisposers.length > 0) {
           info(`agent ${a.agent.id}: real Minimal tool pair mounted (${mounts.length} plugins)`);
         }
       }
       a.realPairActive = a.realPairDisposers.length > 0;
+      a.realPairKey = key;
     }
 
 
@@ -1122,7 +1147,13 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
         return createDevToolSearch({
           schemasOf: (exec: any) => {
             const agent = exec !== null && typeof exec === 'object' ? exec.agent : void 0;
-            return agent === void 0 ? [] : tools.schemas(agent);
+            if (agent === void 0) return [];
+            // 限制前快照的完整目录（含 description）：宿主 schemas() 对
+            // inherited 面应用 restrict,拿它当语料/校验源会让被隐藏工具
+            // 永远搜不到、解不了锁。
+            const state = agents.get(agent.id);
+            if (state !== void 0) return state.catalog;
+            return tools.schemas(agent);
           },
           onUnlock: async (names: any, exec: any) => {
             const agent = exec !== null && typeof exec === 'object' ? exec.agent : void 0;
@@ -1156,17 +1187,27 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
         bootstrapKey: null,
         escalated: new Set(),
         visibleNames: new Set(),
+        catalog: [],
         unlocked: new Set(),
+        bootstrapCaps: [],
+        realPairKey: null as any,
         toolDisposers: new Map(),
         realPairDisposers: [],
         realPairActive: false,
       };
       // 记录当前可见目录（限制前）；仅记录真实存在的工具，后续 restrict 与
       // 实际目录取交集，preset 升级改名/删除工具不会让本插件崩溃。
+      // catalog 同时保留 description：宿主 schemas() 返回 restrict 后的可见集，
+      // dev_tool_search 的搜索语料与解锁校验必须用限制前的完整快照，否则被
+      // 隐藏的工具永远无法被发现和解锁。
       try {
         for (const schema of tools.schemas(agent)) {
           if (schema !== null && typeof schema === 'object' && typeof schema.name === 'string') {
             a.visibleNames.add(schema.name);
+            a.catalog.push({
+              name: schema.name,
+              description: typeof schema.description === 'string' ? schema.description : '',
+            });
           }
         }
       } catch (error) {
@@ -1315,6 +1356,13 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       const phase = bootstrapPhaseOf(a.agent);
       const keep = new Set(cfg.bootstrap.tools);
       if (a.visibleNames.has('run_code')) keep.add('run_code');
+      // 已升级族覆盖的工具并入 keep:族 restrict 虽已释放,但宿主对多层
+      // restrict 取交集,bootstrap deny 若仍含这些名字,放行信号等于无效。
+      for (const familyId of a.escalated) {
+        const family = cfg.families?.[familyId];
+        if (family === void 0) continue;
+        for (const name of familyDeny(a, family)) keep.add(name);
+      }
       if (phase.promoted) {
         for (const name of cfg.bootstrap.discoveryTools) keep.add(name);
         for (const name of a.unlocked) keep.add(name);
@@ -1386,19 +1434,30 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
     }, { prepend: true });
 
     // 可选：请求 #1 输出预算封顶（晋升后剥离，避免封顶沿 header 种子延续）。
-    if (cfg.bootstrap.maxTokens > 0) {
-      ctx.on('agent/request', async ({ agent }: any, next: any) => {
-        const resolved = await next();
-        try {
-          if (!bootstrapActiveFor(agent)) return resolved;
-          const phase = bootstrapPhaseOf(agent);
-          return applyBootstrapBudget(resolved, phase.promoted, cfg.bootstrap.maxTokens);
-        } catch (error) {
-          warnBootstrapOnce(`bootstrap budget filter failed: ${String((error as Error)?.message ?? String(error))}`);
-          return resolved;
+    // 监听器恒注册、回调内按实时配置分支:安装时 maxTokens=0 之后热更新成
+    // >0 也要生效(条件注册会让它静默失效);N→0 则必须从请求里剥掉字段
+    // 而不是注入 0(宿主只把 void 0 视为缺省,显式 0 会原样进适配器)。
+    ctx.on('agent/request', async ({ agent }: any, next: any) => {
+      const resolved = await next();
+      try {
+        if (!bootstrapActiveFor(agent)) return resolved;
+        const phase = bootstrapPhaseOf(agent);
+        const state = agents.get(agent.id);
+        const cap = cfg.bootstrap.maxTokens;
+        if (!phase.promoted) {
+          if (cap <= 0) return applyBootstrapBudget(resolved, true, cap);
+          if (state !== void 0 && state.bootstrapCaps[state.bootstrapCaps.length - 1] !== cap) {
+            state.bootstrapCaps.push(cap);
+          }
+          return applyBootstrapBudget(resolved, false, cap);
         }
-      }, { prepend: true });
-    }
+        // 晋升后剥离本插件曾写入过的任何 cap(含热更新前的旧值)。
+        return applyBootstrapBudget(resolved, true, cap, state !== void 0 ? state.bootstrapCaps : []);
+      } catch (error) {
+        warnBootstrapOnce(`bootstrap budget filter failed: ${String((error as Error)?.message ?? String(error))}`);
+        return resolved;
+      }
+    }, { prepend: true });
 
     // 已运行会话补挂（插件热重载/重装时）。
     if (agentsService !== void 0 && typeof agentsService.list === 'function') {

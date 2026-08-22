@@ -37,6 +37,16 @@ export const TYPERT = {
       sourceLocation: { file: 'packages/session-archive/src/remote.ts', line: 1, column: 1 },
     },
     {
+      id: '@chaoset/session-archive#sessionArchive/count',
+      service: 'sessionArchive',
+      namespace: 'sessionArchive',
+      method: 'count',
+      invocation: { kind: 'direct' },
+      parameters: [],
+      result: codec('@chaoset/session-archive/types#ArchiveCountResult'),
+      sourceLocation: { file: 'packages/session-archive/src/remote.ts', line: 1, column: 1 },
+    },
+    {
       id: '@chaoset/session-archive#sessionArchive/detail',
       service: 'sessionArchive',
       namespace: 'sessionArchive',

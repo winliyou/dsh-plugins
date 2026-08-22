@@ -41,15 +41,42 @@ function buildMocks() {
   const sectionDisposed: any[] = [];
   const toolSets = new Map<string, Set<string>>();
   const liveAgents = new Map<string, any>();
+  // 宿主保真:dsh-tools 的 schemas() 返回 restrict 后的可见集(多层取交集,
+  // dsh-tools view():layers.every(admits))。mock 若恒返回全量目录,
+  // dev_tool_search 的解锁校验在生产路径必然失败而测试永远假通过(P0-1 教训)。
+  const denyLayers = new Map<string, Array<Set<string>>>();
+  function visibleNamesFor(id: string): Set<string> {
+    const layers = denyLayers.get(id);
+    const out = new Set<string>();
+    for (const name of toolSets.get(id) ?? []) {
+      if (layers === void 0 || layers.every((deny) => !deny.has(name))) out.add(name);
+    }
+    return out;
+  }
 
   function makeAgentTools(id: string) {
     return {
       schemas(agent: any) {
-        return [...(toolSets.get(id) ?? [])].map((n) => ({ name: n }));
+        return [...visibleNamesFor(agent.id)].map((n) => ({ name: n }));
       },
       restrict({ deny }: any) {
         restrictCalls.push({ agent: id, deny: [...deny] });
-        return () => { disposedCalls.push({ agent: id, deny: [...deny] }); };
+        const layer = new Set<string>(deny);
+        let layers = denyLayers.get(id);
+        if (layers === void 0) { layers = []; denyLayers.set(id, layers); }
+        layers.push(layer);
+        let disposed = false;
+        return () => {
+          if (disposed) return;
+          disposed = true;
+          disposedCalls.push({ agent: id, deny: [...deny] });
+          const current = denyLayers.get(id);
+          if (current !== void 0) {
+            const idx = current.indexOf(layer);
+            if (idx >= 0) current.splice(idx, 1);
+            if (current.length === 0) denyLayers.delete(id);
+          }
+        };
       },
       register(definition: any) {
         toolRegistrations.push({ agent: id, name: definition.name });
@@ -73,7 +100,7 @@ function buildMocks() {
     logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
     get(name: string) {
       if (name === "tools") return {
-        schemas: (agent: any) => [...(toolSets.get(agent.id) ?? [])].map((n) => ({ name: n })),
+        schemas: (agent: any) => [...visibleNamesFor(agent.id)].map((n) => ({ name: n })),
         restrict: () => () => {},
       };
       if (name === "systemPrompt") return {
@@ -424,6 +451,114 @@ describe("adaptive-perf 自适应引擎", () => {
     emit("agent/disposed", { agent: freshAgent });
     emit("agent/disposed", { agent: boot2 });
     emit("agent/disposed", { agent: ctxAgent });
+  });
+
+  it("P0 回归:升级信号重算 bootstrap deny(两层 restrict 交集下放行有效)", async () => {
+    const m = buildMocks();
+    const { ctx, emit, agent, restrictCalls } = m;
+    await ap.apply(ctx, {
+      presets: ["standard"],
+      leanByDefault: false,
+      suppressRuntimeContext: false,
+      minimalPrompt: { enabled: false },
+      bootstrap: { enabled: true, realPair: false },
+    }, { realPairModules: null });
+    const a = agent("s-p0b", "standard", { id: "s-p0b", header: {}, events: [] });
+    emit("agent/created", { agent: a });
+    const lastDeny = () => {
+      const c = [...restrictCalls].reverse().find((cc) => cc.agent === "s-p0b");
+      return c === void 0 ? [] : c.deny;
+    };
+    expect(lastDeny().includes("subagent"), "bootstrap 阶段 subagent 被锚定隐藏").toBe(true);
+    emit("agent/inbox/inserted", { agent: a, message: { content: [{ type: "text", text: "请用子代理并行处理这两个任务" }] } });
+    expect(lastDeny().includes("subagent") === false, "关键词命中后最新 bootstrap restrict 不再含 subagent(escalate 必须重算)").toBe(true);
+    emit("agent/disposed", { agent: a });
+  });
+
+  it("P0 回归:dev_tool_search 用限制前快照目录,能解锁被隐藏的工具", async () => {
+    const m = buildMocks();
+    const { ctx, emit, agent, toolDefs } = m;
+    await ap.apply(ctx, {
+      presets: ["standard"],
+      leanByDefault: true,
+      suppressRuntimeContext: true,
+      minimalPrompt: { enabled: true },
+      bootstrap: { enabled: true, realPair: false },
+    }, { realPairModules: null });
+    const res = agent("s-p0a", "standard", { id: "s-p0a", header: {}, events: [{ type: "assistant/message", seq: 1 }] });
+    emit("agent/created", { agent: res });
+    const devTool = toolDefs.get("s-p0a:dev_tool_search");
+    expect(devTool !== undefined, "晋升后注册 dev_tool_search").toBe(true);
+    const out: any = await devTool.execute({ query: "", toolNames: ["web_search"] }, { agent: res });
+    expect(typeof out.text === "string" && out.text.includes("Unlocked") && !out.text.includes("Not found in catalog: web_search"),
+      "被 bootstrap 隐藏的 web_search 应可经快照目录发现并解锁").toBe(true);
+    emit("agent/disposed", { agent: res });
+  });
+
+  it("P1 回归:无关热更新不销毁重建真实工具对", async () => {
+    const m = buildMocks();
+    const { ctx, events, agent } = m;
+    const stubModules = {
+      terminal: { name: "dsh-terminal" },
+      terminalBash: { name: "dsh-terminal-bash" },
+      bashPersistent: { name: "dsh-tool-bash-persistent" },
+      fsLocal: { name: "dsh-fs-local" },
+      strReplaceEditor: { name: "dsh-tool-str-replace-editor" },
+    };
+    await ap.apply(ctx, {
+      presets: ["standard"], leanByDefault: false,
+      suppressRuntimeContext: false, minimalPrompt: { enabled: false },
+      bootstrap: { enabled: true, realPair: true },
+    }, { realPairModules: stubModules });
+    const a = agent("s-idem", "standard", { id: "s-idem", header: { cwd: "/w" }, events: [] });
+    let mounted = 0, disposed = 0;
+    (a as any).ctx.plugin = () => { mounted++; return { dispose: () => { disposed++; } }; };
+    for (const listener of events["agent/created"] ?? []) listener({ agent: a });
+    expect(mounted === 5, "初始挂载 5 个官方插件").toBe(true);
+    ctx.gateway.set({ leanByDefault: true });
+    ctx.gateway.set({ suppressInjectedContext: false });
+    expect(mounted === 5 && disposed === 0, "无关配置热更新不得重挂真实工具对(会杀掉持久 PTY)").toBe(true);
+    ctx.gateway.set({ bootstrap: { realPair: false } });
+    expect(disposed === 5, "关闭 realPair 才卸载").toBe(true);
+    for (const listener of events["agent/disposed"] ?? []) listener({ agent: a });
+  });
+
+  it("P1 回归:maxTokens 热更新双向生效,晋升剥离含旧 cap 在内的注入值", async () => {
+    const m = buildMocks();
+    const { ctx, emit, agent } = m;
+    await ap.apply(ctx, {
+      presets: ["standard"], leanByDefault: false,
+      suppressRuntimeContext: false, minimalPrompt: { enabled: false },
+      bootstrap: { enabled: true, realPair: false, maxTokens: 0 },
+    }, { realPairModules: null });
+    const req = m.events["agent/request"][0];
+    const a = agent("s-cap", "standard", { id: "s-cap", header: {}, events: [] });
+    emit("agent/created", { agent: a });
+    const r1: any = await req({ agent: a }, async () => ({ model: "x" }));
+    expect(r1.maxTokens === void 0, "cap=0 时不注入字段(宿主只认 void 0 为缺省)").toBe(true);
+    ctx.gateway.set({ bootstrap: { maxTokens: 4096 } });
+    const r2: any = await req({ agent: a }, async () => ({ model: "x" }));
+    expect(r2.maxTokens === 4096, "0→N 热更新必须生效").toBe(true);
+    for (const listener of m.events["session/event"] ?? []) listener((a as any).session, { type: "tool/call", seq: 1 });
+    const r3: any = await req({ agent: a }, async () => ({ maxTokens: 4096 }));
+    expect(r3.maxTokens === void 0, "晋升后剥离当前 cap").toBe(true);
+    ctx.gateway.set({ bootstrap: { maxTokens: 8192 } });
+    const r4: any = await req({ agent: a }, async () => ({ maxTokens: 4096 }));
+    expect(r4.maxTokens === void 0, "改 cap 后旧值同样要被剥离").toBe(true);
+    emit("agent/disposed", { agent: a });
+  });
+
+  it("P1 回归:自定义工具族经 normalizeConfig 保留", () => {
+    const out = ap.normalizeConfig({
+      presets: ["standard"],
+      families: {
+        deployment: { enabled: true },
+        custom: { enabled: true, tools: ["web_search"], keywords: ["查一下"] },
+      },
+    });
+    expect(out.families.custom !== undefined, "自定义族不得被静默丢弃").toBe(true);
+    expect(out.families.custom.tools.includes("web_search")).toBe(true);
+    expect(out.families.custom.keywords.includes("查一下")).toBe(true);
   });
 
   it("真实工具对挂载（stub 模块注入）", async () => {

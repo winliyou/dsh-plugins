@@ -122,4 +122,63 @@ describe("session-archive host (list/detail/delete/unarchive)", () => {
     const degList = await degraded.list();
     expect(degList.items.length === 1 && degList.items[0].sessionId === "s2").toBe(true);
   });
+
+  it("count 端点 / 删除与详情的归档成员校验 / 标题 mtime 缓存", async () => {
+    saRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sa2-"));
+    const sessions = new Map();
+    const registryState = { initialized: true, workspaceIds: ["w1"], archivedSessionIds: ["a1", "a-ghost"] };
+    const archiveRegistry = {
+      archivedSessionIds: registryState.archivedSessionIds,
+      enqueueOperation: async (operation) => { await operation(); },
+      requireState: () => registryState,
+      setState: (next) => { Object.assign(registryState, next); },
+    };
+    const headers = [
+      { id: "a1", cwd: "/proj/a", createdAt: 1000, version: 0 },
+      { id: "live-unarchived", cwd: "/proj/b", createdAt: 2000, version: 0 },
+    ];
+    let readFromCalls = 0;
+    const persistenceMock = {
+      list: async () => headers.filter((h) => fs.existsSync(path.join(saRoot, "--proj--", h.id, "session.jsonl"))),
+      locate: (meta) => ({ kind: "jsonl", path: path.join(saRoot, "--proj--", meta.id, "session.jsonl") }),
+      readFrom: async (id) => {
+        readFromCalls++;
+        const header = headers.find((h) => h.id === id);
+        if (header === void 0) throw new Error("no such session " + id);
+        return { meta: header, events: [{ type: "session/title", seq: 1, time: 1, data: { title: "T-" + id } }] };
+      },
+    };
+    const archiveHost = createArchiveHost({
+      workspaceRegistry: archiveRegistry,
+      sessionPersistence: persistenceMock,
+      sessions: { get: () => undefined },
+    }, archiveCfg);
+
+    writeSession("a1", "/proj/a", []);
+    writeSession("live-unarchived", "/proj/b", []);
+
+    // count():存在性过滤后的真实数量(a-ghost 文件已删),且不触发任何事件流读取。
+    const before = readFromCalls;
+    expect((await archiveHost.count()).count === 1).toBe(true);
+    expect(readFromCalls === before).toBe(true);
+
+    // list() 第二次调用命中标题缓存(mtime 未变),不再重读事件流。
+    await archiveHost.list();
+    const afterFirstList = readFromCalls;
+    expect(afterFirstList > before).toBe(true);
+    await archiveHost.list();
+    expect(readFromCalls === afterFirstList).toBe(true);
+
+    // deleteArchived:未归档的会话(即使文件存在、不在内存)必须拒绝且不动文件。
+    const delForeign = await archiveHost.deleteArchived(["live-unarchived"]);
+    expect(delForeign.deleted.length === 0
+      && delForeign.failed[0].reason === "not-archived"
+      && fs.existsSync(path.join(saRoot, "--proj--", "live-unarchived", "session.jsonl"))).toBe(true);
+
+    // detail:同样只对归档成员开放。
+    let threw: any = null;
+    try { await archiveHost.detail("live-unarchived"); } catch (error) { threw = error; }
+    expect(threw !== null && threw.code === "NOT_ARCHIVED").toBe(true);
+    expect((await archiveHost.detail("a1")).title === "T-a1").toBe(true);
+  });
 });

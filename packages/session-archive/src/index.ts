@@ -158,8 +158,11 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
   const isBusy = (sessionId: string, file: { path: string; size: number; mtimeMs: number } | null) =>
     file !== null && ctx.sessions.get(sessionId) !== undefined && Date.now() - file.mtimeMs < 60_000;
 
-  /** 从归档集合移除若干 id（恢复用；删除不调用——见 deleteArchived），返回实际移除的 id。 */
-  async function removeFromArchiveSet(ids: string[]): Promise<string[]> {
+  /** 从归档集合移除若干 id（恢复用；删除不调用——见 deleteArchived），返回实际移除的 id。
+   * confirm 在 registry 写锁临界区内逐个复核 id 是否仍可恢复（文件仍存在）:
+   * 存在性检查放在锁外的话,并发 deleteArchived 可在检查与移除之间删掉文件,
+   * 结果"文件没了、归档标记也没了",内存中的会话立刻重回侧边栏。 */
+  async function removeFromArchiveSet(ids: string[], confirm?: (sessionId: string) => Promise<boolean>): Promise<string[]> {
     const set = new Set(ids);
     const canWrite =
       registry !== undefined &&
@@ -171,8 +174,19 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
     await registry.enqueueOperation(async () => {
       const state = registry.requireState();
       const current = Array.isArray(state.archivedSessionIds) ? state.archivedSessionIds : [];
-      removedIds = current.filter((id) => set.has(id));
-      const remaining = current.filter((id) => !set.has(id));
+      let eligible = current.filter((id) => set.has(id));
+      if (confirm !== undefined) {
+        const confirmed = [];
+        for (const id of eligible) {
+          try { if (await confirm(id)) confirmed.push(id); } catch {}
+        }
+        eligible = confirmed;
+      }
+      removedIds = eligible;
+      // 只有真正移除的 id 才离开归档集合;未通过复核的保持原状(仍是 ghost
+      // 或正常归档),不能因为请求过就一并抹掉。
+      const removedSet = new Set(removedIds);
+      const remaining = current.filter((id) => !removedSet.has(id));
       if (removedIds.length > 0) await registry.setState({ ...state, archivedSessionIds: remaining });
     });
     return removedIds;
@@ -190,14 +204,26 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
     }
   }
 
-  /** 单个归档会话的展示行。标题读取失败回退 null（面板显示目录名）。 */
+  /** 单个归档会话的展示行。标题读取失败回退 null（面板显示目录名）。
+   * 标题按 mtime 缓存：jsonl 后端没有后缀读取钩子，readFrom(id,0) 会解析
+   * 整条事件流，而面板关闭态的徽标轮询每 5 秒打一次 list——不缓存的话
+   * 就是"读整本会话只为取一行标题"的持续开销。mtime 不变即命中缓存。 */
+  const titleCache = new Map<string, { mtimeMs: number; title: string | null }>();
   async function rowFor(sessionId: string, header: any) {
     const file = await fileInfo(header);
     let title = null;
-    try {
-      const { events } = await persistence.readFrom(sessionId, 0);
-      title = foldTitle(events);
-    } catch {}
+    if (file !== null) {
+      const cached = titleCache.get(sessionId);
+      if (cached !== undefined && cached.mtimeMs === file.mtimeMs) {
+        title = cached.title;
+      } else {
+        try {
+          const { events } = await persistence.readFrom(sessionId, 0);
+          title = foldTitle(events);
+        } catch {}
+        titleCache.set(sessionId, { mtimeMs: file.mtimeMs, title });
+      }
+    }
     return {
       sessionId,
       title,
@@ -210,6 +236,19 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
   }
 
   return {
+    /** 归档会话计数（存在性过滤后的真实数量）。侧边栏徽标的关闭态轮询
+     * 只调这里：persistence.list() 只读每个文件的首行头，比 list() 的
+     * 全事件流解析便宜一个数量级以上。 */
+    async count() {
+      const archived = [...archivedSet()];
+      if (archived.length === 0) return { count: 0 };
+      const headers = await persistence.list();
+      const persisted = new Set(headers.map((header: any) => header.id));
+      let count = 0;
+      for (const sessionId of archived) if (persisted.has(sessionId)) count++;
+      return { count };
+    },
+
     /** 列出全部归档会话（存在性过滤：文件已删的幽灵归档记录不显示）。 */
     async list() {
       const archived = [...archivedSet()];
@@ -226,8 +265,12 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
       return { items };
     },
 
-    /** 读取一个归档会话的只读详情（标题 + 文本消息）。 */
+    /** 读取一个归档会话的只读详情（标题 + 文本消息）。仅归档会话可读：
+     * detail 是对外暴露的远程端点,不校验成员资格就能读到任意未归档会话。 */
     async detail(sessionId: string) {
+      if (!archivedSet().has(sessionId)) {
+        throw Object.assign(new Error('session not archived: ' + sessionId), { code: 'NOT_ARCHIVED' });
+      }
       const { meta, events } = await persistence.readFrom(sessionId, 0);
       const title = foldTitle(events);
       const messages = [];
@@ -269,9 +312,17 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
       const unique = [...new Set(sessionIds)];
       const deleted = [];
       const failed = [];
+      // 归档成员前置校验:persistence.list() 含所有持久化会话而非仅归档
+      // 会话,不校验的话任何"未归档、不在内存"的会话 id 都会绕过 live/busy
+      // 两道保护被不可逆物理删除。
+      const archived = archivedSet();
       const headers = await persistence.list();
       const headersById = new Map(headers.map((item) => [item.id, item]));
       for (const sessionId of unique) {
+        if (!archived.has(sessionId)) {
+          failed.push({ sessionId, reason: 'not-archived' });
+          continue;
+        }
         if (isLive(sessionId)) {
           failed.push({ sessionId, reason: 'live' });
           continue;
@@ -292,6 +343,18 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
           continue;
         }
         try {
+          // TOCTOU 复核:isBusy 读的是 stat 快照,检查与 rm 之间生成流可能
+          // 恰好落盘;删前重取一次 mtime 再判一次 busy。
+          let fresh: { mtimeMs: number } | null = null;
+          try { fresh = await stat(file.path); } catch {}
+          if (fresh === null) {
+            deleted.push(sessionId);
+            continue;
+          }
+          if (ctx.sessions.get(sessionId) !== undefined && Date.now() - fresh.mtimeMs < 60_000) {
+            failed.push({ sessionId, reason: 'busy' });
+            continue;
+          }
           await rm(file.path, { force: true });
           await rm(dirname(file.path), { recursive: true, force: true });
           deleted.push(sessionId);
@@ -310,15 +373,24 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
     async unarchive(sessionIds: string[]) {
       const unique = [...new Set(sessionIds)];
       const headers = await persistence.list();
-      const restorable = [];
+      const headersById = new Map(headers.map((item) => [item.id, item]));
+      // 锁外先做一遍廉价过滤(明显不可恢复的直接淘汰),锁内由 confirm 复核,
+      // 消除与并发 deleteArchived 的检查-移除窗口。
+      const candidates = [];
       for (const sessionId of unique) {
-        const header = headers.find((item) => item.id === sessionId);
+        const header = headersById.get(sessionId);
         if (header === undefined) continue; // 持久化记录已删：拒绝恢复
-        const file = await fileInfo(header);
-        if (file === null) continue;        // 有记录无文件：拒绝恢复
-        restorable.push(sessionId);
+        candidates.push({ sessionId, header });
       }
-      const restored = await removeFromArchiveSet(restorable);
+      const restored = await removeFromArchiveSet(
+        candidates.map(({ sessionId }) => sessionId),
+        async (sessionId) => {
+          const header = headersById.get(sessionId);
+          if (header === undefined) return false;
+          const file = await fileInfo(header);
+          return file !== null; // 有记录无文件：拒绝恢复
+        },
+      );
       return { restored, removedFromArchive: restored.length };
     },
   };

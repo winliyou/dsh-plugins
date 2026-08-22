@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const PACKAGES = ["sandbox-extra-roots", "adaptive-perf", "session-archive"];
@@ -144,5 +145,38 @@ describe("settings namespace 注册（宿主 rc.7+ 设置页可见性）", () =>
     const apNS = await import("../packages/adaptive-perf/src/index.js");
     expect(typeof sbNS.registerSettingsNamespace).toBe("function");
     expect(typeof apNS.registerSettingsNamespace).toBe("function");
+  });
+});
+
+// 发布产物 client.cjs 是 esbuild 打包 + window.__ModuleLoader__.load 手工
+// 包裹的产物,与 TSX 源码是两条代码路径——wrapper 格式回归(双包裹、
+// factory 契约变化)只有加载真实产物才能发现。test script 先跑 build,
+// 因此这里总能拿到新鲜构建。
+describe("client.cjs 构建产物冒烟（__ModuleLoader__ 契约）", () => {
+  const reactStub = {
+    createElement: (...args: any[]) => ({ args }),
+    Fragment: "fragment",
+  };
+
+  it("每个包的 client.cjs 经 __ModuleLoader__.load 暴露 id 与 apply 工厂", () => {
+    for (const name of PACKAGES) {
+      const file = join(ROOT, "packages", name, "client", "client.cjs");
+      expect(existsSync(file), `${name}: client.cjs 已构建`).toBe(true);
+      const entries: any[] = [];
+      const prevWindow = (globalThis as any).window;
+      (globalThis as any).window = { __ModuleLoader__: { load: (entry: any) => entries.push(entry) } };
+      try {
+        const requireCjs = createRequire(import.meta.url);
+        requireCjs(file);
+        expect(entries.length === 1, `${name}: 恰好一次 load 调用`).toBe(true);
+        expect(entries[0].id, `${name}: id 为 @chaoset/<pkg>`).toBe(`@chaoset/${name}`);
+        expect(typeof entries[0].factory, `${name}: factory 是函数`).toBe("function");
+        const mod = entries[0].factory((spec: string) =>
+          spec === "react" ? reactStub : {});
+        expect(typeof mod?.apply, `${name}: factory 返回带 apply 的模块`).toBe("function");
+      } finally {
+        (globalThis as any).window = prevWindow;
+      }
+    }
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@chaoset/session-archive",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "DSH plugin: browse archived sessions, inspect their content, batch-restore or permanently delete them with multi-select",
   "type": "module",
   "license": "MIT",

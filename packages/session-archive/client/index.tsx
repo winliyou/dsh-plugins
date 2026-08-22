@@ -36,6 +36,7 @@ var css = [
   ".sa_body{flex:1;min-height:0;padding:4px 12px 12px;overflow-y:auto}",
   ".sa_empty{color:var(--dsw-alias-label-tertiary);margin:24px 0;text-align:center;font-size:12px;line-height:18px}",
   ".sa_error{color:var(--dsw-alias-state-error-primary);margin:8px 0;font-size:12px;line-height:18px}",
+  ".sa_ok{color:var(--dsw-alias-state-success-primary);margin:8px 0;font-size:12px;line-height:18px}",
   ".sa_rows{flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;display:flex}",
   ".sa_row{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);border-radius:12px;flex-direction:column;gap:6px;padding:8px 10px;display:flex}",
   ".sa_rowHead{align-items:center;gap:8px;display:flex}",
@@ -201,10 +202,13 @@ function ArchivePanel(props: any) {
   // 后台静默刷新归档计数：侧边栏徽标要在「聊天列表里出现归档」时就同步显示数量，
   // 而不是等到打开弹窗才更新。面板打开时由上面的 load() 负责，这里只在关闭态轮询，
   // 避免刷新打断用户在面板里的勾选/操作；同时监听标签页重新可见。
+  // 关闭态走 count() 轻端点：list() 要解析每个归档会话的完整事件流,
+  // 5 秒一次的徽标轮询用它是持续的性能债;count 只读每个文件的首行头。
+  const [badgeCount, setBadgeCount] = React.useState(0);
   const refreshSilently = React.useCallback(async () => {
     try {
-      const result = await call("list");
-      setItems(Array.isArray(result.items) ? result.items : []);
+      const result = await call("count");
+      setBadgeCount(typeof result.count === "number" ? result.count : 0);
     } catch {}
   }, [call]);
   React.useEffect(() => {
@@ -244,6 +248,9 @@ function ArchivePanel(props: any) {
     } else {
       setSelected(new Set());
     }
+    // 选择集变化即解除两段式删除的 armed 态:否则 4 秒窗口内改勾选,
+    // 第二次点击会把确认"误嫁"给新的选择集。
+    setConfirmingDelete(false);
   };
   const toggleOne = (sessionId: any, checked: any) => {
     setSelected((current) => {
@@ -251,6 +258,7 @@ function ArchivePanel(props: any) {
       if (checked) next.add(sessionId); else next.delete(sessionId);
       return next;
     });
+    setConfirmingDelete(false);
   };
 
   const toggleDetail = (item: any) => {
@@ -259,7 +267,10 @@ function ArchivePanel(props: any) {
       return;
     }
     setExpanded(item.sessionId);
-    if (!details.has(item.sessionId)) {
+    const cached = details.get(item.sessionId);
+    // 失败结果不缓存拦截:之前把 {error} 写进 Map 后 has() 恒真,唯一出路是
+    // 刷新页面;现在再次点击即重新请求。
+    if (cached === void 0 || cached.error !== void 0) {
       setDetailLoading((current) => new Set(current).add(item.sessionId));
       call("detail", item.sessionId).then((detail: any) => {
         setDetails((current) => new Map(current).set(item.sessionId, detail));
@@ -290,7 +301,15 @@ function ArchivePanel(props: any) {
       const doneIds = result.deleted || result.restored || [];
       const n = doneIds.length;
       if (result.failed && result.failed.length > 0) {
-        setNotice({ kind: "error", text: t(failKey).replace("{n}", String(result.failed.length)) });
+        // host 对每个失败项都给了 reason(live/busy/not-archived/具体错误),
+        // 只报数量会让用户不知道为什么失败、该等多久重试。
+        const reasonText = (reason: any) =>
+          reason === "live" ? t("live") : reason === "busy" ? t("runningHint") : String(reason ?? "error");
+        const detail = result.failed.slice(0, 3)
+          .map((item: any) => shortId(item.sessionId) + ": " + reasonText(item.reason))
+          .join("; ");
+        const more = result.failed.length > 3 ? " (+" + (result.failed.length - 3) + ")" : "";
+        setNotice({ kind: "error", text: t(failKey).replace("{n}", String(result.failed.length)) + " — " + detail + more });
       } else {
         setNotice({ kind: "ok", text: t(doneKey).replace("{n}", String(n)) });
       }
@@ -340,7 +359,7 @@ function ArchivePanel(props: any) {
           )
         ),
         iconOnly ? null : React.createElement("span", { className: "sa_badgeLabel" }, t("badge")),
-        iconOnly ? null : React.createElement("span", { className: "sa_badgeCount" }, String(items.length))
+        iconOnly ? null : React.createElement("span", { className: "sa_badgeCount" }, String(open ? items.length : badgeCount))
       ),
     open ? React.createElement(
       "div",
@@ -381,12 +400,14 @@ function ArchivePanel(props: any) {
           type: "button",
           disabled: busy || !hasSelection,
           onClick: deleteSelected
-        }, confirmingDelete ? t("deleteConfirm") : t("delete"))
+        }, confirmingDelete
+          ? (selected.size > 1 ? t("confirmAll").replace("{n}", String(selected.size)) : t("deleteConfirm"))
+          : t("delete"))
       ),
       React.createElement(
         "div",
         { className: "sa_body" },
-        notice !== null ? React.createElement("p", { className: "sa_error" + (notice.kind === "ok" ? "" : ""), role: "status" }, notice.text) : null,
+        notice !== null ? React.createElement("p", { className: notice.kind === "ok" ? "sa_ok" : "sa_error", role: "status" }, notice.text) : null,
         error !== null ? React.createElement("p", { className: "sa_error", role: "alert" }, error) : null,
         loading && items.length === 0 ? React.createElement("p", { className: "sa_empty" }, "…") : null,
         !loading && items.length === 0 && error === null ? React.createElement("p", { className: "sa_empty" }, t("empty")) : null,
@@ -409,6 +430,7 @@ function ArchivePanel(props: any) {
                   checked: selected.has(item.sessionId),
                   disabled: busy || item.live,
                   title: item.live ? t("runningHint") : void 0,
+                  "aria-label": item.title !== null && item.title !== void 0 && item.title !== "" ? item.title : t("noneTitle"),
                   onChange: (e: any) => toggleOne(item.sessionId, e.target.checked)
                 }),
                 React.createElement(
@@ -474,6 +496,7 @@ const REMOTE_CONTRIBUTION: TypertRemoteContribution = {
   package: "@chaoset/session-archive",
   descriptors: [
     { id: "@chaoset/session-archive#sessionArchive/list", service: "sessionArchive", namespace: "sessionArchive", method: "list", invocation: { kind: "direct" }, parameters: [], result: { mode: "strict", typeSymbol: "sessionArchive/list:result", schema: passthroughSchema } },
+    { id: "@chaoset/session-archive#sessionArchive/count", service: "sessionArchive", namespace: "sessionArchive", method: "count", invocation: { kind: "direct" }, parameters: [], result: { mode: "strict", typeSymbol: "sessionArchive/count:result", schema: passthroughSchema } },
     { id: "@chaoset/session-archive#sessionArchive/detail", service: "sessionArchive", namespace: "sessionArchive", method: "detail", invocation: { kind: "direct" }, parameters: [{ name: "sessionId", wire: "sessionId", source: "json", codec: { mode: "strict", typeSymbol: "sessionArchive/detail:sessionId", schema: passthroughSchema } }], result: { mode: "strict", typeSymbol: "sessionArchive/detail:result", schema: passthroughSchema } },
     { id: "@chaoset/session-archive#sessionArchive/delete", service: "sessionArchive", namespace: "sessionArchive", method: "delete", invocation: { kind: "direct" }, parameters: [{ name: "sessionIds", wire: "sessionIds", source: "json", codec: { mode: "strict", typeSymbol: "sessionArchive/delete:sessionIds", schema: passthroughSchema } }], result: { mode: "strict", typeSymbol: "sessionArchive/delete:result", schema: passthroughSchema } },
     { id: "@chaoset/session-archive#sessionArchive/unarchive", service: "sessionArchive", namespace: "sessionArchive", method: "unarchive", invocation: { kind: "direct" }, parameters: [{ name: "sessionIds", wire: "sessionIds", source: "json", codec: { mode: "strict", typeSymbol: "sessionArchive/unarchive:sessionIds", schema: passthroughSchema } }], result: { mode: "strict", typeSymbol: "sessionArchive/unarchive:result", schema: passthroughSchema } }

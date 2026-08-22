@@ -13,6 +13,12 @@ on:
     types: [published]
   workflow_dispatch:
 
+# 连续推送时避免两个发布流程并发跑(检测-发布窗口会互相踩)。
+# 不取消进行中的发布:已开始的 npm publish 让它跑完,排队的用最新代码重来。
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test-and-publish:
     runs-on: ubuntu-latest

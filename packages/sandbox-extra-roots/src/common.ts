@@ -49,10 +49,19 @@ async function loadPackage(specifier: string): Promise<any> {
   throw new Error(`cannot resolve ${specifier} (neither package deps nor harness profiles resolve it)`);
 }
 
-const sandbox = (await loadPackage("@deepseek-ai/dsh-sandbox")) as any;
+// 官方包加载失败绝不抛出:本模块是静态导入,模块求值期的顶层 await 一旦
+// throw 会击穿 apply 的 try/catch fail-safe(host 层 entry 异常会导致进程
+// 启动失败),让"初始化失败绝不能拖垮 harness"的承诺落空。失败时导出
+// null,由 index.ts 降级为不安装任何包装(插件等同不存在)。
+const sandbox = await loadPackage("@deepseek-ai/dsh-sandbox").catch(() => null);
 
-/** @deepseek-ai/dsh-sandbox 命名空间（canonicalPath / writableRoots）。 */
-export const { canonicalPath, writableRoots } = sandbox;
+/** 官方 dsh-sandbox 是否加载成功;false 时 index.ts 跳过全部包装并告警。 */
+export const sandboxAvailable = sandbox !== null;
+
+/** @deepseek-ai/dsh-sandbox 命名空间(canonicalPath / writableRoots)。
+ * 仅在 sandboxAvailable=true 时为函数。 */
+export const canonicalPath: any = sandbox?.canonicalPath;
+export const writableRoots: any = sandbox?.writableRoots;
 
 /** 惰性加载 @deepseek-ai/node-addon-landlock-run（仅 Linux 需要）。 */
 export async function loadLandlock(): Promise<any> {
@@ -88,7 +97,7 @@ export function seatbeltProfileArgs(policy: { mode: string; workspaceRoot?: stri
   ];
   if (policy.mode === "workspace-write") {
     const roots = [...new Set([
-      ...writableRoots(policy),
+      ...(typeof writableRoots === "function" ? writableRoots(policy) : []),
       ...extraRoots
     ])];
     if (roots.length > 0) {

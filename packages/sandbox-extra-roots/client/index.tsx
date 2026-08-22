@@ -42,7 +42,11 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
       const t = props.t;
       const [open, setOpen] = React.useState(false);
       const [cfg, setCfg] = React.useState<any>(null);
-      const [draft, setDraft] = React.useState<any>(null);
+      // textarea 的原始字符串在编辑期就是 source of truth:受控组件若在
+      // onChange 里 split/filter 再 join,用户刚敲的换行会被立即吞掉——
+      // 输入 "/tmp/a" 回车再输 "b" 会静默拼成 "/tmp/a/b" 并授予错误写权限。
+      // 换行/空行/行首尾空格只在保存时解析。
+      const [draftText, setDraftText] = React.useState<string | null>(null);
       const [saving, setSaving] = React.useState(false);
       const [status, setStatus] = React.useState<any>(null);
 
@@ -51,30 +55,34 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
         props.getConfig().then((value: any) => {
           if (cancelled) return;
           setCfg(value);
-          setDraft(value);
+          setDraftText(((value && value.extraWritableRoots) || []).join("\n"));
         }).catch((error: any) => {
-          if (!cancelled) setStatus({ kind: "error", text: `${t("loadFailed")}: ${error && error.message || error}` });
+          if (!cancelled) setStatus({ kind: "error", text: `${error?.message || String(error)}`.length > 0 ? `${t("loadFailed")}: ${error?.message || String(error)}` : t("loadFailed") });
         });
         return () => { cancelled = true; };
       }, []);
 
-      const dirty = draft !== null && JSON.stringify(draft) !== JSON.stringify(cfg);
+      const cfgRoots = cfg === null ? [] : (cfg.extraWritableRoots || []);
+      const parsedRoots = draftText === null ? cfgRoots
+        : draftText.split("\n").map((s) => s.trim()).filter((s) => s.length > 0);
+      const dirty = cfg !== null && parsedRoots.join("\n") !== cfgRoots.join("\n");
       const discard = () => {
-        setDraft(cfg);
+        setDraftText(cfgRoots.join("\n"));
         setStatus(null);
       };
       const save = () => {
         setSaving(true);
         setStatus(null);
-        props.setConfig(draft).then(() => {
-          setCfg(draft);
+        const next = { ...(cfg ?? {}), extraWritableRoots: parsedRoots };
+        props.setConfig(next).then(() => {
+          setCfg(next);
+          setDraftText(parsedRoots.join("\n"));
           setStatus({ kind: "ok", text: t("saved") });
         }).catch((error: any) => {
-          setStatus({ kind: "error", text: `${t("saveFailed")}: ${error && error.message || error}` });
+          setStatus({ kind: "error", text: `${t("saveFailed")}: ${error?.message || String(error)}` });
         }).finally(() => setSaving(false));
       };
 
-      const draftText = draft === null ? "" : (draft.extraWritableRoots || []).join("\n");
       return React.createElement(
         "li",
         { className: "ser_card", "data-open": open },
@@ -83,7 +91,7 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
           { className: "ser_header", type: "button", onClick: () => setOpen(!open), "aria-expanded": open },
           React.createElement("span", { className: "ser_title" }, t("title")),
           dirty ? React.createElement("span", { className: "ser_badge" }, t("unsaved")) : null,
-          React.createElement("span", null, open ? "▲" : "▼")
+          React.createElement("span", { "aria-hidden": true }, open ? "▲" : "▼")
         ),
         open ? React.createElement(
           "div",
@@ -95,11 +103,11 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
             React.createElement("span", { className: "ser_label" }, t("roots")),
             React.createElement("textarea", {
               className: "ser_textarea",
-              value: draftText,
-              disabled: draft === null,
+              value: draftText ?? "",
+              disabled: cfg === null,
               onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-                const roots = e.target.value.split("\n").map((s) => s.trim()).filter((s) => s.length > 0);
-                setDraft({ ...draft, extraWritableRoots: roots });
+                setDraftText(e.target.value);
+                setStatus(null); // 新的编辑让过期的"已保存"失效
               }
             })
           ),
@@ -113,12 +121,12 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
             ),
             React.createElement(
               "button",
-              { className: "ser_discard", type: "button", disabled: saving || draft === null || !dirty, onClick: discard },
+              { className: "ser_discard", type: "button", disabled: saving || cfg === null || !dirty, onClick: discard },
               t("discard")
             ),
             React.createElement(
               "button",
-              { className: "ser_save", type: "button", disabled: saving || draft === null || !dirty, onClick: save },
+              { className: "ser_save", type: "button", disabled: saving || cfg === null || !dirty, onClick: save },
               saving ? t("saving") : t("save")
             )
           )
