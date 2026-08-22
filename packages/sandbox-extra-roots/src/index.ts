@@ -4,7 +4,7 @@
  * 目标:在不修改全局安装、不替换任何配置行的情况下,给 dsh 沙盒的
  * workspace-write 模式增加"额外允许写入的目录"列表(工具缓存目录等)。
  *
- * 实现(沿用 vision-router 的成熟范式:包装服务实例方法,幂等、可卸载):
+ * 实现(包装服务实例方法,幂等、可卸载):
  *   1. 包装 ctx.sandbox(本地沙盒 provider 实例)的 confine:
  *      - Seatbelt(macOS):把官方 SBPL profile(工作区根 + /tmp + 平台
  *        临时目录)替换为"官方白名单 + 配置的额外目录"版本;
@@ -66,7 +66,7 @@ export const config = { ...DEFAULT_CONFIG };
 
 /** 包装状态标记:挂在被包装的底层实例上,保证幂等与跨挂载点共享。 */
 const STATE = Symbol("sandbox-extra-roots.state");
-/** 取底层实例(与 vision-router 一致;sandbox/fs 通常就是 raw,防御性写法)。 */
+/** 取底层实例(sandbox/fs 通常就是 raw,防御性写法)。 */
 const ORIGINAL = Symbol.for("cordis.original");
 
 /** Landlock runner 可执行路径，惰性加载（仅 Linux 且真正进入 apply 时解析）。 */

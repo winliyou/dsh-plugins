@@ -2,7 +2,7 @@
 /**
  * typert.host.js — 手写的 Typert host 工件（typert-loader 机制）。
  *
- * 见 @chaoset/vision-router 的同名文件说明：通过 typert-loader 把端点注册
+ * 通过 typert-loader 把端点注册
  * 进 ctx.typert.local，避免依赖 Remote 装饰器 markers（typert-protocol
  * 双实例时 markers 丢失导致 SRC 认领为空、web 设置页 404）。
  */

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
-const PACKAGES = ["vision-router", "sandbox-extra-roots", "adaptive-perf", "session-archive"];
+const PACKAGES = ["sandbox-extra-roots", "adaptive-perf", "session-archive"];
 
 // 客户端 bundle 冒烟需要 react 可解析；用 vi.mock 注入一个最小 stub，
 // 这样 client/index.tsx 的 `import * as React from "react"` 会被桩替换，
@@ -68,15 +68,13 @@ describe("npm bundle metadata", () => {
   }
 });
 
-describe("三包共享实现一致性", () => {
-  it("config-store/remote 三包 src 一致", () => {
+describe("两包共享实现一致性", () => {
+  it("config-store/remote 两包 src 一致", () => {
     const read = (pkg: string, file: string) =>
       readFileSync(join(ROOT, "packages", pkg, "src", file), "utf8");
     for (const file of ["config-store.ts", "remote.ts"]) {
-      const vr = read("vision-router", file);
       const sb = read("sandbox-extra-roots", file);
       const ap = read("adaptive-perf", file);
-      expect(vr).toBe(sb);
       expect(sb).toBe(ap);
     }
   });
@@ -90,7 +88,6 @@ describe("client bundles", () => {
 
   it("配置类包 settings.plugin.item 注册带 key", async () => {
     const cases: Array<[string, string]> = [
-      ["vision-router", "visionRouterConfig"],
       ["sandbox-extra-roots", "sandboxExtraRootsConfig"],
       ["adaptive-perf", "adaptivePerfConfig"],
     ];

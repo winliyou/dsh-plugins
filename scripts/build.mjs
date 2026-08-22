@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PACKAGES = ["vision-router", "sandbox-extra-roots", "adaptive-perf", "session-archive"];
+const PACKAGES = ["sandbox-extra-roots", "adaptive-perf", "session-archive"];
 
 function tsc(pkgDir) {
   execFileSync(join(ROOT, "node_modules", ".bin", "tsc"), ["-p", join(pkgDir, "tsconfig.json")], { stdio: "inherit", cwd: ROOT });
