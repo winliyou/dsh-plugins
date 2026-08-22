@@ -1,6 +1,6 @@
 {
   "name": "@chaoset/sandbox-extra-roots",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "DSH host plugin: extra writable roots for the workspace-write sandbox (Seatbelt/bwrap/Landlock profiles and the fs fence)",
   "type": "module",
   "license": "MIT",
@@ -33,10 +33,10 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-sandbox": "^0.1.0-rc.7"
+    "@deepseek-ai/dsh-sandbox": "^0.1.0-rc.8"
   },
   "optionalDependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.8",
     "@deepseek-ai/node-addon-landlock-run": "^0.1.1"
   },
   "scripts": {
