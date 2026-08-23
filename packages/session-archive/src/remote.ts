@@ -69,7 +69,8 @@ function runPendingMarks(instance: object) {
 }
 
 /**
- * 归档管理远程服务：list 列出归档会话；detail 读取会话内容；
+ * 归档管理远程服务：list 列出归档会话；count 归档计数（徽标轮询轻端点）；
+ * detail 读取会话内容；
  * delete 批量删除归档会话（文件删除，归档集合保留 ghost id 防止内存会话
  * 重现侧边栏）；unarchive 批量恢复归档（仅限仍存在文件的会话）。
  * 所有逻辑委托给 host 模块（lib/index.ts 传入的 archiveHost）。
@@ -85,6 +86,9 @@ export class SessionArchiveGateway extends TypertRemoteService {
   }
   list() {
     return this.host.list();
+  }
+  count() {
+    return this.host.count();
   }
   detail(sessionId: string) {
     if (typeof sessionId !== "string" || sessionId.length === 0) {
@@ -106,6 +110,7 @@ export class SessionArchiveGateway extends TypertRemoteService {
   }
 }
 markRemoteMethod(SessionArchiveGateway.prototype, "list");
+markRemoteMethod(SessionArchiveGateway.prototype, "count");
 markRemoteMethod(SessionArchiveGateway.prototype, "detail");
 markRemoteMethod(SessionArchiveGateway.prototype, "delete");
 markRemoteMethod(SessionArchiveGateway.prototype, "unarchive");

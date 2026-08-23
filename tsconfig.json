@@ -5,9 +5,13 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "types": ["node"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowImportingTsExtensions": true,
+    "types": ["node", "react"],
     "typeRoots": ["./node_modules/@types"]
   },
-  "include": ["packages/*/src/**/*.ts"],
+  "include": ["packages/*/src/**/*.ts", "test/**/*.ts"],
   "exclude": ["packages/*/src/**/*.tsx"]
 }

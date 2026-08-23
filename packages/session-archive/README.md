@@ -51,9 +51,15 @@ dsh plugin --profile web add @chaoset/session-archive
 | 方法 | 参数 | 返回 |
 | --- | --- | --- |
 | `list()` | — | `{ items: ArchiveRow[] }` |
-| `detail(sessionId)` | 会话 id | `{ sessionId, header, title, messageCount, messages, live }` |
+| `count()` | — | `{ count }`（存在性过滤后的归档数量，徽标轮询轻端点） |
+| `detail(sessionId)` | 会话 id | `{ sessionId, header, title, messageCount, totalMessageCount, truncated, messages, live }` |
 | `delete(sessionIds[])` | id 数组 | `{ deleted, failed, removedFromArchive }` |
 | `unarchive(sessionIds[])` | id 数组 | `{ restored, removedFromArchive }` |
+
+> `delete` 的 `failed[].reason`：`not-archived`（非归档成员）、`live`（内存
+> 中未归档会话）、`busy`（归档会话 60s 内仍有写入）、`unenumerable`（文件
+> 存在但持久化枚举不到，如首行损坏的孤儿日志）、`reappeared`（删除后被
+> 生成流重建、二次删除仍压不掉）；其余为底层删除错误消息。
 
 > `delete` 的 `removedFromArchive` 恒为 0：删除保留归档 ghost id（见上），
 > 侧边栏不会重新显示已删除的会话；`unarchive` 的 `removedFromArchive` 为

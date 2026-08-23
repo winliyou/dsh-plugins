@@ -100,7 +100,8 @@ export const name = 'adaptive-perf';
  *
  * families：工具族。每族可配 tools（该族工具名，需存在于目标 preset 的目录，
  * 插件运行时按实际可见工具取交集，不会因改名/缺失而崩溃）与 keywords（用户消息
- * 命中任一触发词即放行该族；大小写不敏感，子串匹配）。
+ * 命中任一触发词即放行该族；大小写不敏感；匹配方式由 keywordMatchMode 决定，
+ * 默认 smart：含 CJK 的触发词用子串匹配、纯 ASCII 词用词边界匹配）。
  *
  * bootstrap：首轮锚定（参照 dsh-anchored-standard 的实测结论）。请求 #1 只暴露
  * bootstrap.tools（真实 Minimal 工具对），剥离 suppressedContextSources 列出的
@@ -132,6 +133,15 @@ export const DEFAULT_CONFIG = {
   escalateOnKeyword: true,
   /** 工具调用失败（UNKNOWN_TOOL 文本含隐藏工具名）时自动放行该族。 */
   escalateOnUnknownTool: true,
+  /**
+   * 触发词匹配模式：smart（默认）= 含 CJK 的关键词保持子串匹配（\b 词边界
+   * 对非 [A-Za-z0-9_] 字符无定义，纯 CJK 词会永不命中），纯 ASCII 词用词
+   * 边界匹配——避免 "goalish"/"goalie" 命中 "goal"、"refork" 命中 "fork"
+   * 这类常见英文词的子串误触发；substring = 一律子串（0.7.2 及以前的行为）；
+   * word = 一律词边界（ASCII 字母/数字/下划线之外的位置视为边界，CJK 词
+   * 也可用）。
+   */
+  keywordMatchMode: 'smart',
   /**
    * 常驻上下文抑制（0.5.0）：true = 整个会话剥离自动注入上下文
    * （skill-catalog 技能目录提醒、agent-instructions AGENTS.md 摘要）；
@@ -219,10 +229,13 @@ function boolValue(value: any, fallback: any) {
   return typeof value === 'boolean' ? value : fallback;
 }
 
+/** 归一化字符串列表。显式数组（含空数组）是合法配置值，原样保留（仅过滤
+ *  非 string/空白项）——否则用户无法通过设置页清空 presets / bootstrap.tools
+ *  等列表（清空保存后会被悄悄替换回默认值）。回退默认仅用于非数组输入，或
+ *  字符串按分隔符解析后为空的情况。 */
 function stringList(value: any, fallback: any) {
   if (Array.isArray(value)) {
-    const out = value.filter((v) => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim());
-    return out.length > 0 ? out : fallback;
+    return value.filter((v) => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim());
   }
   if (typeof value === 'string') {
     const out = value.split(/[,，\s]+/).filter((v) => v.length > 0);
@@ -231,7 +244,8 @@ function stringList(value: any, fallback: any) {
   return fallback;
 }
 
-/** 与 stringList 相同，但显式空数组保持为空（语义是有意义的配置值）。 */
+/** 与 stringList 相同，但 undefined 之外的一切输入都不回退默认（显式空数组、
+ *  清空的字符串都保持为空——suppressedContextSources 的"留空=不剥离"语义）。 */
 function stringListOrEmpty(value: any, fallback: any) {
   if (value === undefined) return fallback;
   return stringList(value, []);
@@ -299,6 +313,7 @@ export function normalizeConfig(source: any, defaults: any = DEFAULT_CONFIG): an
     leanByDefault: boolValue(merged.leanByDefault, defaults.leanByDefault),
     escalateOnKeyword: boolValue(merged.escalateOnKeyword, defaults.escalateOnKeyword),
     escalateOnUnknownTool: boolValue(merged.escalateOnUnknownTool, defaults.escalateOnUnknownTool),
+    keywordMatchMode: MATCH_MODES.includes(raw.keywordMatchMode) ? raw.keywordMatchMode : defaults.keywordMatchMode,
     suppressInjectedContext: boolValue(merged.suppressInjectedContext, defaults.suppressInjectedContext),
     coreTools: stringList(merged.coreTools, defaults.coreTools),
     families,
@@ -308,6 +323,8 @@ export function normalizeConfig(source: any, defaults: any = DEFAULT_CONFIG): an
 }
 
 /** remote.set 的严格校验：非法值直接拒绝并返回错误，而不是静默写坏文件。 */
+export const MATCH_MODES = ['smart', 'substring', 'word'];
+
 export function validateConfig(partial: any): void {
   if (partial === null || typeof partial !== 'object' || Array.isArray(partial)) {
     throw new TypeError('adaptive-perf config must be a plain object');
@@ -318,6 +335,9 @@ export function validateConfig(partial: any): void {
     if (partial[key] !== void 0 && typeof partial[key] !== 'boolean') {
       throw new TypeError(`adaptive-perf config field "${key}" must be a boolean`);
     }
+  }
+  if (partial.keywordMatchMode !== void 0 && !MATCH_MODES.includes(partial.keywordMatchMode)) {
+    throw new TypeError(`adaptive-perf config field "keywordMatchMode" must be one of ${MATCH_MODES.map((m) => `"${m}"`).join(' | ')}`);
   }
   for (const key of ['presets', 'coreTools']) {
     if (partial[key] !== void 0 && !(Array.isArray(partial[key]) && partial[key].every((v) => typeof v === 'string'))) {
@@ -408,11 +428,40 @@ export function extractUserText(message: any): string {
   return text;
 }
 
-/** 大小写不敏感的子串匹配：任一关键词命中即返回 true。 */
-export function matchKeywords(text: any, keywords: any): boolean {
+/** CJK 文字（日文假名 / 汉字扩展区与基本区 / 韩文谚文）。 */
+const CJK_CHAR = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]/;
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 单个关键词是否命中。边界判定用 lookaround（`(?<![A-Za-z0-9_])kw(?![A-Za-z0-9_])`）
+ * 而不是 `\b`：`\b` 只在 \w 与非 \w 之间成立，纯 CJK 关键词两侧/内部不存在
+ * 这样的过渡，`\b子代理\b` 会永不命中；lookaround 对 "的子代理"（CJK 相邻）、
+ * "goal"（英文整词）、"goalish"（词中子串，拒绝）给出一致且可预期的语义。
+ */
+function keywordHits(loweredText: string, keyword: string, mode: string): boolean {
+  const kw = keyword.toLowerCase();
+  if (mode === 'substring') return loweredText.includes(kw);
+  const bounded = new RegExp(`(?<![a-z0-9_])${escapeRegExp(kw)}(?![a-z0-9_])`).test(loweredText);
+  if (mode === 'word') return bounded;
+  // smart：含 CJK 的触发词保持子串匹配（中文没有词边界概念，"子代理"这类
+  // 词在自然语句里就该命中）；纯 ASCII 词用词边界——'goal'/'fork' 这类常见
+  // 英文词若用子串匹配，陈述句里的 goalish/refork 都会误触发放行。
+  return CJK_CHAR.test(kw) ? loweredText.includes(kw) : bounded;
+}
+
+/**
+ * 大小写不敏感的关键词匹配：任一关键词命中即返回 true。
+ * @param mode - 'smart'（默认）/ 'substring' / 'word'，见 DEFAULT_CONFIG.keywordMatchMode。
+ */
+export function matchKeywords(text: any, keywords: any, mode: any = 'smart'): boolean {
   if (!Array.isArray(keywords) || keywords.length === 0) return false;
   const haystack = String(text ?? '').toLowerCase();
-  return keywords.some((k) => typeof k === 'string' && k.length > 0 && haystack.includes(k.toLowerCase()));
+  if (haystack.length === 0) return false;
+  const resolved = MATCH_MODES.includes(mode) ? mode : 'smart';
+  return keywords.some((k) => typeof k === 'string' && k.length > 0 && keywordHits(haystack, k, resolved));
 }
 
 /** 收集一次工具调用失败的模型可见文本（error 字段 + content 文本块）。 */
@@ -561,7 +610,6 @@ export const PROMOTE_EVENTS = {
 };
 
 /**
- /**
  * dev_tool_search：搜索完整可见目录并按名解锁工具（解锁结果下一请求生效，
  * 经 syncBootstrap 重算 deny 集；解锁记录写入 a.unlocked，resume-safe 由
  * loadUnlockedFromEvents 从持久事件恢复）。
@@ -639,7 +687,8 @@ export function createDevToolSearch({ schemasOf, onUnlock, catalogHint }: any): 
         } else {
           lines.push(`Matching tools (${matches.length}):`);
           for (const schema of matches) {
-            const desc = String(schema.description || '').split('\n')[0] ?? ''.slice(0, 90);
+            // split 恒返回至少一个元素,[0] 运行时必定义;?? 仅用于 noUncheckedIndexedAccess。
+            const desc = (String(schema.description || '').split('\n')[0] ?? '').slice(0, 90);
             lines.push(`- ${schema.name}: ${desc}`);
           }
           lines.push('Unlock with dev_tool_search({"toolNames": ["<exact name>"]}).');
@@ -821,16 +870,6 @@ export function filterBootstrapTools(assembly: any, keep: any): any {
   };
 }
 
-/** 按 source.kind 剥离自动注入的上下文消息（保留主动的用户消息）。 */
-export function filterBootstrapMessages(messages: any, suppressedSources: any): any {
-  if (!Array.isArray(messages) || suppressedSources.size === 0) return messages;
-  const kept = messages.filter((message) => {
-    const kind = message?.source?.kind;
-    return typeof kind !== 'string' || !suppressedSources.has(kind);
-  });
-  return kept.length === messages.length ? messages : kept;
-}
-
 /** 首轮输出预算：未晋升 → 封顶；已晋升 → 若仍带着封顶值则剥离。
  * 剥离条件是"值等于当前配置的 cap 或本会话曾写入过的任何旧 cap":
  * 用户在晋升前后改过 cap 的话,header 里残留的是旧值,只比对当前值
@@ -933,14 +972,31 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
     const warn = (message: any) => { try { ctx.logger?.warn?.(`adaptive-perf: ${message}`); } catch {} };
     const info = (message: any) => { try { ctx.logger?.info?.(`adaptive-perf: ${message}`); } catch {} };
 
-    /** 该会话是否为目标 preset。 */
+    /** preset lookup 失败的全局告警上限：pre-step 每条消息都会探测未接管会话,
+     *  宿主服务长期故障时不能每条消息刷一条 warn。 */
+    let presetLookupWarnings = 0;
+    const warnPresetLookup = (agentId: any, error: any) => {
+      if (presetLookupWarnings >= 20) return;
+      presetLookupWarnings++;
+      warn(`preset lookup failed for agent ${agentId}: ${(error as Error)?.message ?? String(error)}`);
+    };
+
+    /**
+     * 该会话是否为目标 preset。已接管会话直接返回 true（进入 agents 的前提
+     * 就是接管时通过了目标判定，而 preset 由 agent.ctx 的 standing mount 决定、
+     * 与会话绑定、生命周期内不变）——pre-step 每条消息都会调用本函数，不应
+     * 重复走 composedPreset。未接管会话实时判断，让热更新新增 preset 后的
+     * sweep 能发现新目标。
+     */
     function isTarget(agent: any) {
       if (!cfg.enabled) return false;
+      const state = agent !== null && typeof agent === 'object' ? agents.get(agent.id) : void 0;
+      if (state !== void 0) return true;
       try {
         const presetId = agentPresets.composedPreset(agent.ctx);
         return presetId !== void 0 && cfg.presets.includes(presetId);
       } catch (error) {
-        warn(`preset lookup failed for agent ${agent.id}: ${(error as Error)?.message ?? String(error)}`);
+        warnPresetLookup(agent?.id, error);
         return false;
       }
     }
@@ -1174,12 +1230,22 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       return null;
     }
 
-    /** 完整接管一个 agent（幂等）。 */
+    /** 完整接管一个 agent（幂等）。preset 在这里判定一次并缓存进状态，
+     *  之后 isTarget 对已接管会话走 O(1) 缓存路径。 */
     function handleAgent(agent: any) {
       if (agents.has(agent.id)) return;
-      if (!isTarget(agent)) return;
+      if (!cfg.enabled) return;
+      let presetId: any;
+      try {
+        presetId = agentPresets.composedPreset(agent.ctx);
+      } catch (error) {
+        warnPresetLookup(agent?.id, error);
+        return;
+      }
+      if (presetId === void 0 || !cfg.presets.includes(presetId)) return;
       const a: any = {
         agent,
+        presetId,
         suppressDisposer: null,
         promptDisposers: [],
         familyDisposers: new Map(),
@@ -1220,7 +1286,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       applyMinimalPrompt(a);
       applyFamilies(a);
       syncBootstrap(a);
-      info(`agent ${agent.id}: adaptive-perf active (preset ${String(agentPresets.composedPreset(agent.ctx))})`);
+      info(`agent ${agent.id}: adaptive-perf active (preset ${String(presetId)})`);
     }
 
     /** 释放一个 agent 的全部副作用。 */
@@ -1270,7 +1336,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       if (text.length === 0) return;
       for (const [id, family] of Object.entries(cfg.families as Record<string, any>)) {
         if (a.escalated.has(id) || family.enabled === false) continue;
-        if (matchKeywords(text, family.keywords)) escalate(a, id, 'keyword');
+        if (matchKeywords(text, family.keywords, cfg.keywordMatchMode)) escalate(a, id, 'keyword');
       }
     });
 
@@ -1409,20 +1475,33 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       }
     });
 
+    /** suppressedContextSources 的 Set 缓存（按内容键）：pre-step 每条消息
+     *  都要用，不应每次重建。内容键同时覆盖 cfg 对象整体替换与数组原地变更。 */
+    let suppressedSetCache: { key: string; set: Set<string> } | null = null;
+    function suppressedContextSet() {
+      const sources = cfg.bootstrap.suppressedContextSources;
+      const key = Array.isArray(sources) ? sources.join('\u0000') : String(sources);
+      if (suppressedSetCache === null || suppressedSetCache.key !== key) {
+        suppressedSetCache = { key, set: new Set(Array.isArray(sources) ? sources : []) };
+      }
+      return suppressedSetCache.set;
+    }
+
     // 上下文剥离（首轮锚定的注入部分）。prepend + 根作用域注册保证是
     // 最后一道变换（后注册的注入者无法再补回）。
-    // 剥离条件：bootstrap 未晋升（首轮剥离）或常驻抑制开启
-    // （suppressInjectedContext，0.7.0 默认开启：晋升后注入保持剥离，
-    // 由常驻发现工具承担功能可见性）。
+    // 剥离条件：bootstrap 启用且（未晋升——首轮剥离，或常驻抑制开启——
+    // suppressInjectedContext，0.7.0 默认开启：晋升后注入保持剥离，由常驻
+    // 发现工具承担功能可见性）。bootstrap 关闭时注入上下文永不剥离——否则
+    // 该组合下既剥离注入、又不注册任何发现工具，功能可见性无人承担。
     ctx.on('agent/pre-step', async ({ agent }: any, next: any) => {
       const decision = await next();
       if (decision === null || typeof decision !== 'object' || decision.kind === 'reject') return decision;
       try {
         if (!cfg.enabled || !isTarget(agent)) return decision;
         const phase = bootstrapPhaseOf(agent);
-        const suppressed = new Set(cfg.bootstrap.suppressedContextSources);
+        const suppressed = suppressedContextSet();
         if (suppressed.size === 0) return decision;
-        const stripActive = (cfg.bootstrap.enabled && !phase.promoted) || cfg.suppressInjectedContext;
+        const stripActive = cfg.bootstrap.enabled && (!phase.promoted || cfg.suppressInjectedContext);
         if (!stripActive || !Array.isArray(decision.messages)) return decision;
         const kept = stripSuppressedMessages(decision.messages, suppressed);
         return kept === decision.messages ? decision : { ...decision, messages: kept };
@@ -1477,7 +1556,15 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       validate: validateConfig,
       warn,
       onUpdate: (merged) => {
+        const prevPromoteOn = cfg.bootstrap.promoteOn;
         cfg = normalizeConfig({ ...patchConfig, ...merged });
+        if (cfg.bootstrap.promoteOn !== prevPromoteOn) {
+          // 旧 phase 条目缓存了按旧 promoteOn 解析的触发事件集,增量观察会
+          // 继续沿用;清空后由 bootstrapPhaseOf 按新配置从持久日志全量重建
+          // (scanPhase 推导,已晋升会话不受影响——晋升是持久信号)。
+          bootstrapState.clear();
+          info(`bootstrap.promoteOn changed to "${cfg.bootstrap.promoteOn}"; bootstrap phase cache rebuilt`);
+        }
         info('config hot-updated; recomputing restrictions for live agents');
         // realPair 从关闭切到开启：补加载官方模块（首次尝试失败不反复重试）。
         ensureRealPairModules();

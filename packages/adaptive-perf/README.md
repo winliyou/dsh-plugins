@@ -129,7 +129,8 @@ dsh plugin --profile web remove @chaoset/adaptive-perf
 | `suppressRuntimeContext` | `true` | 抑制运行时上下文快照（零功能损失） |
 | `suppressInjectedContext` | `true` | 常驻上下文抑制（默认开启）：整个会话剥离技能目录/AGENTS.md 注入（发现工具承担可见性）；`false` = 只在请求 #1 剥离，晋升后恢复 |
 | `leanByDefault` | `false` | 工具目录精简（opt-in）：`true` = 会话启动即隐藏编排类工具族；`false`（默认）= 零裁剪 |
-| `escalateOnKeyword` | `true` | 用户消息命中触发词 → 放行该族 |
+| `escalateOnKeyword` | `true` | 用户消息命中触发词 → 放行该族（匹配方式见 `keywordMatchMode`） |
+| `keywordMatchMode` | `"smart"` | 触发词匹配模式：`smart` = 含 CJK 的触发词子串匹配、纯 ASCII 词词边界匹配（`"goalish"` 不命中 `"goal"`，整词 `"the goal is"` 命中）；`substring` = 一律子串；`word` = 一律词边界 |
 | `escalateOnUnknownTool` | `true` | 工具调用失败（UNKNOWN_TOOL）→ 放行该族 |
 | `coreTools` | 核心编码工具 | 展示用：不进入任何限制族 |
 | `families` | 见下 | 工具族：`{ 族名: { enabled, tools, keywords } }` |

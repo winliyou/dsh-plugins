@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.3.0](https://github.com/winliyou/dsh-plugins) (2026-08-22)
+
+### Features
+
+* **dangerous-root validation**: `remote.set` rejects canonical `/`, Windows drive roots (`C:` etc.), and the home directory itself with a `TypeError` — granting any of them equals giving up the sandbox boundary; `normalizeRoots` warns and filters system directories (`/etc` `/usr` `/bin` `/sbin`) as a backstop for patch/YAML paths that bypass strict validation; both literal and canonical spellings match, covering macOS `/etc → /private/etc`
+* `engines: { node: ">=22.19.0" }` declared
+
+### Bug Fixes
+
+* bwrap/Landlock branches merge official writable roots with extra roots (deduplicated, minus roots the official argv already grants) instead of appending raw extras — no duplicate `--bind`/`--rw` grants, aligned with the Seatbelt table-rebuild semantics
+* extra roots are re-canonicalized at each confine/fs-fence call, so symlink redirections are picked up live; the fs fence now filters non-directory roots exactly like the bash side — a configured-but-not-yet-created directory is no longer granted by fs before it exists (behavior change; Seatbelt subpath matching unaffected)
+* config-gateway and settings-namespace registration moved after core sandbox wrapping with independent try/catch: a gateway/settings failure can no longer leave the sandbox unextended, and vice versa
+* client `locale.register` tolerates duplicate registration (HMR remount) silently and only warns on other errors
+* `dsh.d.ts`: `sandboxPolicy.resolve()` is declared synchronous — the host contract is sync; typing it async invited an await that would silently drop extra roots from the fs fence
+
+## [0.2.9](https://github.com/winliyou/dsh-plugins) (2026-08-22)
+
+### Bug Fixes
+
+* fail-safe module init: when `@deepseek-ai/dsh-sandbox` cannot be resolved the plugin degrades to a warned no-op instead of letting a top-level await rejection break harness startup
+* settings card keeps the textarea's raw draft text while editing (newlines are parsed only on save) — previously typing `/tmp/a` ⏎ `b` silently merged into `/tmp/a/b`
+
+## [0.2.8](https://github.com/winliyou/dsh-plugins) (2026-08-22)
+
+### Dependencies
+
+* align `@deepseek-ai/*` peers with dsh 0.1.0-rc.8
+
+## [0.2.7](https://github.com/winliyou/dsh-plugins) (2026-08-22)
+
+* republish TypeScript-refactor content (no runtime change)
+
 ## [0.2.6](https://github.com/winliyou/dsh-plugins) (2026-08-17)
 
 

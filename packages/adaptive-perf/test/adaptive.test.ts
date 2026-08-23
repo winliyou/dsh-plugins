@@ -206,13 +206,13 @@ describe("adaptive-perf pure functions + config-store", () => {
       const msgs = [
         { role: "user", source: { kind: "skill-catalog" }, content: [{ type: "text", text: "skills" }] },
         { role: "user", source: { kind: "agent-instructions" }, content: [{ type: "text", text: "agents" }] },
-        { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "real" }] },
         { role: "user", content: [{ type: "text", text: "plain" }] },
+        { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "real" }] },
       ];
-      const kept = ap.filterBootstrapMessages(msgs, new Set(["skill-catalog", "agent-instructions"]));
-      return kept.length === 2 && kept[0].content[0].text === "real";
+      const kept = ap.stripSuppressedMessages(msgs, new Set(["skill-catalog", "agent-instructions"]));
+      return kept.length === 2 && kept[0].content[0].text === "plain" && kept[1].content[0].text === "real";
     })(), "AP: 消息过滤-剥离 skill-catalog 保留用户消息").toBe(true);
-    expect(ap.filterBootstrapMessages([{ content: [] }], new Set()).length === 1, "AP: 消息过滤-空抑制集原样返回").toBe(true);
+    expect(ap.stripSuppressedMessages([{ content: [] }], new Set()).length === 1, "AP: 消息过滤-空抑制集原样返回").toBe(true);
     expect(JSON.stringify(ap.applyBootstrapBudget({ maxTokens: 256000, a: 1 }, false, 1024)) === '{"maxTokens":1024,"a":1}', "AP: 预算-未晋升封顶").toBe(true);
     expect(JSON.stringify(ap.applyBootstrapBudget({ maxTokens: 1024, a: 1 }, true, 1024)) === '{"a":1}', "AP: 预算-晋升后剥离封顶").toBe(true);
     expect(ap.applyBootstrapBudget({ maxTokens: 256000, a: 1 }, true, 1024).maxTokens === 256000, "AP: 预算-晋升后非封顶值保留").toBe(true);
@@ -247,6 +247,50 @@ describe("adaptive-perf pure functions + config-store", () => {
     let v5Rejected2 = false;
     try { ap.validateConfig({ bootstrap: { realPair: 1 } }); } catch { v5Rejected2 = true; }
     expect(v5Rejected === true && v5Rejected2 === true, "AP: 0.7.0 配置校验-非法值拒绝").toBe(true);
+  });
+
+  it("keywordMatchMode 校验/归一化 + stringList 显式空数组", () => {
+    expect(ap.normalizeConfig({}).keywordMatchMode === "smart", "默认 smart").toBe(true);
+    expect(ap.normalizeConfig({ keywordMatchMode: "substring" }).keywordMatchMode === "substring", "合法值保留").toBe(true);
+    expect(ap.normalizeConfig({ keywordMatchMode: "bogus" }).keywordMatchMode === "smart", "非法值回退 smart").toBe(true);
+    let rejected = false;
+    try { ap.validateConfig({ keywordMatchMode: "bogus" }); } catch { rejected = true; }
+    expect(rejected, "validateConfig 拒绝非法模式").toBe(true);
+
+    // stringList 语义:显式 [](含经 normalize 的空列表)不再回退默认。
+    const emptied = ap.normalizeConfig({ presets: [], bootstrap: { tools: [] }, families: { delegation: { keywords: [] } } });
+    expect(emptied.presets.length === 0, "presets 显式清空保持为空").toBe(true);
+    expect(emptied.bootstrap.tools.length === 0, "bootstrap.tools 显式清空保持为空").toBe(true);
+    expect(emptied.families.delegation.keywords.length === 0, "族 keywords 显式清空保持为空").toBe(true);
+    const parsed = ap.normalizeConfig({ presets: "standard, code" });
+    expect(parsed.presets.length === 2, "字符串解析路径不变").toBe(true);
+    const defaulted = ap.normalizeConfig({});
+    expect(defaulted.presets.length === 3 && defaulted.bootstrap.tools.length === 2, "undefined 仍回退默认").toBe(true);
+  });
+
+  it("关键词匹配:P2 常见词误触发回归(smart 词边界 / CJK 子串 / 模式切换)", () => {
+    const goal = ["goal"];
+    // smart(默认):'goalish'/'goalie' 是词中子串,不得命中 'goal';
+    // "the goal is to refactor" 是整词出现,应命中。
+    expect(ap.matchKeywords("goalish project", goal) === false && ap.matchKeywords("a goalie saves", goal) === false,
+      "AP: smart 模式词中子串不触发").toBe(true);
+    expect(ap.matchKeywords("the goal is to refactor", goal) === true
+      && ap.matchKeywords("set a GOAL for this session", goal) === true,
+      "AP: smart 模式整词触发(大小写不敏感)").toBe(true);
+    // CJK 关键词在 smart 下保持子串匹配(中文无词边界概念)。
+    expect(ap.matchKeywords("这不是关于目标追踪的讨论", ["目标追踪"]) === true
+      && ap.matchKeywords("帮我做子代理调度", ["子代理"]) === true,
+      "AP: smart 模式 CJK 触发词子串匹配").toBe(true);
+    // substring 模式恢复旧行为:词中子串也触发。
+    expect(ap.matchKeywords("goalish project", goal, "substring") === true, "AP: substring 模式词中子串触发").toBe(true);
+    // word 模式对 ASCII 与 CJK 一律走边界判定(CJK 用非 ASCII 字母位置作边界)。
+    expect(ap.matchKeywords("goalish", goal, "word") === false && ap.matchKeywords("the goal is", goal, "word") === true,
+      "AP: word 模式 ASCII 词边界").toBe(true);
+    expect(ap.matchKeywords("来点子代理吧", ["子代理"], "word") === true, "AP: word 模式 CJK 边界可用").toBe(true);
+    // 多词 ASCII 触发词('fresh agent')同样按边界匹配。
+    expect(ap.matchKeywords("run a fresh agent loop", ["fresh agent"]) === true
+      && ap.matchKeywords("freshagent", ["fresh agent"]) === false,
+      "AP: smart 模式多词 ASCII 触发词").toBe(true);
   });
 
   it("真实 Minimal 工具对纯函数", async () => {
@@ -559,6 +603,60 @@ describe("adaptive-perf 自适应引擎", () => {
     expect(out.families.custom !== undefined, "自定义族不得被静默丢弃").toBe(true);
     expect(out.families.custom.tools.includes("web_search")).toBe(true);
     expect(out.families.custom.keywords.includes("查一下")).toBe(true);
+  });
+
+  it("P2 回归:常见词 'goal' 只在整词出现时触发放行(smart 模式)", async () => {
+    const m = buildMocks();
+    const { ctx, emit, agent, restrictCalls, disposedCalls } = m;
+    await ap.apply(ctx, {
+      presets: ["standard"],
+      leanByDefault: true,
+      suppressRuntimeContext: false,
+      minimalPrompt: { enabled: false },
+      // bootstrap 关闭,隔离 lean 族限制机制,断言只看族 restrict。
+      bootstrap: { enabled: false },
+    }, { realPairModules: null });
+    const a = agent("s-kw", "standard");
+    emit("agent/created", { agent: a });
+    expect(restrictCalls.filter((c) => c.agent === "s-kw").length === 4, "lean 初始限制 4 族").toBe(true);
+
+    // 陈述句里的词中子串:不应触发任何放行。
+    emit("agent/inbox/inserted", { agent: a, message: { content: [{ type: "text", text: "goalish project files" }] } });
+    emit("agent/inbox/inserted", { agent: a, message: { content: [{ type: "text", text: "a goalie saves the day" }] } });
+    expect(disposedCalls.length === 0 && restrictCalls.filter((c) => c.agent === "s-kw").length === 4,
+      "'goalish'/'goalie' 不得触发 goal 族放行").toBe(true);
+
+    // 整词出现("the goal is to refactor"):放行 goal 族(create_goal 等解除隐藏)。
+    emit("agent/inbox/inserted", { agent: a, message: { content: [{ type: "text", text: "the goal is to refactor this module" }] } });
+    expect(disposedCalls.some((c) => c.agent === "s-kw" && c.deny.includes("create_goal")),
+      "整词 'goal' 触发 goal 族放行").toBe(true);
+    emit("agent/disposed", { agent: a });
+  });
+
+  it("P2 回归:bootstrap 关闭时注入上下文永不剥离(即使常驻抑制开启)", async () => {
+    const m = buildMocks();
+    const { ctx, emit, agent } = m;
+    await ap.apply(ctx, {
+      presets: ["standard"],
+      leanByDefault: false,
+      suppressRuntimeContext: false,
+      minimalPrompt: { enabled: false },
+      suppressInjectedContext: true,
+      bootstrap: { enabled: false },
+    }, { realPairModules: null });
+    const a = agent("s-nostrip", "standard", { id: "s-nostrip", header: {}, events: [] });
+    emit("agent/created", { agent: a });
+    const preStep = m.events["agent/pre-step"][0];
+    const injectedMsgs = [
+      { role: "user", source: { kind: "skill-catalog" }, content: [{ type: "text", text: "skills" }] },
+      { role: "user", source: { kind: "agent-instructions" }, content: [{ type: "text", text: "agents" }] },
+      { role: "user", source: { kind: "user" }, content: [{ type: "text", text: "real" }] },
+    ];
+    const res: any = await preStep({ agent: a, signal: undefined }, async () => ({ kind: "continue", messages: injectedMsgs }));
+    const kinds = res.messages.map((mm: any) => mm.source && mm.source.kind);
+    expect(kinds.includes("skill-catalog") && kinds.includes("agent-instructions") && kinds.includes("user"),
+      "bootstrap.enabled=false 时 stripActive 必须为 false(无发现工具补偿)").toBe(true);
+    emit("agent/disposed", { agent: a });
   });
 
   it("真实工具对挂载（stub 模块注入）", async () => {

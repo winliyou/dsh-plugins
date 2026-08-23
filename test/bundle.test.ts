@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "..");
-const PACKAGES = ["sandbox-extra-roots", "adaptive-perf", "session-archive"];
+// 与 scripts/build.mjs 相同的目录派生策略,避免硬编码清单漂移。
+const PACKAGES = readdirSync(join(ROOT, "packages"), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
 
 // 客户端 bundle 冒烟需要 react 可解析；用 vi.mock 注入一个最小 stub，
 // 这样 client/index.tsx 的 `import * as React from "react"` 会被桩替换，

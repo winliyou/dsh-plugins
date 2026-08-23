@@ -172,7 +172,16 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
     };
     async function apply(ctx: any) {
       const t = ctx.locale.bind(NS);
-      ctx.effect(() => ctx.locale.register(NS, { zh, en }), "sandbox-extra-roots: dictionaries");
+      ctx.effect(() => {
+        try {
+          ctx.locale.register(NS, { zh, en });
+        } catch (error) {
+          // 重复注册(HMR/热切换下宿主已持有同 ns 字典)静默忽略,
+          // 其余失败只告警——卡片文案回退到宿主默认,不阻断插件激活。
+          const message = String((error as any)?.message ?? error);
+          if (!message.includes("already")) console.warn("sandbox-extra-roots: locale dictionary registration failed: " + message);
+        }
+      }, "sandbox-extra-roots: dictionaries");
       // 先挂载命名空间，再用 ctx.get 取回服务：cordis 的属性访问（ctx.remote.X）
       // 要求 X 出现在 inject 里，而本插件的命名空间由自己挂载，若写进 inject
       // 会和自己等待的服务形成死锁，因此用 ctx.get（对未声明的服务合法）。

@@ -204,6 +204,34 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
     }
   }
 
+  /** ghost 分支的孤儿探测:不经持久化枚举,直接 locate({id}) + stat 判断文件
+   * 是否实际存在(persistence.list() 会静默跳过首行损坏的日志,"枚举不到"
+   * 不等于"文件不存在")。cwd 未知的 ghost id 只能探到缺省位置(_no-cwd 一类),
+   * 尽力而为。返回存在的路径;无法定位或不存在返回 null。 */
+  async function probeOrphanFile(sessionId: string): Promise<string | null> {
+    try {
+      const location = persistence.locate({ id: sessionId });
+      if (location === undefined || typeof location.path !== 'string' || location.path.length === 0) return null;
+      await stat(location.path);
+      return location.path;
+    } catch {
+      return null;
+    }
+  }
+
+  /** 删除后的复验:先等 settleMs 给进行中的写入留出落盘时间,再确认文件没有
+   * 被宿主 materialize 的 mkdir -p 整体重建(stat 任意失败——含 ENOENT——都
+   * 视为已消失)。返回 true 表示文件仍在(重现)。 */
+  async function filePresentAfterSettle(path: string, settleMs: number): Promise<boolean> {
+    if (settleMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, settleMs));
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** 单个归档会话的展示行。标题读取失败回退 null（面板显示目录名）。
    * 标题按 mtime 缓存：jsonl 后端没有后缀读取钩子，readFrom(id,0) 会解析
    * 整条事件流，而面板关闭态的徽标轮询每 5 秒打一次 list——不缓存的话
@@ -274,8 +302,15 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
       const { meta, events } = await persistence.readFrom(sessionId, 0);
       const title = foldTitle(events);
       const messages = [];
+      let totalMessageCount = 0;
       for (const event of events) {
         if (event.type !== 'user/message' && event.type !== 'assistant/message') continue;
+        // 达到上限后只计数、不再提取文本:截断语义要如实上报,尾部消息也不必
+        // 做字符串拼接(大日志下这部分是纯浪费)。
+        if (messages.length >= cfg.detailMaxMessages) {
+          totalMessageCount++;
+          continue;
+        }
         const text = messageText(event.data, cfg.messagePreviewChars);
         if (text.length === 0) continue;
         messages.push({
@@ -283,7 +318,7 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
           text,
           time: event.time,
         });
-        if (messages.length >= cfg.detailMaxMessages) break;
+        totalMessageCount++;
       }
       return {
         sessionId,
@@ -295,6 +330,8 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
         },
         title,
         messageCount: messages.length,
+        totalMessageCount,
+        truncated: totalMessageCount > messages.length,
         messages,
         live: isLive(sessionId),
       };
@@ -307,6 +344,11 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
      * 集合中"作为显示条件）会立刻把仍在内存中的会话重新显示出来，等同
      * "恢复"。ghost id 由 list() 的存在性过滤隐藏，面板与侧边栏均不再
      * 显示该会话；`removedFromArchive` 因此恒为 0。
+     *
+     * 失败语义（failed[].reason）：'not-archived' 非归档成员；'live' 内存
+     * 未归档会话；'busy' 归档会话 60s 内仍有写入；'unenumerable' 文件存在
+     * 但持久化枚举不到（首行损坏的孤儿）；'reappeared' 删除后被生成流重建、
+     * 二次删除仍压不掉；其余为底层删除错误消息。
      */
     async deleteArchived(sessionIds: string[]) {
       const unique = [...new Set(sessionIds)];
@@ -329,7 +371,15 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
         }
         const header = headersById.get(sessionId);
         if (header === undefined) {
-          // 会话文件已不存在：幂等删除（ghost id 保留在归档集合中）。
+          // ghost id(枚举不到)。但"枚举不到 ≠ 文件不存在":首行损坏的日志
+          // 会被 persistence.list() 静默跳过,直接当 ghost 报成功会把永远
+          // 删不掉的孤儿文件留在磁盘上。先 locate({id}) 探测,探到文件即
+          // "有文件但不可枚举",计入 failed 而非谎报成功。
+          if ((await probeOrphanFile(sessionId)) !== null) {
+            failed.push({ sessionId, reason: 'unenumerable' });
+            continue;
+          }
+          // 真不存在:幂等删除(ghost id 保留在归档集合中)。
           deleted.push(sessionId);
           continue;
         }
@@ -357,6 +407,19 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
           }
           await rm(file.path, { force: true });
           await rm(dirname(file.path), { recursive: true, force: true });
+          // rm 后复验:目录被删后,宿主 materialize 的 mkdir -p 仍可能把路径
+          // 整体重建(生成流恰在删除窗口内落盘)。等约 300ms 再 stat;若重现
+          // 则再删一次,仍未删掉计入 failed('reappeared'),不谎报成功。
+          if (await filePresentAfterSettle(file.path, 300)) {
+            try {
+              await rm(file.path, { force: true });
+              await rm(dirname(file.path), { recursive: true, force: true });
+            } catch {}
+            if (await filePresentAfterSettle(file.path, 300)) {
+              failed.push({ sessionId, reason: 'reappeared' });
+              continue;
+            }
+          }
           deleted.push(sessionId);
         } catch (error) {
           failed.push({ sessionId, reason: (error as Error)?.message ?? 'delete-failed' });

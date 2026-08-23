@@ -2,7 +2,7 @@ import * as React from "react";
 import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
 
     // ── 样式（注入 style 标签，模仿官方卡片外观）──────────────────────────
-    var css = ".ap_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ap_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ap_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ap_header:hover,.ap_card[data-open=true]>.ap_header{background:var(--dsw-alias-interactive-bg-hover)}.ap_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ap_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ap_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ap_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ap_label{font-size:12px;font-weight:500;line-height:18px}.ap_input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:32px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:0 10px;font-size:13px;line-height:20px}.ap_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.ap_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ap_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ap_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ap_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:0 0;color:inherit}.ap_status{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);flex:1}.ap_status.ap_error{color:var(--dsw-alias-state-danger-primary)}";
+    var css = ".ap_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ap_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ap_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ap_header:hover,.ap_card[data-open=true]>.ap_header{background:var(--dsw-alias-interactive-bg-hover)}.ap_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ap_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ap_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ap_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ap_label{font-size:12px;font-weight:500;line-height:18px}.ap_input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:32px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:0 10px;font-size:13px;line-height:20px}.ap_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.ap_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ap_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ap_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ap_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:0 0;color:inherit}.ap_status{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);flex:1}.ap_status.ap_error{color:var(--dsw-alias-state-error-primary)}.ap_badge_error{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);color:var(--dsw-alias-state-error-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px;max-width:260px;overflow:hidden;text-overflow:ellipsis}";
     var tagId = "@chaoset/adaptive-perf/client.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"" + tagId + "\"]") === null) {
       var tag = document.createElement("style");
@@ -27,7 +27,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       invalidFamilies: "families 必须是合法 JSON 对象",
       enabled: "启用插件",
       presets: "目标 preset",
-      fieldPresets: "逗号分隔的 preset id（如 standard, code）",
+      fieldPresets: "逗号分隔的 preset id（如 standard, code）。留空 = 不应用任何 preset",
       suppressRuntimeContext: "抑制运行时上下文快照",
       fieldSuppressRuntimeContext: "等同极简模式的 includeRuntimeContext: false，每次请求省掉快照文本（零功能损失）",
       leanByDefault: "启动即精简工具目录",
@@ -76,7 +76,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       invalidFamilies: "families must be valid JSON object",
       enabled: "Enable plugin",
       presets: "Target presets",
-      fieldPresets: "Comma-separated preset ids (e.g. standard, code)",
+      fieldPresets: "Comma-separated preset ids (e.g. standard, code). Empty = apply to no preset.",
       suppressRuntimeContext: "Suppress runtime-context snapshot",
       fieldSuppressRuntimeContext: "Same as minimal's includeRuntimeContext: false; drops the snapshot text from every request (zero feature loss)",
       leanByDefault: "Lean tool catalog at session start",
@@ -168,6 +168,20 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
     }
 
     // ── 配置卡片 ─────────────────────────────────────────────────────────
+    /** 逐字段深比较（键序无关）：dirty 判定不能用 JSON.stringify——服务端
+     *  effective() 与本地草稿的键序可能不同，会产生假"未保存"徽标。 */
+    function valuesEqual(a: any, b: any): boolean {
+      if (a === b) return true;
+      if (typeof a !== typeof b || a === null || b === null) return false;
+      if (typeof a !== "object") return false;
+      if (Array.isArray(a) !== Array.isArray(b)) return false;
+      if (Array.isArray(a)) {
+        return a.length === b.length && a.every((v: any, i: number) => valuesEqual(v, b[i]));
+      }
+      const ka = Object.keys(a);
+      const kb = Object.keys(b);
+      return ka.length === kb.length && ka.every((k: string) => Object.prototype.hasOwnProperty.call(b, k) && valuesEqual(a[k], b[k]));
+    }
     function AdaptivePerfCard(props: any) {
       const t = props.t;
       const [open, setOpen] = React.useState(false);
@@ -200,7 +214,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
           familiesError = (error as Error)?.message ?? String(error);
         }
       }
-      const dirty = draft !== null && (JSON.stringify(draft) !== JSON.stringify(cfg) || familiesInvalid === false && familiesToText(draft.families) !== familiesText);
+      const dirty = draft !== null && (!valuesEqual(draft, cfg) || familiesInvalid === false && familiesToText(draft.families) !== familiesText);
       const invalid = draft !== null && familiesInvalid;
       const discard = () => {
         setDraft(cfg);
@@ -240,6 +254,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
             "aria-expanded": open
           },
           React.createElement("span", { className: "ap_title" }, t("title")),
+          status !== null && status.kind === "error" ? React.createElement("span", { className: "ap_badge ap_badge_error", title: status.text }, status.text) : null,
           dirty ? React.createElement("span", { className: "ap_badge" }, t("unsaved")) : null,
           React.createElement("span", null, open ? "▲" : "▼")
         ),
@@ -291,7 +306,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
           React.createElement(BoolField, {
             label: t("suppressInjectedContext"),
             hint: t("fieldSuppressInjectedContext"),
-            value: draft === null ? false : draft.suppressInjectedContext,
+            value: draft === null ? true : draft.suppressInjectedContext,
             disabled: draft === null,
             onChange: (v: any) => setDraft({ ...draft, suppressInjectedContext: v })
           }),
@@ -316,13 +331,20 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
             disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
             onChange: (v: any) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), tools: v.split(/[,，\s]+/).filter((x: any) => x.length > 0) } })
           }),
-          React.createElement(TextField, {
+          React.createElement(Field, {
             label: t("bootstrapPromoteOn"),
-            hint: t("fieldBootstrapPromoteOn"),
-            value: draft === null ? "" : (draft.bootstrap && draft.bootstrap.promoteOn) || "either",
-            disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
-            onChange: (v: any) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), promoteOn: (v.trim() || "either") } })
-          }),
+            hint: t("fieldBootstrapPromoteOn")
+          },
+            React.createElement("select", {
+              className: "ap_input",
+              value: draft === null ? "either" : (draft.bootstrap && draft.bootstrap.promoteOn) || "either",
+              disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
+              onChange: (e: any) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), promoteOn: e.target.value } })
+            },
+              ["either", "tool-call", "assistant-message"].map((v: string) =>
+                React.createElement("option", { key: v, value: v }, v))
+            )
+          ),
           React.createElement(TextField, {
             label: t("bootstrapSuppressed"),
             hint: t("fieldBootstrapSuppressed"),
@@ -337,16 +359,24 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
             disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
             onChange: (v: any) => setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), discoveryTools: v.split(/[,，\s]+/).filter((x: any) => x.length > 0) } })
           }),
-          React.createElement(TextField, {
+          React.createElement(Field, {
             label: t("bootstrapMaxTokens"),
-            hint: t("fieldBootstrapMaxTokens"),
-            value: draft === null ? "" : String((draft.bootstrap && draft.bootstrap.maxTokens) || 0),
-            disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
-            onChange: (v: any) => {
-              const n = Number(v.trim());
-              setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), maxTokens: Number.isSafeInteger(n) && n > 0 ? n : 0 } });
-            }
-          }),
+            hint: t("fieldBootstrapMaxTokens")
+          },
+            React.createElement("input", {
+              className: "ap_input",
+              type: "number",
+              min: 0,
+              step: 1,
+              value: draft === null ? 0 : String((draft.bootstrap && draft.bootstrap.maxTokens) || 0),
+              disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
+              onChange: (e: any) => {
+                const n = Number(e.target.value);
+                // 非法/清空归 0（= 不封顶）；number input 本身已挡住大部分非法输入。
+                setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), maxTokens: Number.isSafeInteger(n) && n > 0 ? n : 0 } });
+              }
+            })
+          ),
           React.createElement(BoolField, {
             label: t("minimalPromptEnabled"),
             hint: t("fieldMinimalPromptEnabled"),

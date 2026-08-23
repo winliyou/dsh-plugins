@@ -8,7 +8,7 @@
  *
  * typert-protocol 惰性加载：npm 模式从包内 node_modules 解析；file:// 模式
  * （~/.dsh/plugins/）从 harness 的 profile 依赖树解析。两者都不可用时
- * 模块加载失败，由 index.mjs 的动态 import 捕获——核心功能不受影响，
+ * 模块加载失败，由 index.ts 的动态 import 捕获——核心功能不受影响，
  * 仅设置页 UI 的配置读写不可用。
  */
 

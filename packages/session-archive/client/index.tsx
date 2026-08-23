@@ -40,7 +40,7 @@ var css = [
   ".sa_rows{flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;display:flex}",
   ".sa_row{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);border-radius:12px;flex-direction:column;gap:6px;padding:8px 10px;display:flex}",
   ".sa_rowHead{align-items:center;gap:8px;display:flex}",
-  ".sa_rowTitle{min-width:0;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;flex:1;font-size:13px;font-weight:500;line-height:20px;overflow:hidden;cursor:pointer}",
+  ".sa_rowTitle{background:none;border:none;padding:0;text-align:left;font:inherit;min-width:0;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;flex:1;font-size:13px;font-weight:500;line-height:20px;overflow:hidden;cursor:pointer}",
   ".sa_rowTitle:hover{text-decoration:underline}",
   ".sa_live{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-label);height:18px;border-radius:9px;flex:none;align-items:center;padding:0 6px;font-size:11px;line-height:18px;display:inline-flex}",
   ".sa_rowMeta{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px;overflow-wrap:anywhere}",
@@ -91,6 +91,7 @@ const zh = {
   user: "用户",
   assistant: "助手",
   messages: "共 {n} 条消息",
+  messagesTruncated: "共 {n} 条消息（已截断）",
   noMessages: "（无文本消息）",
   sizeBytes: "{n} B",
   sizeKB: "{n} KB",
@@ -123,6 +124,7 @@ const en = {
   user: "User",
   assistant: "Assistant",
   messages: "{n} messages",
+  messagesTruncated: "{n}+ messages",
   noMessages: "(no text messages)",
   sizeBytes: "{n} B",
   sizeKB: "{n} KB",
@@ -132,6 +134,8 @@ const en = {
 
 // ── 工具函数 ─────────────────────────────────────────────────────────
 function formatBytes(bytes: any, t: any) {
+  // 0/缺失(文件已不可 stat)显示占位符,避免误导性的 "0 B"。
+  if (bytes === void 0 || bytes === null || Number(bytes) === 0) return "—";
   if (bytes < 1024) return t("sizeBytes").replace("{n}", String(bytes));
   if (bytes < 1024 * 1024) return t("sizeKB").replace("{n}", (bytes / 1024).toFixed(1));
   return t("sizeMB").replace("{n}", (bytes / (1024 * 1024)).toFixed(1));
@@ -141,6 +145,18 @@ function formatTime(ms: any) {
 }
 function shortId(id: any) {
   return id.length > 12 ? id.slice(0, 12) + "…" : id;
+}
+// 列表浅比较(sessionId+updatedAt+size+live):数据没变就不 setItems,
+// 静默刷新/重复刷新不再触发整表 reconcile。
+function sameItems(a: any[], b: any[]) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (x === y) continue;
+    if (x === void 0 || y === void 0) return false;
+    if (x.sessionId !== y.sessionId || x.updatedAt !== y.updatedAt || x.size !== y.size || x.live !== y.live) return false;
+  }
+  return true;
 }
 
 // ── 归档面板 ─────────────────────────────────────────────────────────
@@ -187,7 +203,15 @@ function ArchivePanel(props: any) {
     setError(null);
     try {
       const result = await call("list");
-      setItems(Array.isArray(result.items) ? result.items : []);
+      const next = Array.isArray(result.items) ? result.items : [];
+      setItems((current) => (sameItems(current, next) ? current : next));
+      // 选择集剔除已从列表消失的 id:残留勾选会让"已选 N 项"虚高,
+      // 还可能把幽灵 id 发给批量操作(host 有幂等兜底,但不该依赖它)。
+      const nextIds = new Set(next.map((item: any) => item.sessionId));
+      setSelected((currentSelected) => {
+        const pruned = [...currentSelected].filter((id) => nextIds.has(id));
+        return pruned.length === currentSelected.size ? currentSelected : new Set(pruned);
+      });
     } catch (loadError: any) {
       setError(t("loadFailed") + ": " + (loadError && loadError.message || loadError));
     } finally {
@@ -237,6 +261,16 @@ function ArchivePanel(props: any) {
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  // Esc 关闭面板(仅 open 时监听):对话框惯例,键盘用户此前只能找 ✕。
+  React.useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: any) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
   const selectable = items.filter((item) => !item.live);
@@ -321,7 +355,8 @@ function ArchivePanel(props: any) {
       setConfirmingDelete(false);
       await load();
     } catch (actionError: any) {
-      setNotice({ kind: "error", text: t(failKey).replace("{n}", "?") + ": " + (actionError && actionError.message || actionError) });
+      // 异常分支同样带数量:用请求发出时的 ids.length,不用无意义的 "?"。
+      setNotice({ kind: "error", text: t(failKey).replace("{n}", String(ids.length)) + ": " + (actionError && actionError.message || actionError) });
     } finally {
       setBusy(false);
     }
@@ -363,7 +398,7 @@ function ArchivePanel(props: any) {
       ),
     open ? React.createElement(
       "div",
-      { className: "sa_panel" },
+      { className: "sa_panel", role: "dialog", "aria-label": t("panelTitle") },
       React.createElement(
         "div",
         { className: "sa_header" },
@@ -434,8 +469,8 @@ function ArchivePanel(props: any) {
                   onChange: (e: any) => toggleOne(item.sessionId, e.target.checked)
                 }),
                 React.createElement(
-                  "span",
-                  { className: "sa_rowTitle", onClick: () => toggleDetail(item), title: t("view") },
+                  "button",
+                  { className: "sa_rowTitle", type: "button", onClick: () => toggleDetail(item), title: t("view") },
                   item.title !== null && item.title !== void 0 && item.title !== "" ? item.title : t("noneTitle")
                 ),
                 item.live ? React.createElement("span", { className: "sa_live" }, t("live")) : null
@@ -451,7 +486,9 @@ function ArchivePanel(props: any) {
                 React.createElement("span", { className: "sa_rowMeta" },
                   React.createElement("code", null, shortId(item.sessionId)),
                   detail !== void 0 && !detail.error && detail.messageCount !== void 0
-                    ? " · " + t("messages").replace("{n}", String(detail.messageCount))
+                    ? " · " + (detail.truncated === true
+                      ? t("messagesTruncated").replace("{n}", String(detail.totalMessageCount !== void 0 ? detail.totalMessageCount : detail.messageCount))
+                      : t("messages").replace("{n}", String(detail.messageCount)))
                     : null
                 ),
                 React.createElement(
@@ -471,6 +508,7 @@ function ArchivePanel(props: any) {
                 detailPending ? React.createElement("p", { className: "sa_empty" }, "…") : null,
                 detail === void 0 ? null :
                   detail.error !== void 0 ? React.createElement("p", { className: "sa_error" }, detail.error) :
+                  !Array.isArray(detail.messages) ? React.createElement("p", { className: "sa_error" }, t("detailLoadFailed")) :
                   detail.messages.length === 0 ? React.createElement("p", { className: "sa_empty" }, t("noMessages")) :
                   detail.messages.map((message: any, index: any) => React.createElement(
                     "div",

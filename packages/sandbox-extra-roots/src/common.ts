@@ -33,9 +33,8 @@ function profileAnchors() {
   ];
 }
 
-/** 加载一个官方 ESM 包。优先本包依赖树，失败后从 harness profile 解析文件
- * URL 再 import——这样 Node 20 早期版本（尚不支持 require(ESM)）也能工作，
- * 且与 harness 解析到同一 realpath、共享模块实例。 */
+/** 加载一个官方 ESM 包。优先本包依赖树，失败后从 harness profile 解析
+ * 文件 URL 再 import——与 harness 解析到同一 realpath、共享模块实例。 */
 async function loadPackage(specifier: string): Promise<any> {
   try {
     return await import(specifier);

@@ -22,14 +22,17 @@ function tsc(pkgDir) {
 // 才能随发布产物提供给消费者。tsgo 7.0.2 拒绝在 .ts 源码里内联这些
 // declare module（TS2310 自引用 / TS2664 可选依赖不可解析），因此由
 // 构建脚本在 tsc 之后把 dsh.d.ts 的内容追加进 lib/index.d.ts。
+const AUGMENTATION_MARKER = "// ── dsh.d.ts augmentations (appended by scripts/build.mjs) ──";
 function appendDshAugmentations(pkgDir) {
   const dshDts = join(pkgDir, "src", "dsh.d.ts");
   const indexPath = join(pkgDir, "lib", "index.d.ts");
   if (!existsSync(dshDts) || !existsSync(indexPath)) return;
   const indexContent = readFileSync(indexPath, "utf8");
-  if (indexContent.includes("declare module")) return;
+  if (indexContent.includes(AUGMENTATION_MARKER)) return; // 幂等:重复构建不重复追加
+  // 泛查 "declare module" 会误判:tsc 输出本身可能含 declare module 块,
+  // 那种情况下追加会被跳过、增强丢失。改用本脚本写入的哨兵注释判定。
   const dshContent = readFileSync(dshDts, "utf8");
-  writeFileSync(indexPath, dshContent.trim() + "\n\n" + indexContent);
+  writeFileSync(indexPath, AUGMENTATION_MARKER + "\n" + dshContent.trim() + "\n\n" + indexContent);
 }
 
 async function buildClient(pkgDir, pkgName, pkgId) {

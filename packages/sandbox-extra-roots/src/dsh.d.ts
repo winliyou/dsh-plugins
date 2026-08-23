@@ -13,7 +13,11 @@ declare module "@deepseek-ai/cordis" {
       checkedTarget?: (...args: any[]) => Promise<any>;
     };
     sandboxPolicy: {
-      resolve(): Promise<{ mode: string; workspaceRoot?: string }>;
+      /** 宿主契约:dsh-sandbox-policy 的 resolve() 是同步调用,返回普通
+       * 对象而非 Promise。checkedTarget 包装依赖该同步性——若宿主改为
+       * 异步,包装里 policy.mode 将是 undefined,额外目录在 fs 侧静默
+       * 失效;升级 DSH 时请核对该签名。 */
+      resolve(): { mode: string; workspaceRoot?: string };
     };
     settings: {
       register(ns: string, schema: any, options?: any): void;

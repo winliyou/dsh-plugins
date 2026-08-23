@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.8.0](https://github.com/winliyou/dsh-plugins) (2026-08-22)
+
+### Features
+
+* **`keywordMatchMode` config** (`smart`(default) | `substring` | `word`): escalation keywords containing CJK keep substring matching (CJK has no word boundaries — `\b` would never match a pure-CJK keyword), pure-ASCII words match on word boundaries via lookarounds (`(?<![a-z0-9_])kw(?![a-z0-9_])`, more predictable than `\b`). Statement text like "the goal is to refactor" or "goalish" no longer falsely escalates the goal family on the substring "goal"; `substring` restores pre-0.8.0 behavior; validated in `remote.set` and normalized with fallback
+* explicit empty arrays are now legal values for all string-list config fields (`presets`, `bootstrap.tools`, family tools/keywords…): previously an emptied list was silently reverted to the default on save, so "apply no preset" was impossible to express
+
+### Bug Fixes
+
+* pre-step injected-context stripping now requires bootstrap enabled: with `bootstrap.enabled=false` injections were stripped while no discovery tools were registered as compensation — unrecoverable context loss
+* hot-updating `bootstrap.promoteOn` now takes effect for already-tracked sessions: the phase cache is invalidated and rebuilt from the persistent journal (persistent promotion signals survive the rebuild)
+* per-message overhead reduced: composed preset resolved once per agent instead of once per message; suppressed-context-sources Set cached by content key instead of rebuilt per message; preset lookup failure warning capped at 20 occurrences
+* settings card: `promoteOn` is a select, `maxTokens` a number input (invalid input can no longer be saved); loading placeholder for `suppressInjectedContext` matches the real default; error notices render in the header badge so they are visible while collapsed; dirty detection compares field-by-field instead of order-sensitive JSON.stringify; error color referenced the non-existent `state-danger-primary` token so errors never rendered red (now `state-error-primary`)
+* removed `filterBootstrapMessages` (exact duplicate of `stripSuppressedMessages`); fixed malformed nested JSDoc on dev_tool_search; description truncation operator-precedence bug (`split('\n')[0].slice(...)` could throw under `noUncheckedIndexedAccess` semantics)
+
+## [0.7.3](https://github.com/winliyou/dsh-plugins) (2026-08-22)
+
+### Bug Fixes
+
+* **P0 dev_tool_search used the post-restrict catalog**: tools hidden by restrict layers were undiscoverable/unlockable; it now searches a pre-restrict snapshot captured at agent setup
+* **P0 escalate() did not recompute the bootstrap deny set**: after an escalation signal, family tools stayed hidden behind the second restrict layer; escalate now resyncs the keep-set so the release takes effect on the next request
+* real Minimal tool pair remounts idempotently via a state key: unrelated hot-updates no longer destroy/recreate persistent PTY bashes (cwd/env/background jobs survive)
+* first-round maxTokens cap: listener always registered with in-callback branching (0→N hot-update works; N→0 strips the field instead of injecting 0); promotion strips any cap injected this session including stale values from before a hot-update change
+* custom tool families defined in settings survive normalizeConfig (previously silently dropped)
+* test mocks made host-faithful (schemas reflect active restrict layers); regression tests added for both P0s
+
+## [0.7.2](https://github.com/winliyou/dsh-plugins) (2026-08-22)
+
+* align with dsh 0.1.0-rc.8 dependency set
+
 ## [0.7.0](https://github.com/winliyou/dsh-plugins) (2026-08-18)
 
 ### Features

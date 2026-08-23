@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { apply } from "../src/index.js";
@@ -50,12 +50,23 @@ function makeFsMock() {
 }
 
 function makeCtx(sandbox: any, fs: any): any {
+  // 保真 effect mock:与 cordis 语义一致——execute 的返回值(若为函数)
+  // 是 disposer,收集起来供 disposeAll() 模拟宿主卸载。
+  const disposers: Array<() => void> = [];
   return {
     sandbox,
     fs,
+    disposers,
+    disposeAll() {
+      for (const dispose of disposers.splice(0).reverse()) dispose();
+    },
     sandboxPolicy: { resolve: () => ({ mode: "workspace-write", workspaceRoot: WS }) },
     logger: { warn: () => {} },
-    effect(fn: () => void) { fn(); },
+    effect(fn: () => any) {
+      const dispose = fn();
+      if (typeof dispose === "function") disposers.push(dispose);
+      return dispose;
+    },
     plugin(Cls: any, cfg: any) {
       const saved = this.reflect;
       this.reflect = { provide: () => {}, props: {} };
@@ -70,15 +81,22 @@ describe("sandbox-extra-roots host (Seatbelt)", () => {
   let ctx: any;
 
   beforeEach(async () => {
+    // EXTRA 必须真实存在:fs 侧包装与 bash 侧(bwrap/Landlock)一样只对
+    // 当前存在的目录生效(两侧对齐,不再放行缺失根);Seatbelt 不受限。
+    mkdirSync(EXTRA, { recursive: true });
     sandboxMock = makeSandboxMock();
     fsMock = makeFsMock();
     ctx = makeCtx(sandboxMock, fsMock);
     await apply(ctx, { extraWritableRoots: [EXTRA] });
   });
 
+  afterEach(() => {
+    rmSync(EXTRA, { recursive: true, force: true });
+  });
+
   it("seatbelt 额外目录+官方根", () => {
     const out = sandboxMock.confine(["bash", "-c", "x"], { mode: "workspace-write", workspaceRoot: WS });
-    expect(out.argv[2]).toContain('(subpath "/tmp/extra")');
+    expect(out.argv[2]).toContain('(subpath "' + canonicalPath(EXTRA) + '")');
     expect(out.argv[2]).toContain('(subpath "/ws")');
   });
 
@@ -130,6 +148,82 @@ describe("sandbox-extra-roots host (bwrap)", () => {
       process.env.DSH_HOME = fakeHome;
       rmSync(fakeHome2, { recursive: true, force: true });
       rmSync(existingExtra, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("sandbox-extra-roots 危险根校验", () => {
+  it("remote set 拒绝根路径与用户主目录本身", async () => {
+    const sandboxMock = makeSandboxMock();
+    const ctx = makeCtx(sandboxMock, makeFsMock());
+    await apply(ctx, { extraWritableRoots: [] });
+    expect(() => ctx.gateway.set({ extraWritableRoots: ["/"] })).toThrow(/dangerous/);
+    expect(() => ctx.gateway.set({ extraWritableRoots: [fakeHome] })).toThrow(/dangerous/);
+  });
+
+  it("patch/YAML 配置里的系统目录被 normalize 过滤(绕过 remote.set 也安全)", async () => {
+    const sandboxMock = makeSandboxMock();
+    const fsMock = makeFsMock();
+    const ctx = makeCtx(sandboxMock, fsMock);
+    await apply(ctx, { extraWritableRoots: ["/etc", "/usr"] });
+    const out = sandboxMock.confine(["bash", "-c", "x"], { mode: "workspace-write", workspaceRoot: WS });
+    for (const spelling of ["/etc", "/usr", "/private/etc", "/private/usr"]) {
+      expect(out.argv[2]).not.toContain('(subpath "' + spelling + '")');
+    }
+    // fs 侧同样不放行系统目录
+    await expect(fsMock.checkedTarget({ displayPath: "/etc/hosts" })).rejects.toThrow("FS_SANDBOX_DENIED");
+  });
+
+  it("fs fence 与 bash 侧对齐:非目录 root 不再单侧放行", async () => {
+    const filePath = join(fakeHome, "not-a-dir");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(filePath, "x");
+    const sandboxMock = makeSandboxMock();
+    const fsMock = makeFsMock();
+    const ctx = makeCtx(sandboxMock, fsMock);
+    await apply(ctx, { extraWritableRoots: [filePath] });
+    const out = sandboxMock.confine(["bash"], { mode: "workspace-write", workspaceRoot: WS });
+    expect(out.argv[2]).toContain('(subpath "' + canonicalPath(filePath) + '")'); // Seatbelt 不受限
+    await expect(fsMock.checkedTarget({ displayPath: filePath })).rejects.toThrow("FS_SANDBOX_DENIED"); // fs 侧过滤
+  });
+});
+
+describe("sandbox-extra-roots 卸载/重装回路", () => {
+  it("dispose 还原原方法,再 apply 重新包装且功能正常", async () => {
+    mkdirSync(EXTRA, { recursive: true });
+    const sandboxMock = makeSandboxMock();
+    const fsMock = makeFsMock();
+    const origConfine = sandboxMock.confine;
+    const origCheckedTarget = fsMock.checkedTarget;
+    const ctx = makeCtx(sandboxMock, fsMock);
+    const canonicalExtra = canonicalPath(EXTRA);
+    try {
+      // 第一次 apply:包装安装、功能生效
+      await apply(ctx, { extraWritableRoots: [EXTRA] });
+      expect(sandboxMock.confine).not.toBe(origConfine);
+      expect(fsMock.checkedTarget).not.toBe(origCheckedTarget);
+      const out = sandboxMock.confine(["bash"], { mode: "workspace-write", workspaceRoot: WS });
+      expect(out.argv[2]).toContain(`(subpath "${canonicalExtra}")`);
+      await expect(fsMock.checkedTarget({ displayPath: EXTRA + "/f" })).resolves.toMatchObject({ targetKey: EXTRA + "/f" });
+
+      // 卸载:原方法逐字还原,包装行为消失
+      ctx.disposeAll();
+      expect(sandboxMock.confine).toBe(origConfine);
+      expect(fsMock.checkedTarget).toBe(origCheckedTarget);
+      await expect(fsMock.checkedTarget({ displayPath: EXTRA + "/f" })).rejects.toThrow("FS_SANDBOX_DENIED");
+
+      // 再 apply:重新包装,功能恢复;再卸载仍然干净
+      await apply(ctx, { extraWritableRoots: [EXTRA] });
+      expect(sandboxMock.confine).not.toBe(origConfine);
+      expect(fsMock.checkedTarget).not.toBe(origCheckedTarget);
+      const out2 = sandboxMock.confine(["bash"], { mode: "workspace-write", workspaceRoot: WS });
+      expect(out2.argv[2]).toContain(`(subpath "${canonicalExtra}")`);
+      await expect(fsMock.checkedTarget({ displayPath: EXTRA + "/f" })).resolves.toMatchObject({ targetKey: EXTRA + "/f" });
+      ctx.disposeAll();
+      expect(sandboxMock.confine).toBe(origConfine);
+      expect(fsMock.checkedTarget).toBe(origCheckedTarget);
+    } finally {
+      rmSync(EXTRA, { recursive: true, force: true });
     }
   });
 });
