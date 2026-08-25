@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/winliyou/dsh-plugins) (2026-08-25)
+
+### Features
+
+* 设置卡片按语义分组折叠（首轮锚定 / 极简提示词层 / 高级 JSON 默认收起）：20+ 字段不再一屏平铺，渐进披露；分组头带 `aria-expanded`
+* `bootstrap.maxTokens` 数字输入改草稿态：编辑期保留原始输入（清空/删改中间态不立即跳回 0），失焦才归一化显示，消除输入被强制改写的突兀感
+
+### Bug Fixes
+
+* `session/event` 处理器对 `agents.get(session.id)` 的 `agent.id === session.id` 隐含契约加防御性兜底（按 `agent.session.id` 匹配）并注释说明：未来二者分离时晋升信号不再静默丢配导致 bootstrap restrict 不释放
+* 修复 `applyFamilies` 的 JSDoc 注释与函数签名挤在同一行的格式瑕疵
+
 ## [0.8.0](https://github.com/winliyou/dsh-plugins) (2026-08-22)
 
 ### Features

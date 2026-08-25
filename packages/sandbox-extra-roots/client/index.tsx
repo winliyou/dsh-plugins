@@ -1,7 +1,7 @@
 import * as React from "react";
 import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
 
-var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ser_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ser_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ser_header:hover,.ser_card[data-open=true]>.ser_header{background:var(--dsw-alias-interactive-bg-hover)}.ser_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ser_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ser_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ser_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ser_label{font-size:12px;font-weight:500;line-height:18px}.ser_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:var(--ds-font-family-code,monospace)}.ser_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ser_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ser_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ser_save:disabled{opacity:.4;cursor:default}.ser_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);background:0 0;color:var(--dsw-alias-label-secondary,#666);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px}.ser_discard:disabled{opacity:.4;cursor:default}.ser_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.ser_error{color:var(--dsw-alias-state-error-primary)}";
+var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ser_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ser_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ser_header:hover,.ser_card[data-open=true]>.ser_header{background:var(--dsw-alias-interactive-bg-hover)}.ser_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ser_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ser_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ser_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ser_label{font-size:12px;font-weight:500;line-height:18px}.ser_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:var(--ds-font-family-code,monospace)}.ser_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ser_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ser_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ser_save:disabled{opacity:.4;cursor:default}.ser_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);background:0 0;color:var(--dsw-alias-label-secondary,#666);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px}.ser_discard:disabled{opacity:.4;cursor:default}.ser_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.ser_warn{color:var(--dsw-alias-state-warn-primary)}.ser_error{color:var(--dsw-alias-state-error-primary)}";
 
     var tagId = "@chaoset/sandbox-extra-roots/client.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"" + tagId + "\"]") === null) {
@@ -13,9 +13,39 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
     }
 
     const NS = "settings.plugins.sandboxExtraRoots";
+    // 与 host classifyRoot 的过滤口径保持一致的客户端预览（词法级）：
+    // 让"会被静默丢弃的行"在保存前就可见，而不是保存后只看到"已保存"。
+    const SYSTEM_DIRS = ["/etc", "/usr", "/bin", "/sbin"];
+    function analyzeRootsText(text: string) {
+      const problems: Array<{ line: number; kind: string; value: string }> = [];
+      const seen = new Set<string>();
+      text.split("\n").forEach((rawLine, index) => {
+        const line = rawLine.trim();
+        if (line.length === 0) return;
+        // ~ / ~/x：host 保存时展开为用户主目录，客户端无法解析 home，视为合法。
+        if (line === "~" || line.startsWith("~/") || line.startsWith("~\\")) return;
+        const isAbsoluteLike = line.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(line);
+        if (!isAbsoluteLike) {
+          problems.push({ line: index + 1, kind: "invalid", value: line });
+          return;
+        }
+        const normalized = line.replace(/[\\/]+$/, "") || "/";
+        if (seen.has(normalized)) {
+          problems.push({ line: index + 1, kind: "duplicate", value: line });
+          return;
+        }
+        seen.add(normalized);
+        if (normalized === "/" || /^[a-zA-Z]:[\\/]?$/.test(normalized)) {
+          problems.push({ line: index + 1, kind: "danger", value: line });
+        } else if (SYSTEM_DIRS.includes(normalized.replace(/\\/g, "/").toLowerCase())) {
+          problems.push({ line: index + 1, kind: "system", value: line });
+        }
+      });
+      return problems;
+    }
     const zh = {
       title: "沙盒额外允许目录（sandbox-extra-roots）",
-      hint: "workspace-write 模式下，除官方白名单（工作区根 + /tmp + 平台临时目录）外额外允许写入的目录。每行一个绝对路径。",
+      hint: "workspace-write 模式下，除官方白名单（工作区根 + /tmp + 平台临时目录）外额外允许写入的目录。每行一个绝对路径，支持 ~ 表示用户主目录。",
       unsaved: "有未保存的修改",
       discard: "放弃修改",
       saving: "保存中…",
@@ -23,11 +53,16 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
       saveFailed: "保存失败",
       saved: "已保存，下次沙盒调用生效",
       loadFailed: "读取配置失败",
-      roots: "额外可写目录（每行一个绝对路径）"
+      roots: "额外可写目录（每行一个绝对路径，支持 ~）",
+      placeholder: "~/data\n/tmp/cache",
+      rootInvalid: "第 {n} 行「{v}」不是绝对路径，保存将被拒绝",
+      rootDuplicate: "第 {n} 行「{v}」与前面的行重复（host 会去重）",
+      rootDanger: "第 {n} 行「{v}」会被拒绝：授予它等于解除沙盒边界",
+      rootSystem: "第 {n} 行「{v}」会被忽略：系统目录"
     };
     const en = {
       title: "Extra sandbox roots (sandbox-extra-roots)",
-      hint: "Extra writable roots under workspace-write mode, on top of the official allow-list (workspace root + /tmp + platform temp dirs). One absolute path per line.",
+      hint: "Extra writable roots under workspace-write mode, on top of the official allow-list (workspace root + /tmp + platform temp dirs). One absolute path per line; ~ expands to your home directory.",
       unsaved: "Unsaved changes",
       discard: "Discard",
       saving: "Saving…",
@@ -35,7 +70,12 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
       saveFailed: "Save failed",
       saved: "Saved; takes effect on the next sandbox call",
       loadFailed: "Failed to load config",
-      roots: "Extra writable roots (one absolute path per line)"
+      roots: "Extra writable roots (one absolute path per line; ~ allowed)",
+      placeholder: "~/data\n/tmp/cache",
+      rootInvalid: "Line {n} \"{v}\" is not an absolute path; saving will be rejected",
+      rootDuplicate: "Line {n} \"{v}\" duplicates an earlier line (deduped by host)",
+      rootDanger: "Line {n} \"{v}\" will be rejected: granting it disables the sandbox boundary",
+      rootSystem: "Line {n} \"{v}\" will be ignored: system directory"
     };
 
     function SandboxRootsCard(props: any) {
@@ -64,8 +104,10 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
 
       const cfgRoots = cfg === null ? [] : (cfg.extraWritableRoots || []);
       const parsedRoots = draftText === null ? cfgRoots
-        : draftText.split("\n").map((s) => s.trim()).filter((s) => s.length > 0);
+        : draftText.split("\n").map((s: string) => s.trim()).filter((s: string) => s.length > 0);
       const dirty = cfg !== null && parsedRoots.join("\n") !== cfgRoots.join("\n");
+      // 保存前的即时反馈：哪些行会被 host 拒绝/忽略/去重，不再等保存后才发现。
+      const rootProblems = draftText === null ? [] : analyzeRootsText(draftText);
       const discard = () => {
         setDraftText(cfgRoots.join("\n"));
         setStatus(null);
@@ -104,6 +146,8 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
             React.createElement("textarea", {
               className: "ser_textarea",
               value: draftText ?? "",
+              placeholder: t("placeholder"),
+              spellCheck: false,
               disabled: cfg === null,
               onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => {
                 setDraftText(e.target.value);
@@ -111,6 +155,15 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
               }
             })
           ),
+          rootProblems.length > 0 ? React.createElement(
+            "span",
+            { className: "ser_hint ser_warn", role: "note", style: { display: "block", marginTop: "2px" } },
+            rootProblems.map((problem, index) =>
+              React.createElement("span", { key: index, style: { display: "block" } },
+                t("root" + problem.kind.charAt(0).toUpperCase() + problem.kind.slice(1))
+                  .replace("{n}", String(problem.line))
+                  .replace("{v}", problem.value)))
+          ) : null,
           React.createElement(
             "div",
             { className: "ser_footer" },

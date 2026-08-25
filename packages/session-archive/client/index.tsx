@@ -3,15 +3,33 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
 
 // ── 样式（注入 style 标签，复用 DSH 设计变量）────────────────────────
 var css = [
-  ".sa_badge{width:100%;height:49px;color:var(--dsw-alias-label-primary);cursor:pointer;background:0 0;border:none;border-radius:12px;align-items:center;gap:8px;padding:0 8px 0 6px;font-family:inherit;font-size:14px;display:inline-flex;overflow:hidden}",
+  // sa_root 是 footerActions（display:flex）的直接 flex 项（slot 出口为
+  // display:contents 不参与布局）：不设宽度的话 flex 项收缩到内容宽，
+  // 徽标的 width:calc(100% + 4px) 只等于内容宽，hover 高亮比「设置」
+  // 入口窄一圈。显式撑满 + min-width:0，与 settingsArea 块级容器里的
+  // 设置按钮获得同样的整行命中面积。
+  ".sa_root{display:flex;min-width:0;width:100%}",
+  // 徽标几何与官方侧边栏「设置」触发按钮（dsh-client-ui-settings-general
+  // 的 .trigger / .rail）逐字对齐：同样的 calc(+4px) 宽度、42px 高、负外边距、
+  // 非对称内边距、12px 圆角与同一 hover 变量——保证归档入口的 hover 命中
+  // 面积与视觉节奏和设置入口完全一致（收起态同为 36×36 圆形）。
+  ".sa_badge{box-sizing:border-box;cursor:pointer;width:calc(100% + 4px);height:42px;color:var(--dsw-alias-label-primary);background:0 0;border:none;border-radius:12px;flex:none;align-items:center;gap:8px;margin:4px -2px;padding:0 10px 0 8px;font-family:inherit;font-size:14px;line-height:22px;display:flex;overflow:hidden}",
   ".sa_badge:hover{background:var(--dsw-alias-interactive-bg-hover)}",
-  ".sa_badgeIcon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;color:var(--dsw-alias-label-primary)}",
-  ".sa_badgeIcon svg{width:18px;height:18px;display:block}",
+  ".sa_badgeIcon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--dsw-alias-label-primary)}",
+  ".sa_badgeIcon svg{width:16px;height:16px;display:block}",
   ".sa_badgeLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}",
   ".sa_badgeCount{color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums;flex:none;margin-left:auto;font-size:12px;line-height:16px}",
-  ".sa_badge--collapsed{width:auto;justify-content:center;padding:0}",
+  ".sa_badge--collapsed{border-radius:50%;justify-content:center;gap:0;width:36px;height:36px;margin:8px 0 10px;padding:0}",
   ".sa_badge--collapsed .sa_badgeLabel,.sa_badge--collapsed .sa_badgeCount{display:none}",
+  ".sa_badge--collapsed .sa_badgeIcon,.sa_badge--collapsed .sa_badgeIcon svg{width:18px;height:18px}",
+  // z-index 30：仅高于侧边栏内容层、低于宿主模态遮罩（如设置面板 overlay），
+  // 与"从侧边栏弹出的浮层"层级预期一致；调整前先核对宿主浮层层级表。
   ".sa_panel{z-index:30;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);width:440px;max-width:calc(100vw - 24px);max-height:62vh;box-shadow:var(--dsw-shadow-lv2);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border-radius:12px;flex-direction:column;display:flex;position:fixed;bottom:128px;left:12px;overflow:hidden}",
+  // 入场动画：150ms 淡入 + 轻微上移（退出直接卸载，不做退场动画）；
+  // 系统开启「减少动态效果」时完全禁用。
+  "@media (prefers-reduced-motion:no-preference){.sa_panel{animation:sa-panel-in .15s ease-out}}",
+  "@keyframes sa-panel-in{from{opacity:0;transform:translateY(4px)}}",
+  ".sa_panel:focus{outline:none}",
   ".sa_header{box-sizing:border-box;border-bottom:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);flex:none;justify-content:space-between;align-items:center;min-height:44px;padding:8px 12px;display:flex}",
   ".sa_title{color:var(--dsw-alias-label-primary);font-size:13px;font-weight:500;line-height:20px}",
   ".sa_iconBtn{font:inherit;cursor:pointer;border:0;border-radius:8px;width:36px;height:36px;color:var(--dsw-alias-label-secondary,#666);background:0 0;display:inline-flex;align-items:center;justify-content:center;font-size:18px}",
@@ -37,6 +55,8 @@ var css = [
   ".sa_empty{color:var(--dsw-alias-label-tertiary);margin:24px 0;text-align:center;font-size:12px;line-height:18px}",
   ".sa_error{color:var(--dsw-alias-state-error-primary);margin:8px 0;font-size:12px;line-height:18px}",
   ".sa_ok{color:var(--dsw-alias-state-success-primary);margin:8px 0;font-size:12px;line-height:18px}",
+  // 提示级通知（如「请先勾选会话」）不该与错误同色：用 warn 色区分严重度。
+  ".sa_warn{color:var(--dsw-alias-state-warn-primary);margin:8px 0;font-size:12px;line-height:18px}",
   ".sa_rows{flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;display:flex}",
   ".sa_row{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);border-radius:12px;flex-direction:column;gap:6px;padding:8px 10px;display:flex}",
   ".sa_rowHead{align-items:center;gap:8px;display:flex}",
@@ -197,27 +217,43 @@ function ArchivePanel(props: any) {
   const [busy, setBusy] = React.useState(false);
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
   const [notice, setNotice] = React.useState<any>(null);
+  // 关闭态徽标计数（由 count() 轻端点轮询维护；列表落地时也会同步）。
+  const [badgeCount, setBadgeCount] = React.useState(0);
 
+  // 列表落地（加载与静默刷新共用）：sameItems 比较避免无变化时整表
+  // reconcile；同时剔除已消失 id 的残留勾选——否则"已选 N 项"虚高，
+  // 还可能把幽灵 id 发给批量操作（host 有幂等兜底，但不该依赖它）。
+  // 顺手用列表长度同步徽标计数：count() 端点不可用（host 旧进程未重启、
+  // RPC 失败被吞）时，开/关一次面板徽标也能自我纠正，不会卡在 0。
+  const applyItems = React.useCallback((next: any[]) => {
+    setItems((current) => (sameItems(current, next) ? current : next));
+    setBadgeCount(next.length);
+    const nextIds = new Set(next.map((item: any) => item.sessionId));
+    setSelected((currentSelected) => {
+      const pruned = [...currentSelected].filter((id) => nextIds.has(id));
+      return pruned.length === currentSelected.size ? currentSelected : new Set(pruned);
+    });
+  }, []);
   const load = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const result = await call("list");
-      const next = Array.isArray(result.items) ? result.items : [];
-      setItems((current) => (sameItems(current, next) ? current : next));
-      // 选择集剔除已从列表消失的 id:残留勾选会让"已选 N 项"虚高,
-      // 还可能把幽灵 id 发给批量操作(host 有幂等兜底,但不该依赖它)。
-      const nextIds = new Set(next.map((item: any) => item.sessionId));
-      setSelected((currentSelected) => {
-        const pruned = [...currentSelected].filter((id) => nextIds.has(id));
-        return pruned.length === currentSelected.size ? currentSelected : new Set(pruned);
-      });
+      applyItems(Array.isArray(result.items) ? result.items : []);
     } catch (loadError: any) {
       setError(t("loadFailed") + ": " + (loadError && loadError.message || loadError));
     } finally {
       setLoading(false);
     }
-  }, [call, t]);
+  }, [call, applyItems, t]);
+  // 打开态的静默刷新：不碰 loading/error，长开面板的列表不再陈旧；
+  // sameItems 比较保证数据没变时不触发任何重渲染，不打断勾选。
+  const silentList = React.useCallback(async () => {
+    try {
+      const result = await call("list");
+      applyItems(Array.isArray(result.items) ? result.items : []);
+    } catch {}
+  }, [call, applyItems]);
 
   React.useEffect(() => {
     if (open) { setNotice(null); load(); }
@@ -225,24 +261,78 @@ function ArchivePanel(props: any) {
 
   // 后台静默刷新归档计数：侧边栏徽标要在「聊天列表里出现归档」时就同步显示数量，
   // 而不是等到打开弹窗才更新。面板打开时由上面的 load() 负责，这里只在关闭态轮询，
-  // 避免刷新打断用户在面板里的勾选/操作；同时监听标签页重新可见。
-  // 关闭态走 count() 轻端点：list() 要解析每个归档会话的完整事件流,
-  // 5 秒一次的徽标轮询用它是持续的性能债;count 只读每个文件的首行头。
-  const [badgeCount, setBadgeCount] = React.useState(0);
+  // 避免刷新打断用户在面板里的勾选/操作。关闭态走 count() 轻端点：list() 要解析
+  // 每个归档会话的完整事件流,5 秒一次的徽标轮询用它是持续的性能债。
+  // 标签页隐藏时暂停 interval（隐藏页的轮询是纯浪费），恢复可见时立即刷一次并重启。
   const refreshSilently = React.useCallback(async () => {
     try {
       const result = await call("count");
       setBadgeCount(typeof result.count === "number" ? result.count : 0);
-    } catch {}
-  }, [call]);
+    } catch {
+      // count() 不可用（host 进程旧于 lib、端点缺失等）：退回一次 list()，
+      // applyItems 会同步徽标计数——宁可贵一点也不让徽标卡在过期值。
+      try {
+        const result = await call("list");
+        applyItems(Array.isArray(result.items) ? result.items : []);
+      } catch {}
+    }
+  }, [call, applyItems]);
   React.useEffect(() => {
     if (open) return;
-    refreshSilently();
-    const id = globalThis.setInterval(refreshSilently, 5000);
-    const onVis = () => { if (document.visibilityState === "visible") refreshSilently(); };
+    let id: any = 0;
+    const start = () => { if (id === 0) id = globalThis.setInterval(refreshSilently, 5000); };
+    const stop = () => { if (id !== 0) { globalThis.clearInterval(id); id = 0; } };
+    const onVis = () => {
+      if (document.visibilityState === "visible") { refreshSilently(); start(); }
+      else stop();
+    };
+    if (document.visibilityState === "visible") { refreshSilently(); start(); }
     document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
   }, [open, refreshSilently]);
+
+  // 打开态低频兜底刷新（30s）+ 恢复可见立即刷：面板长开时列表保持新鲜，
+  // 且不与关闭态徽标轮询叠加。
+  React.useEffect(() => {
+    if (!open) return;
+    const id = globalThis.setInterval(silentList, 30000);
+    const onVis = () => { if (document.visibilityState === "visible") silentList(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { globalThis.clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+  }, [open, silentList]);
+
+  // 实时同步：订阅宿主 workspaces 服务的归档集合 store。用户在会话列表点
+  // 「归档」、其它标签页变更、或宿主推送 host/archived-sessions-changed 时，
+  // installArchived 都会触发 store 通知——这里立即重取 count（面板打开时
+  // 顺带刷新列表），不必等 5 秒轮询。store 不可用时静默退回纯轮询。
+  // 归档集合含 ghost id（已删除仍占位的记录），与 count() 的存在性过滤
+  // 口径不同，因此只把集合变化当信号，数目仍以 count() 结果为准。
+  const openRef = React.useRef(open);
+  React.useEffect(() => { openRef.current = open; }, [open]);
+  React.useEffect(() => {
+    const subscribeArchived = props.subscribeArchived;
+    const archivedCountOf = props.archivedCountOf;
+    if (typeof subscribeArchived !== "function" || typeof archivedCountOf !== "function") return;
+    let lastCount = archivedCountOf();
+    const unsubscribe = subscribeArchived(() => {
+      const n = archivedCountOf();
+      if (typeof n !== "number" || n < 0 || n === lastCount) return;
+      lastCount = n;
+      refreshSilently();
+      if (openRef.current) silentList();
+    });
+    return unsubscribe;
+  }, [props.subscribeArchived, props.archivedCountOf, refreshSilently, silentList]);
+
+  // 对话框焦点管理：打开时把焦点移入面板（键盘/读屏用户不必 Tab 瞎找），
+  // 关闭时归还给徽标按钮；prevOpen 避免首次挂载（open=false）误触发归还。
+  const panelRef = React.useRef<any>(null);
+  const prevOpenRef = React.useRef(false);
+  React.useEffect(() => {
+    if (open && !prevOpenRef.current) panelRef.current?.focus?.();
+    else if (!open && prevOpenRef.current) badgeRef.current?.focus?.();
+    prevOpenRef.current = open;
+  }, [open]);
 
   // 提示（如「已恢复/已删除 N 个会话」）几秒后自动消失，避免残留误导用户，
   // 也避免删除全部归档后仍挂着上一条提示。
@@ -350,6 +440,14 @@ function ArchivePanel(props: any) {
       if (doneIds.length > 0) {
         const done = new Set(doneIds);
         setItems((current) => current.filter((item) => !done.has(item.sessionId)));
+        // 已删除会话的详情/展开态一并清掉：Map 残留会让内存缓慢增长，
+        // 展开态残留则指向一个已不存在的行。
+        setDetails((current: any) => {
+          const next = new Map(current);
+          for (const id of done) next.delete(id);
+          return next.size === current.size ? current : next;
+        });
+        setExpanded((current: any) => (current !== null && done.has(current) ? null : current));
       }
       setSelected(new Set());
       setConfirmingDelete(false);
@@ -372,6 +470,10 @@ function ArchivePanel(props: any) {
   };
 
   const hasSelection = selected.size > 0;
+  // 徽标的 accessible name：icon-only（侧边栏收起）时没有可见文本，
+  // aria-label 必须自带语义与数量，不能只依赖 title。
+  const shownCount = open ? items.length : badgeCount;
+  const badgeTitle = t("badge") + (shownCount > 0 ? " (" + String(shownCount) + ")" : "");
 
   return React.createElement(
     "div",
@@ -384,7 +486,8 @@ function ArchivePanel(props: any) {
           type: "button",
           onClick: () => setOpen(!open),
           "aria-expanded": open,
-          title: t("badge")
+          "aria-label": badgeTitle,
+          title: badgeTitle
         },
         React.createElement("span", { className: "sa_badgeIcon", "aria-hidden": true },
           React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" },
@@ -398,7 +501,7 @@ function ArchivePanel(props: any) {
       ),
     open ? React.createElement(
       "div",
-      { className: "sa_panel", role: "dialog", "aria-label": t("panelTitle") },
+      { className: "sa_panel", role: "dialog", "aria-label": t("panelTitle"), tabIndex: -1, ref: panelRef },
       React.createElement(
         "div",
         { className: "sa_header" },
@@ -442,7 +545,7 @@ function ArchivePanel(props: any) {
       React.createElement(
         "div",
         { className: "sa_body" },
-        notice !== null ? React.createElement("p", { className: notice.kind === "ok" ? "sa_ok" : "sa_error", role: "status" }, notice.text) : null,
+        notice !== null ? React.createElement("p", { className: notice.kind === "ok" ? "sa_ok" : notice.kind === "warn" ? "sa_warn" : "sa_error", role: "status" }, notice.text) : null,
         error !== null ? React.createElement("p", { className: "sa_error", role: "alert" }, error) : null,
         loading && items.length === 0 ? React.createElement("p", { className: "sa_empty" }, "…") : null,
         !loading && items.length === 0 && error === null ? React.createElement("p", { className: "sa_empty" }, t("empty")) : null,
@@ -550,12 +653,29 @@ async function apply(ctx: any) {
     if (!result.ok) throw new Error(method + " failed: " + result.error.code + ": " + result.error.message);
     return result.value;
   });
+  // 宿主 workspaces 服务的归档集合 store（实时信号的来源）：归档/恢复/
+  // 宿主推送都会经过 installArchived 触发 store 通知。用 ctx.get 而非
+  // inject——服务缺失时插件照常激活，面板退回 5s 轮询，不因等待挂起。
+  const workspaces = ctx.get("workspaces");
+  const archivedStore = workspaces !== null && typeof workspaces === "object"
+    && workspaces.list !== void 0
+    && typeof workspaces.list.subscribe === "function"
+    && typeof workspaces.list.getSnapshot === "function"
+    ? workspaces.list
+    : void 0;
   ctx.slots.inject("sidebar.footer.action", () => ctx.slots.register({
     name: "sidebar.footer.action",
     id: "session-archive",
     order: 20,
     locale: NS,
-    inject: () => ({ call })
+    inject: () => ({
+      call,
+      subscribeArchived: archivedStore !== void 0 ? (fn: any) => archivedStore.subscribe(fn) : void 0,
+      archivedCountOf: archivedStore !== void 0 ? () => {
+        const snapshot = archivedStore.getSnapshot();
+        return Array.isArray(snapshot?.archivedSessionIds) ? snapshot.archivedSessionIds.length : -1;
+      } : void 0,
+    })
   }, ArchivePanel));
 }
 

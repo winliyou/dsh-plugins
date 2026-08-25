@@ -1054,7 +1054,8 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
     }
 
     /** 应用/更新工具族限制（lean 模式）。总开关关闭、族被禁用、已升级、
-     *  已从配置删除的族一律放行。 */    function applyFamilies(a: any) {
+     *  已从配置删除的族一律放行。 */
+    function applyFamilies(a: any) {
       if (!cfg.enabled || !cfg.leanByDefault) {
         for (const [id, disposer] of a.familyDisposers) {
           try { disposer(); } catch {}
@@ -1466,7 +1467,11 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       if (session === null || typeof session !== 'object' || typeof session.id !== 'string') return;
       const before = bootstrapState.get(session.id);
       observePhase(bootstrapState, session.id, event);
-      const a = agents.get(session.id);
+      // agents 以 agent.id 为键，此处以 session.id 取——DSH 中一个 agent 绑定
+      // 一个会话，两者 id 同源恒等（回归测试即按此构造）。防御性兜底：若未来
+      // 二者分离，按 agent.session.id 兜底查找，晋升信号不至于静默丢配。
+      const a = agents.get(session.id)
+        ?? [...agents.values()].find((st) => st.agent?.session?.id === session.id);
       if (a !== void 0) {
         const after = bootstrapState.get(session.id);
         if (before === void 0 || after === void 0 || before.promoted !== after.promoted) {

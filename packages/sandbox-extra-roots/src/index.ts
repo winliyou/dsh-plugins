@@ -32,7 +32,7 @@
 
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import { canonicalPath, isPathUnder, loadLandlock, sandboxAvailable, seatbeltProfileArgs, writableRoots } from "./common.js";
 import { createConfigStore } from "./config-store.js";
@@ -73,6 +73,15 @@ const ORIGINAL = Symbol.for("cordis.original");
 /** 以当前环境 canonical 化一个路径(dsh-sandbox 缺失时原样返回)。 */
 function canon(path: string): string {
   return typeof canonicalPath === "function" ? canonicalPath(path) : path;
+}
+
+/** 展开 ~ 前缀为用户主目录（"~"、"~/"、"~\"），其余原样返回。
+ * 设置页允许 ~ 拼写（用户最常见的缓存目录写法），host 在校验与
+ * 规范化之前统一展开，保证 validate/normalize 两个入口看到同一路径。 */
+function expandTilde(path: string): string {
+  if (path === "~") return homedir();
+  if (path.startsWith("~/") || path.startsWith("~\\")) return join(homedir(), path.slice(2));
+  return path;
 }
 
 /** Windows 盘根:"C:"、"C:\"、"C:/"。 */
@@ -231,6 +240,7 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
       onUpdate: (merged) => {
         sandboxState.extraRoots = normalizeRoots({ ...DEFAULT_CONFIG, ...patchConfig, ...merged });
         fsState.extraRoots = sandboxState.extraRoots;
+        dirExistCache.clear(); // 新配置按真实文件系统立即判定，不沿用旧 TTL
       }
     });
     const cfg = store.effective();
@@ -244,7 +254,8 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
         if (!Array.isArray(partial.extraWritableRoots)) {
           throw new TypeError('sandbox-extra-roots config field "extraWritableRoots" must be an array');
         }
-        for (const root of partial.extraWritableRoots) {
+        for (const rawRoot of partial.extraWritableRoots) {
+          const root = typeof rawRoot === "string" ? expandTilde(rawRoot) : rawRoot;
           if (typeof root !== "string" || root.length === 0 || !isAbsolute(root)) {
             throw new TypeError(`sandbox-extra-roots: extra writable root must be a non-empty absolute path: ${JSON.stringify(root)}`);
           }
@@ -266,7 +277,8 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
       if (!Array.isArray(c.extraWritableRoots)) {
         ctx.logger?.warn?.("sandbox-extra-roots: extraWritableRoots must be an array of absolute paths; ignoring current config");
       }
-      const normalized = roots
+      const expanded = roots.map((root: any) => (typeof root === "string" ? expandTilde(root) : root));
+      const normalized = expanded
         .filter((root: any) => {
           if (typeof root === "string" && root.length > 0 && isAbsolute(root)) return true;
           ctx.logger?.warn?.(`sandbox-extra-roots: ignoring non-absolute extra writable root ${JSON.stringify(root)}`);
@@ -284,6 +296,27 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
       return [...new Set(normalized)];
     }
 
+    // 目录存在性短 TTL 缓存：bwrap/Landlock 的每次 confine 与 fs fence 的每次
+    // 拒绝复核都会按根逐个 statSync（同步 IO 落在 bash 启动热路径上）。目录的
+    // 创建/删除是低频事件，TTL 内沿用上次结果；代价是新建目录最多延迟 TTL
+    // 才被授予（对"配置了还不存在的目录，稍后创建"的场景可接受）。
+    // 配置热更新时整体失效（onUpdate），保证新配置立即按真实文件系统判定。
+    const dirExistCache = new Map<string, { ok: boolean; until: number }>();
+    const DIR_EXIST_TTL_MS = 5000;
+    function isExistingDirCached(root: string): boolean {
+      const now = Date.now();
+      const hit = dirExistCache.get(root);
+      if (hit !== undefined && hit.until > now) return hit.ok;
+      let ok = false;
+      try {
+        ok = statSync(root, { throwIfNoEntry: false })?.isDirectory() === true;
+      } catch {
+        ok = false;
+      }
+      dirExistCache.set(root, { ok, until: now + DIR_EXIST_TTL_MS });
+      return ok;
+    }
+
     // bwrap/Landlock 的 --bind/--rw 与 fs fence 的包含判断都只对"当前真实
     // 存在的目录"生效:不存在的 root 会让 bwrap/Landlock 启动失败(Landlock
     // 契约里是 "unopenable grant root"),也会造成 bash 与 fs 两侧判定分叉,
@@ -291,13 +324,7 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
     function existingDirectoryRoots(roots: string[], warned: Set<string>, side: string) {
       const existing = [];
       for (const root of roots) {
-        let valid = false;
-        try {
-          valid = statSync(root, { throwIfNoEntry: false })?.isDirectory() === true;
-        } catch {
-          valid = false;
-        }
-        if (valid) {
+        if (isExistingDirCached(root)) {
           existing.push(root);
           continue;
         }

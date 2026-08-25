@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/winliyou/dsh-plugins) (2026-08-25)
+
+### Features
+
+* **`~` 展开**：设置页允许 `~` / `~/x` 拼写，host 在 validate 与 normalize 两个入口前统一展开为用户主目录——最常见的缓存目录写法不再被"非绝对路径"拒绝
+* **保存前即时反馈**：设置卡片在编辑期词法预检草稿并逐行提示将被拒绝/忽略/去重的条目（危险根 / 系统目录 / 非绝对路径 / 重复行）。此前 host 会在保存时静默剔除这些行并只打 host 日志，UI 一律显示"已保存"，用户以为生效了
+* textarea 加 `spellCheck=false` 与示例 placeholder
+
+### Bug Fixes
+
+* 目录存在性判定加 5s TTL 缓存（配置热更新 `onUpdate` 时整体失效）：bwrap/Landlock 每次 confine 与 fs fence 每次拒绝复核不再逐根 `statSync`（同步 IO 落在 bash 启动热路径上）；代价是新建目录最多延迟 TTL 被授予，对"配置后稍后创建"的场景可接受
+
 ## [0.3.0](https://github.com/winliyou/dsh-plugins) (2026-08-22)
 
 ### Features

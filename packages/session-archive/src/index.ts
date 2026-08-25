@@ -401,21 +401,29 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
             deleted.push(sessionId);
             continue;
           }
-          if (ctx.sessions.get(sessionId) !== undefined && Date.now() - fresh.mtimeMs < 60_000) {
+          const inMemory = ctx.sessions.get(sessionId) !== undefined;
+          if (inMemory && Date.now() - fresh.mtimeMs < 60_000) {
             failed.push({ sessionId, reason: 'busy' });
             continue;
           }
           await rm(file.path, { force: true });
           await rm(dirname(file.path), { recursive: true, force: true });
-          // rm 后复验:目录被删后,宿主 materialize 的 mkdir -p 仍可能把路径
-          // 整体重建(生成流恰在删除窗口内落盘)。等约 300ms 再 stat;若重现
-          // 则再删一次,仍未删掉计入 failed('reappeared'),不谎报成功。
-          if (await filePresentAfterSettle(file.path, 300)) {
+          // rm 后复验：防宿主 materialize 的 mkdir -p 把路径在删除窗口内重建。
+          // 重现只可能来自活跃写入方（内存中的生成流，或刚写完不久、客户端
+          // 重连即恢复的 tab）。据此分两档：
+          //   - 可能活跃（内存存在 或 60s 内有写入）：维持原 300ms settle 两段
+          //     复验；重现则再删一次，仍未删掉计入 failed('reappeared')。
+          //   - 冷文件（不在内存且超过 60s 无写入）：未来写入需要用户主动继续
+          //     对话，不会落在删除窗口内——做零等待的即时复验即可。批量清理
+          //     陈旧归档不再为每个文件白付 2×300ms。
+          const plausiblyActive = inMemory || Date.now() - fresh.mtimeMs < 60_000;
+          const settleMs = plausiblyActive ? 300 : 0;
+          if (await filePresentAfterSettle(file.path, settleMs)) {
             try {
               await rm(file.path, { force: true });
               await rm(dirname(file.path), { recursive: true, force: true });
             } catch {}
-            if (await filePresentAfterSettle(file.path, 300)) {
+            if (await filePresentAfterSettle(file.path, settleMs)) {
               failed.push({ sessionId, reason: 'reappeared' });
               continue;
             }

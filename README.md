@@ -39,7 +39,10 @@ packages/
 
 ```bash
 bun install              # 安装依赖（含测试用的 @deepseek-ai/dsh-typert-protocol）
-bun test                 # 运行 scripts/test.mjs（config-store / remote / host 插件回归）
+bun run build            # 全仓构建：每包 tsc 编译 src/ → lib/，esbuild 打包 client
+bun run typecheck        # tsc --noEmit（host + client 两套 tsconfig）
+bun run test             # vitest 回归（config-store / remote / host 插件 / bundle 元数据）
+bun run test:ci          # build + test（发布前验证；client.cjs 冒烟依赖新鲜构建）
 ```
 
 ## 版本管理与发布

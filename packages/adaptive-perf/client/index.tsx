@@ -2,7 +2,7 @@ import * as React from "react";
 import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
 
     // ── 样式（注入 style 标签，模仿官方卡片外观）──────────────────────────
-    var css = ".ap_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ap_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ap_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ap_header:hover,.ap_card[data-open=true]>.ap_header{background:var(--dsw-alias-interactive-bg-hover)}.ap_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ap_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ap_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ap_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ap_label{font-size:12px;font-weight:500;line-height:18px}.ap_input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:32px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:0 10px;font-size:13px;line-height:20px}.ap_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.ap_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ap_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ap_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ap_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:0 0;color:inherit}.ap_status{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);flex:1}.ap_status.ap_error{color:var(--dsw-alias-state-error-primary)}.ap_badge_error{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);color:var(--dsw-alias-state-error-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px;max-width:260px;overflow:hidden;text-overflow:ellipsis}";
+    var css = ".ap_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ap_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ap_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ap_header:hover,.ap_card[data-open=true]>.ap_header{background:var(--dsw-alias-interactive-bg-hover)}.ap_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ap_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ap_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ap_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ap_label{font-size:12px;font-weight:500;line-height:18px}.ap_input{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:32px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:0 10px;font-size:13px;line-height:20px}.ap_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.ap_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ap_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ap_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ap_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:0 0;color:inherit}.ap_status{font-size:11px;line-height:16px;color:var(--dsw-alias-label-tertiary);flex:1}.ap_section{border-top:1px dashed var(--dsw-alias-border-l2);margin-top:8px;padding-top:2px}.ap_sectionHead{appearance:none;width:100%;font:inherit;color:var(--dsw-alias-label-secondary);text-align:left;cursor:pointer;background:0 0;border:0;border-radius:6px;align-items:center;justify-content:space-between;gap:8px;padding:6px 2px;display:flex}.ap_sectionHead:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.ap_sectionTitle{font-size:12px;font-weight:600;line-height:18px}.ap_sectionChevron{flex:none;font-size:10px}.ap_sectionBody{flex-direction:column;display:flex}.ap_status.ap_error{color:var(--dsw-alias-state-error-primary)}.ap_badge_error{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 10%,transparent);color:var(--dsw-alias-state-error-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px;max-width:260px;overflow:hidden;text-overflow:ellipsis}";
     var tagId = "@chaoset/adaptive-perf/client.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"" + tagId + "\"]") === null) {
       var tag = document.createElement("style");
@@ -61,7 +61,10 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       minimalPromptPersona: "persona 文本",
       fieldMinimalPromptPersona: "按名替换 deployment:persona；默认与极简模式逐字相同。留空 = 不替换（保留原 persona）",
       minimalPromptSuppressSections: "屏蔽全局引导段",
-      fieldMinimalPromptSuppressSections: "屏蔽 harness:identity / harness:source / app:web-surface 三个全局段（等同极简 complete persona 的效果；plan-mode 与 PTC 的 SDK 段不受影响）"
+      fieldMinimalPromptSuppressSections: "屏蔽 harness:identity / harness:source / app:web-surface 三个全局段（等同极简 complete persona 的效果；plan-mode 与 PTC 的 SDK 段不受影响）",
+      sectionBootstrap: "首轮锚定（bootstrap）",
+      sectionPrompt: "极简提示词层（语域锚定）",
+      sectionAdvanced: "高级：工具族与核心工具"
     };
     const en = {
       title: "Adaptive performance (adaptive-perf)",
@@ -110,7 +113,10 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       minimalPromptPersona: "Persona text",
       fieldMinimalPromptPersona: "Shadows deployment:persona by name; defaults to the exact minimal-mode text. Empty = keep the original persona",
       minimalPromptSuppressSections: "Suppress global orientation sections",
-      fieldMinimalPromptSuppressSections: "Shadow harness:identity / harness:source / app:web-surface to empty (same effect as minimal's complete persona; plan-mode and the PTC SDK sections are unaffected)"
+      fieldMinimalPromptSuppressSections: "Shadow harness:identity / harness:source / app:web-surface to empty (same effect as minimal's complete persona; plan-mode and the PTC SDK sections are unaffected)",
+      sectionBootstrap: "First-request bootstrap",
+      sectionPrompt: "Minimal prompt layer (register anchor)",
+      sectionAdvanced: "Advanced: tool families & core tools"
     };
 
     // ── 表单字段 ─────────────────────────────────────────────────────────
@@ -141,6 +147,22 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
           onChange: (e: any) => props.onChange(e.target.checked),
           disabled: props.disabled === true
         })
+      );
+    }
+    // 可折叠分组：20+ 字段平铺会淹没主开关；按语义区块（bootstrap /
+    // 提示词层 / 高级 JSON）渐进披露，默认展开常用组、收起高级组。
+    function Section(props: any) {
+      const [expanded, setExpanded] = React.useState(props.defaultOpen !== false);
+      return React.createElement(
+        "div",
+        { className: "ap_section" },
+        React.createElement(
+          "button",
+          { type: "button", className: "ap_sectionHead", onClick: () => setExpanded(!expanded), "aria-expanded": expanded },
+          React.createElement("span", { className: "ap_sectionTitle" }, props.title),
+          React.createElement("span", { className: "ap_sectionChevron", "aria-hidden": true }, expanded ? "▲" : "▼")
+        ),
+        expanded ? React.createElement("div", { className: "ap_sectionBody" }, props.children) : null
       );
     }
     function familiesToText(families: any) {
@@ -188,6 +210,8 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       const [cfg, setCfg] = React.useState<any>(null);
       const [draft, setDraft] = React.useState<any>(null);
       const [familiesText, setFamiliesText] = React.useState("");
+      // maxTokens 的编辑期草稿：显示原始输入（允许中间态如空串），失焦才归一化。
+      const [maxTokensText, setMaxTokensText] = React.useState<any>(null);
       const [saving, setSaving] = React.useState(false);
       const [status, setStatus] = React.useState<any>(null);
 
@@ -198,6 +222,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
           setCfg(value);
           setDraft(value);
           setFamiliesText(familiesToText(value.families));
+          setMaxTokensText(null);
         }).catch((error: any) => {
           if (!cancelled) setStatus({ kind: "error", text: t("loadFailed") + ": " + (error && error.message || error) });
         });
@@ -219,6 +244,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       const discard = () => {
         setDraft(cfg);
         setFamiliesText(cfg === null ? "" : familiesToText(cfg.families));
+        setMaxTokensText(null);
         setStatus(null);
       };
       const save = () => {
@@ -236,6 +262,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
           setCfg(next);
           setDraft(next);
           setFamiliesText(familiesToText(next.families));
+          setMaxTokensText(null);
           setStatus({ kind: "ok", text: t("saved") });
         }).catch((error: any) => {
           setStatus({ kind: "error", text: t("saveFailed") + ": " + (error && error.message || error) });
@@ -310,6 +337,8 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
             disabled: draft === null,
             onChange: (v: any) => setDraft({ ...draft, suppressInjectedContext: v })
           }),
+          // ── 首轮锚定（bootstrap）分组 ──
+          React.createElement(Section, { title: t("sectionBootstrap") },
           React.createElement(BoolField, {
             label: t("bootstrapEnabled"),
             hint: t("fieldBootstrapEnabled"),
@@ -368,15 +397,22 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
               type: "number",
               min: 0,
               step: 1,
-              value: draft === null ? 0 : String((draft.bootstrap && draft.bootstrap.maxTokens) || 0),
+              // 草稿态：编辑期间显示原始输入（清空/删改中间态不立即跳回 0），
+              // 失焦后才把显示归一化为生效数字，避免输入被强制改写的突兀感。
+              value: maxTokensText !== null ? maxTokensText : String(draft === null ? 0 : (draft.bootstrap && draft.bootstrap.maxTokens) || 0),
               disabled: draft === null || (draft.bootstrap && draft.bootstrap.enabled === false),
               onChange: (e: any) => {
                 const n = Number(e.target.value);
                 // 非法/清空归 0（= 不封顶）；number input 本身已挡住大部分非法输入。
+                setMaxTokensText(e.target.value);
                 setDraft({ ...draft, bootstrap: { ...(draft.bootstrap || {}), maxTokens: Number.isSafeInteger(n) && n > 0 ? n : 0 } });
-              }
+              },
+              onBlur: () => setMaxTokensText(null)
             })
+          )
           ),
+          // ── 极简提示词层分组 ──
+          React.createElement(Section, { title: t("sectionPrompt") },
           React.createElement(BoolField, {
             label: t("minimalPromptEnabled"),
             hint: t("fieldMinimalPromptEnabled"),
@@ -397,7 +433,10 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
             value: draft === null ? "" : ((draft.minimalPrompt && draft.minimalPrompt.persona) || ""),
             disabled: draft === null || (draft.minimalPrompt && draft.minimalPrompt.enabled === false),
             onChange: (v: any) => setDraft({ ...draft, minimalPrompt: { ...(draft.minimalPrompt || {}), persona: v } })
-          }),
+          })
+          ),
+          // ── 高级分组（默认收起）：工具族 JSON 与核心工具展示 ──
+          React.createElement(Section, { title: t("sectionAdvanced"), defaultOpen: false },
           React.createElement(Field, {
             label: t("families"),
             hint: familiesInvalid ? t("invalidFamilies") + (familiesError !== null ? " — " + familiesError : "") : t("fieldFamilies")
@@ -415,6 +454,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
             hint: t("fieldCoreTools")
           },
             React.createElement("p", { className: "ap_hint" }, draft === null ? "" : (draft.coreTools || []).join(", "))
+          )
           ),
           React.createElement(
             "div",

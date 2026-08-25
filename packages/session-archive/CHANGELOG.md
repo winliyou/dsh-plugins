@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/winliyou/dsh-plugins) (2026-08-25)
+
+### Features
+
+* **实时徽标与列表**：订阅宿主 workspaces 服务的归档集合 store——会话菜单点「归档」、其它标签页变更、宿主推送 `host/archived-sessions-changed` 都即时反映到侧边栏徽标与打开中的面板，不再等 5s 轮询；集合含 ghost id 与 `count()` 口径不同，故仅作触发信号、数目仍以 `count()` 为准；store 不可用时经 `ctx.get` 探测降级为纯轮询（不写 inject，插件不因等待挂起）
+* `count()` 调用失败自动退回一次 `list()` 取数并同步徽标：任何 host 版本组合（如宿主进程旧于 lib、端点缺失）下徽标都能自我纠正，不再卡在过期值
+* **徽标 hover 与「设置」入口对齐**：几何与官方侧边栏设置触发按钮逐字一致（`calc(100% + 4px)` 宽 / 42px 高 / 负外边距 / 非对称内边距 / 12px 圆角 / 同一 hover 变量；收起态 36×36 圆形、图标 18px）。根因修复：`.sa_root` 是 `footerActions`（flex 容器）的直接 flex 项会收缩到内容宽，显式 `width:100%` 撑满后 hover 命中面积与设置入口完全一致
+
+### Bug Fixes
+
+* `deleteArchived` 冷文件快速路径：不在内存且 60s 内无写入的归档删除跳过固定 2×300ms settle 复验（重现只可能来自内存生成流或刚写过的 tab），批量清理陈旧归档从 ~12s/20 个降到 <1s；可能活跃的会话维持原两段复验与 `reappeared` 语义
+* 徽标关闭态轮询在标签页隐藏时暂停 interval，恢复可见立即刷一次并重启（隐藏页轮询是纯浪费）；面板打开期间新增 30s 静默刷新（`sameItems` 比较，数据不变不重渲染、不打断勾选）
+* 批量删除成功后清理 `details`/`expanded` 缓存：内存不再随操作缓慢增长，展开态不再指向已删除的行
+
+### Accessibility / UI
+
+* 面板焦点管理：打开时焦点移入面板、关闭时归还徽标按钮（`prevOpen` 防首次挂载误触发）
+* 徽标按钮补回 `aria-label`（icon-only 场景 accessible name 自带语义与数量，不依赖 `title`）
+* warn 级通知独立 warn 色（`state-warn-primary`），不再与错误同红
+* 面板 150ms 入场动画（淡入 + 轻微上移，respect `prefers-reduced-motion`）；z-index 层级来源注释
+
 ## [0.2.4](https://github.com/winliyou/dsh-plugins) (2026-08-23)
 
 ### Bug Fixes
