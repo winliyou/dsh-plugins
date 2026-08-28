@@ -437,8 +437,15 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
             // 宿主契约:sandboxPolicy.resolve() 同步返回普通对象(见 dsh.d.ts)。
             // 这里不能 await——若宿主未来异步化,policy.mode 会是 undefined,
             // 恒走 rethrow 分支,fs 侧额外目录将静默失效;升级时核对该签名。
-            const policy = sandboxPolicy ?? ctx.sandboxPolicy.resolve();
-            if (policy.mode !== "workspace-write") throw error;
+            // 策略解析本身失败(服务缺失/契约变化)时保持官方拒绝语义:rethrow
+            // 原始 FS_SANDBOX_DENIED,绝不让插件内部异常盖过沙盒拒绝。
+            let policy: any;
+            try {
+              policy = sandboxPolicy ?? ctx.sandboxPolicy.resolve();
+            } catch {
+              throw error;
+            }
+            if (policy?.mode !== "workspace-write") throw error;
             const fresh = await this.resolve(target.displayPath);
             // 与 bash 侧(bwrap/Landlock)对齐:只对当前真实存在的目录放行,
             // 消除"文件工具放行、bash 拒绝"或反向的分叉;每次调用重新

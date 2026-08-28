@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/winliyou/dsh-plugins) (2026-08-28)
+
+### Bug Fixes
+
+* **适配 DSH 0.1.1-rc.2**：6 个 `@deepseek-ai/*` optionalDependencies（typert-protocol / terminal / terminal-bash / tool-bash-persistent / fs-local / tool-str-replace-editor）range 从 `^0.1.0-rc.8` 升到 `^0.1.1-rc.2`。npm semver 的 prerelease 规则下旧 range 无法匹配 `0.1.1-rc.2`，新版宿主下真实 Minimal 工具对的官方模块会解析到旧版本或缺失
+* 已对照 0.1.1-rc.2 全量 diff 官方包：agent/service 事件、systemPrompt、tools、skills、agentPresets 契约无变化，运行时逻辑无需调整
+
 ## [0.9.0](https://github.com/winliyou/dsh-plugins) (2026-08-25)
 
 ### Features

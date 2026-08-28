@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/winliyou/dsh-plugins) (2026-08-28)
+
+### Bug Fixes
+
+* **适配 DSH 0.1.1-rc.2**：`@deepseek-ai/dsh-sandbox`、`@deepseek-ai/dsh-typert-protocol`、`@deepseek-ai/node-addon-landlock-run` 依赖 range 从 `^0.1.0-rc.8` 升到 `^0.1.1-rc.2`。npm semver 的 prerelease 规则下 `^0.1.0-rc.8` 无法匹配 `0.1.1-rc.2`（带 prerelease 的版本只满足同 `[major,minor,patch]` 元组的 range），`dsh plugin add` 在新版宿主下会解析到旧官方包或直接失败
+* fs fence 包装对 `sandboxPolicy` 的解析加防御：宿主策略服务缺失/契约变化时 rethrow 原始 `FS_SANDBOX_DENIED`，插件内部异常不再盖过沙盒拒绝语义
+* 已对照 0.1.1-rc.2 的 `dsh-sandbox-local` 复核：Seatbelt SBPL profile、bwrap/Landlock argv 契约无漂移（仅新增 `--unshare-pid` 与 read-only 分支重构，插件在 `--` 前插入额外根的方式不受影响）
+
 ## [0.4.0](https://github.com/winliyou/dsh-plugins) (2026-08-25)
 
 ### Features

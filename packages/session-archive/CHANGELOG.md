@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/winliyou/dsh-plugins) (2026-08-28)
+
+### Bug Fixes
+
+* **适配 DSH 0.1.1-rc.2**：`@deepseek-ai/dsh-typert-protocol` 依赖 range 从 `^0.1.0-rc.8` 升到 `^0.1.1-rc.2`。npm semver 的 prerelease 规则下旧 range 无法匹配 `0.1.1-rc.2`，新版宿主下面板远程服务会因官方包解析到旧版本而不可用
+* 已对照 0.1.1-rc.2 复核 workspaceRegistry / sessionPersistence / sessions 契约与 `session/title`、`user/message`、`assistant/message` 事件形状：无变化，host 逻辑无需调整
+
 ## [0.3.0](https://github.com/winliyou/dsh-plugins) (2026-08-25)
 
 ### Features

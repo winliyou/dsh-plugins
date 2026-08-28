@@ -61,7 +61,6 @@ bun run test:ci          # build + test（发布前验证；client.cjs 冒烟依
 ```bash
 # 例：发一个 patch 修复
 cd packages/sandbox-extra-roots && bunx npm version patch
-cd ../sandbox-extra-roots && bunx npm version patch
 cd ../adaptive-perf && bunx npm version patch
 cd ../session-archive && bunx npm version patch
 git add -A && git commit -m "fix: ..." && git push
@@ -194,7 +193,6 @@ pnpm add @chaoset/sandbox-extra-roots @chaoset/adaptive-perf @chaoset/session-ar
    ```
    - 如果这些包还没有发布，需要从本地源码安装，直接把包名换成对应路径：
      ```bash
-     dsh plugin --profile web add /absolute/path/to/packages/sandbox-extra-roots
      dsh plugin --profile web add /absolute/path/to/packages/sandbox-extra-roots
      dsh plugin --profile web add /absolute/path/to/packages/adaptive-perf
      dsh plugin --profile web add /absolute/path/to/packages/session-archive
