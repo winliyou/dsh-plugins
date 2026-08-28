@@ -72,7 +72,13 @@ var css = [
   ".sa_msgRole{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:14px;text-transform:uppercase;letter-spacing:.04em}",
   ".sa_msgText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:18px}",
   ".sa_msgTextUser{color:var(--dsw-alias-label-secondary)}",
-  ".sa_busy{opacity:.55;pointer-events:none}"
+  ".sa_busy{opacity:.55;pointer-events:none}",
+  // 加载中：spinner + 文案（列表与详情共用）。系统开启「减少动态效果」时
+  // spinner 停止旋转（保持静态圆环，提示语义仍在）。
+  ".sa_loading{color:var(--dsw-alias-label-tertiary);margin:8px 0;font-size:12px;line-height:18px;display:flex;align-items:center;gap:6px}",
+  ".sa_spin{flex:none;width:12px;height:12px;border:2px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-label-secondary);border-radius:50%;animation:sa-spin .8s linear infinite}",
+  "@keyframes sa-spin{to{transform:rotate(360deg)}}",
+  "@media (prefers-reduced-motion:reduce){.sa_spin{animation:none}}"
 ].join("");
 var tagId = "@chaoset/session-archive/client.css";
 if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"" + tagId + "\"]") === null) {
@@ -92,6 +98,7 @@ const zh = {
   close: "关闭",
   empty: "暂无归档会话。在会话列表的更多菜单中归档会话后会出现在这里。",
   loadFailed: "加载归档列表失败",
+  loading: "加载中…",
   selectAll: "全选",
   selected: "已选 {n} 项",
   restore: "恢复所选",
@@ -125,6 +132,7 @@ const en = {
   close: "Close",
   empty: "No archived sessions. Archive a session from its menu in the session list and it will show up here.",
   loadFailed: "Failed to load archive list",
+  loading: "Loading…",
   selectAll: "Select all",
   selected: "{n} selected",
   restore: "Restore",
@@ -547,7 +555,11 @@ function ArchivePanel(props: any) {
         { className: "sa_body" },
         notice !== null ? React.createElement("p", { className: notice.kind === "ok" ? "sa_ok" : notice.kind === "warn" ? "sa_warn" : "sa_error", role: "status" }, notice.text) : null,
         error !== null ? React.createElement("p", { className: "sa_error", role: "alert" }, error) : null,
-        loading && items.length === 0 ? React.createElement("p", { className: "sa_empty" }, "…") : null,
+        // 加载中明确提示（loading 只由打开面板/手动刷新置位，静默刷新不打扰）：
+        // 此前列表已有内容时手动刷新零反馈，首次加载只有一个孤零零的 "…"。
+        loading ? React.createElement("p", { className: "sa_loading", role: "status" },
+          React.createElement("span", { className: "sa_spin", "aria-hidden": true }),
+          t("loading")) : null,
         !loading && items.length === 0 && error === null ? React.createElement("p", { className: "sa_empty" }, t("empty")) : null,
         items.length > 0 ? React.createElement(
           "ul",
@@ -608,7 +620,9 @@ function ArchivePanel(props: any) {
               isExpanded ? React.createElement(
                 "div",
                 { className: "sa_detail" },
-                detailPending ? React.createElement("p", { className: "sa_empty" }, "…") : null,
+                detailPending ? React.createElement("p", { className: "sa_loading" },
+                  React.createElement("span", { className: "sa_spin", "aria-hidden": true }),
+                  t("loading")) : null,
                 detail === void 0 ? null :
                   detail.error !== void 0 ? React.createElement("p", { className: "sa_error" }, detail.error) :
                   !Array.isArray(detail.messages) ? React.createElement("p", { className: "sa_error" }, t("detailLoadFailed")) :

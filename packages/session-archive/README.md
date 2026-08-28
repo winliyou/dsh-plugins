@@ -1,50 +1,38 @@
-# @chaoset/session-archive
+# @chaoset/session-archive — DSH 归档会话管理
 
-DSH 插件：归档会话管理 —— 补上 DSH 缺失的"归档后半程"。
+补上 DSH 缺失的「归档后半程」：web 侧边栏底部新增**归档**面板。
 
-web 侧边栏底部新增 **归档** 面板（🗂）：
-
-- **查看归档**：列出全部归档会话（标题、目录、创建/最后修改时间、体积、
-  运行状态），点击任意会话可展开**只读浏览**其完整聊天内容（用户/助手文本
-  消息）。
-- **一次多选批量操作**：
-  - **恢复归档**（unarchive）：把勾选的会话移回会话树，恢复其在原工作区的
-    位置（归档时保留的 slot 会计不被破坏）。
-  - **彻底删除**（delete）：删除勾选会话的持久化文件与会话目录。删除为
-    两段式确认（第一次点击进入确认态，4 秒内再次点击执行），避免误删。
-    删除后该会话在侧边栏对话列表与归档面板中都不会再出现。
-- 工具条提供**全选**、已选计数；**运行中**（live）的会话显示黄色徽标且
-  禁止勾选删除（请先停止会话）；列表随会话树变化自动可刷新（⟳）。
+- **查看归档**：列出全部归档会话（标题、目录、时间、体积、运行状态）；点击
+  会话可展开**只读浏览**其聊天内容（用户/助手文本消息）。
+- **批量恢复**：勾选多个会话一键移回会话树，恢复其在原工作区的位置。
+- **彻底删除**：删除勾选会话的持久化文件与会话目录；两段式确认（第一次点击
+  进入确认态，4 秒内再次点击执行）避免误删。运行中（live）的会话禁止删除，
+  需先停止。
+- 工具条提供全选与已选计数；侧边栏徽标实时显示归档数量（订阅宿主归档集合，
+  轻量轮询兜底）。
 
 ## 安装
 
 ```bash
 dsh plugin --profile web add @chaoset/session-archive
+dsh plugin --profile web remove @chaoset/session-archive
 ```
 
-重启 web profile 后，侧边栏底部出现"归档"按钮。插件由两部分组成：host
-插件（归档读写/删除逻辑）与 web 客户端（面板 UI），随 `dsh.bundle.patch`
-自动激活。
+重启 web profile 后，侧边栏底部出现「归档」入口。其他安装来源见仓库根
+`README.md` 的「安装」。
 
 ## 工作原理
 
-- **列表**：`workspaceRegistry.archivedSessionIds` ∩ `sessionPersistence.list()`，
-  标题从会话事件流折叠（最后一个 `session/title` 事件，与 dsh-session-title
-  同规则）；文件信息来自 `sessionPersistence.locate()` + `stat`。
-- **查看**：`sessionPersistence.readFrom(id, 0)` 只读解析会话事件，提取
-  文本消息（`user/message` / `assistant/message` 的 text 块），不做任何
-  写入/修复。
-- **删除**：live 会话拒绝；每个会话删除持久化文件与会话目录（`locate()`
-  定位）。删除后**保留**该会话在归档集合中的 ghost id：宿主的
-  `archiveSession` 不停止内存会话，若把 id 移出归档集合，仍挂在内存中的
-  会话会因"不再归档"而立刻重新出现在侧边栏对话列表（效果等同"恢复"）；
-  保留 ghost id 后由 `list()` 的存在性过滤隐藏，面板与侧边栏都不再显示。
-  归档集合没有官方写入 API，插件复用 registry 自身的串行化写入通道
-  （`enqueueOperation → requireState → setState`，与 `archiveSession` 同一
-  路径）；若内部形状变化会自动降级为"仅删文件"，归档列表按文件存在性
-  过滤，功能不受影响。
-- **恢复**：仅从归档集合移除**仍存在持久化文件**的会话 id，会话数据不动，
-  恢复后回到原工作区位置；文件已删的已删除会话拒绝恢复（防"复活"）。
+- **列表**：宿主归档集合 ∩ 持久化会话列表；标题折叠自会话事件流的最后一个
+  `session/title` 事件，体积来自文件 stat。
+- **查看**：只读解析会话事件流，提取用户/助手文本消息；超过 `detailMaxMessages`
+  条时截断并如实标注。
+- **恢复**：仅从归档集合移除仍存在持久化文件的会话 id，会话数据不动；文件已删
+  的会话拒绝恢复。
+- **删除**：live 会话拒绝；每个会话删除持久化文件与会话目录。删除后**保留**
+  该会话在归档集合中的占位 id——否则仍挂在内存中的会话会因「不再归档」立刻
+  重新出现在侧边栏（效果等同恢复）；列表按文件存在性过滤，面板与侧边栏都不再
+  显示该会话。宿主内部形状变化时自动降级为「仅删文件」，功能不受影响。
 
 ## Remote API（`ctx.remote.sessionArchive`）
 
@@ -56,14 +44,12 @@ dsh plugin --profile web add @chaoset/session-archive
 | `delete(sessionIds[])` | id 数组 | `{ deleted, failed, removedFromArchive }` |
 | `unarchive(sessionIds[])` | id 数组 | `{ restored, removedFromArchive }` |
 
-> `delete` 的 `failed[].reason`：`not-archived`（非归档成员）、`live`（内存
-> 中未归档会话）、`busy`（归档会话 60s 内仍有写入）、`unenumerable`（文件
-> 存在但持久化枚举不到，如首行损坏的孤儿日志）、`reappeared`（删除后被
-> 生成流重建、二次删除仍压不掉）；其余为底层删除错误消息。
+> `delete` 的 `failed[].reason`：`not-archived`（非归档成员）、`live`（内存中
+> 未归档会话）、`busy`（归档会话 60s 内仍有写入）、`unenumerable`（文件存在但
+> 持久化枚举不到）、`reappeared`（删除后被生成流重建）；其余为底层删除错误消息。
 
-> `delete` 的 `removedFromArchive` 恒为 0：删除保留归档 ghost id（见上），
-> 侧边栏不会重新显示已删除的会话；`unarchive` 的 `removedFromArchive` 为
-> 实际从归档集合移除的 id 数。
+> `delete` 的 `removedFromArchive` 恒为 0（删除保留归档占位 id，见上）；
+> `unarchive` 的为实际从归档集合移除的 id 数。
 
 `ArchiveRow`：`{ sessionId, title, cwd, createdAt, updatedAt, size, live }`。
 
@@ -77,6 +63,6 @@ config 字段（`cordis.patch.yml` 或 `~/.dsh/plugins/session-archive/config.js
 
 ## 限制
 
-- 运行中（live）的会话无法删除 —— 先停止会话再删除。
-- 无官方 unarchive API，恢复归档通过 registry 写入通道实现；若未来 DSH
-  提供官方 API，插件会切换过去（行为不变）。
+- 运行中（live）的会话无法删除——先停止会话再删除。
+- 无官方 unarchive API，恢复归档通过 registry 写入通道实现；若未来 DSH 提供
+  官方 API，插件会切换过去（行为不变）。

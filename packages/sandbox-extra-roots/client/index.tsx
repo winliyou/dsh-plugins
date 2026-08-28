@@ -1,7 +1,7 @@
 import * as React from "react";
 import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol";
 
-var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ser_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ser_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ser_header:hover,.ser_card[data-open=true]>.ser_header{background:var(--dsw-alias-interactive-bg-hover)}.ser_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ser_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ser_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ser_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ser_label{font-size:12px;font-weight:500;line-height:18px}.ser_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:var(--ds-font-family-code,monospace)}.ser_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ser_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ser_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ser_save:disabled{opacity:.4;cursor:default}.ser_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);background:0 0;color:var(--dsw-alias-label-secondary,#666);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px}.ser_discard:disabled{opacity:.4;cursor:default}.ser_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.ser_warn{color:var(--dsw-alias-state-warn-primary)}.ser_error{color:var(--dsw-alias-state-error-primary)}";
+var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:10px;min-width:0;overflow:hidden}.ser_card[data-open=true]{border-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-shadow-lv1)}.ser_header{appearance:none;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:10px;align-items:center;gap:12px;padding:12px 14px;display:flex}.ser_header:hover,.ser_card[data-open=true]>.ser_header{background:var(--dsw-alias-interactive-bg-hover)}.ser_title{flex:1;min-width:0;font-size:14px;font-weight:600;line-height:20px}.ser_badge{white-space:nowrap;background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 10%,transparent);color:var(--dsw-alias-state-success-primary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:16px}.ser_body{border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-module-platform);padding:10px 14px 12px}.ser_field{flex-direction:column;gap:4px;padding:8px 0;display:flex}.ser_label{font-size:12px;font-weight:500;line-height:18px}.ser_textarea{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);font:inherit;color:var(--dsw-alias-label-primary);border-radius:6px;padding:6px 10px;font-size:12px;line-height:18px;resize:vertical;min-height:120px;font-family:var(--ds-font-family-code,monospace)}.ser_hint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:11px;line-height:16px}.ser_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:8px 0 2px;display:flex}.ser_save{font:inherit;cursor:pointer;border:1px solid transparent;border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px;background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.ser_save:disabled{opacity:.4;cursor:default}.ser_discard{font:inherit;cursor:pointer;border:1px solid var(--dsw-alias-border-l1);background:0 0;color:var(--dsw-alias-label-secondary,#666);border-radius:6px;padding:4px 14px;font-size:12px;line-height:18px}.ser_discard:disabled{opacity:.4;cursor:default}.ser_status{flex:1;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}.ser_warn{color:var(--dsw-alias-state-warn-primary)}.ser_error{color:var(--dsw-alias-state-error-primary)}.ser_spin{flex:none;width:10px;height:10px;border:1.5px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-label-secondary);border-radius:50%;animation:ser-spin .8s linear infinite}@keyframes ser-spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.ser_spin{animation:none}}";
 
     var tagId = "@chaoset/sandbox-extra-roots/client.css";
     if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=\"" + tagId + "\"]") === null) {
@@ -53,6 +53,7 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
       saveFailed: "保存失败",
       saved: "已保存，下次沙盒调用生效",
       loadFailed: "读取配置失败",
+      loading: "加载中…",
       roots: "额外可写目录（每行一个绝对路径，支持 ~）",
       placeholder: "~/data\n/tmp/cache",
       rootInvalid: "第 {n} 行「{v}」不是绝对路径，保存将被拒绝",
@@ -70,6 +71,7 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
       saveFailed: "Save failed",
       saved: "Saved; takes effect on the next sandbox call",
       loadFailed: "Failed to load config",
+      loading: "Loading…",
       roots: "Extra writable roots (one absolute path per line; ~ allowed)",
       placeholder: "~/data\n/tmp/cache",
       rootInvalid: "Line {n} \"{v}\" is not an absolute path; saving will be rejected",
@@ -169,8 +171,17 @@ var css = ".ser_card{border:1px solid var(--dsw-alias-border-l2);background:var(
             { className: "ser_footer" },
             React.createElement(
               "span",
-              { className: "ser_status" + (status !== null && status.kind === "error" ? " ser_error" : ""), role: "status" },
-              status !== null ? status.text : ""
+              {
+                className: "ser_status" + (status !== null && status.kind === "error" ? " ser_error" : ""),
+                role: "status",
+                // 初次读取配置期间给出加载提示：此前只显示禁用的空白表单，
+                // 无法区分加载中与加载失败。
+                style: status === null && cfg === null ? { display: "inline-flex", alignItems: "center", gap: "5px" } : void 0
+              },
+              status !== null ? status.text
+                : cfg === null
+                  ? [React.createElement("span", { className: "ser_spin", key: "spin", "aria-hidden": true }), t("loading")]
+                  : ""
             ),
             React.createElement(
               "button",

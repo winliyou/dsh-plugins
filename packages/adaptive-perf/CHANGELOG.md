@@ -1,255 +1,245 @@
 # Changelog
 
-## [0.10.0](https://github.com/winliyou/dsh-plugins) (2026-08-28)
+## 0.10.1 (2026-08-29)
 
 ### Features
 
-* **适配 DSH 0.1.2 的 PTC preset 更名**：0.1.2 把 PTC 模式的 preset id 由
-  `code` 改为 `ptc`（commit "rename code-mode to ptc"），默认 presets 改为
-  `['standard', 'code', 'ptc', 'cordis']`——新旧宿主都覆盖，不存在的 id 无
-  副作用；设置页默认值/提示文本同步。section 阴影 order 常量更新为 0.1.2
-  参考值（阴影按 name 匹配、order 仅排序，新旧宿主效果一致）
+* 设置卡片初次读取配置时在状态栏显示 spinner +「加载中…」（respect
+  `prefers-reduced-motion`）：此前只显示禁用态的默认值表单，无法区分加载中与
+  加载失败
 
-### Bug Fixes
-
-* **支持从源码运行的 DSH**：真实 Minimal 工具对的官方包导入链首插安装闭包
-  共享 fallback `$DSH_HOME/profiles/node_modules/<pkg>`（harness 启动时
-  heal 的依赖闭包镜像，npm 安装与源码运行都会建立），以 realpath 导入保证
-  与 harness 同一模块实例。修复本地路径安装（插件 realpath 在插件仓库）时
-  裸 import 解析不到官方包、realPair 静默降级的问题；remote 服务的
-  typert-protocol 同样优先 fallback。已对照 dsh 源码 0.1.2-alpha.1 复核
-  systemPrompt/tools/skills/agentPresets 契约无变化
-
-## [0.9.1](https://github.com/winliyou/dsh-plugins) (2026-08-28)
-
-### Bug Fixes
-
-* **适配 DSH 0.1.1-rc.2**：6 个 `@deepseek-ai/*` optionalDependencies（typert-protocol / terminal / terminal-bash / tool-bash-persistent / fs-local / tool-str-replace-editor）range 从 `^0.1.0-rc.8` 升到 `^0.1.1-rc.2`。npm semver 的 prerelease 规则下旧 range 无法匹配 `0.1.1-rc.2`，新版宿主下真实 Minimal 工具对的官方模块会解析到旧版本或缺失
-* 已对照 0.1.1-rc.2 全量 diff 官方包：agent/service 事件、systemPrompt、tools、skills、agentPresets 契约无变化，运行时逻辑无需调整
-
-## [0.9.0](https://github.com/winliyou/dsh-plugins) (2026-08-25)
+## 0.10.0 (2026-08-28)
 
 ### Features
 
-* 设置卡片按语义分组折叠（首轮锚定 / 极简提示词层 / 高级 JSON 默认收起）：20+ 字段不再一屏平铺，渐进披露；分组头带 `aria-expanded`
-* `bootstrap.maxTokens` 数字输入改草稿态：编辑期保留原始输入（清空/删改中间态不立即跳回 0），失焦才归一化显示，消除输入被强制改写的突兀感
+* 适配 DSH 0.1.2 的 PTC preset 更名：0.1.2 把 PTC 模式的 preset id 由 `code`
+  改为 `ptc`，默认 presets 改为 `['standard', 'code', 'ptc', 'cordis']`——新旧
+  宿主都覆盖，不存在的 id 无副作用；设置页默认值/提示文本同步
 
 ### Bug Fixes
 
-* `session/event` 处理器对 `agents.get(session.id)` 的 `agent.id === session.id` 隐含契约加防御性兜底（按 `agent.session.id` 匹配）并注释说明：未来二者分离时晋升信号不再静默丢配导致 bootstrap restrict 不释放
-* 修复 `applyFamilies` 的 JSDoc 注释与函数签名挤在同一行的格式瑕疵
+* 支持从源码运行的 DSH：真实 Minimal 工具对的官方包导入链首插安装闭包共享
+  fallback `$DSH_HOME/profiles/node_modules/<pkg>`，以 realpath 导入保证与
+  harness 同一模块实例；修复本地路径安装时裸 import 解析不到官方包、realPair
+  静默降级的问题。已对照 dsh 源码 0.1.2-alpha.1 复核 systemPrompt / tools /
+  skills / agentPresets 契约无变化
 
-## [0.8.0](https://github.com/winliyou/dsh-plugins) (2026-08-22)
+## 0.9.1 (2026-08-28)
+
+### Bug Fixes
+
+* 适配 DSH 0.1.1-rc.2：6 个 `@deepseek-ai/*` optionalDependencies 的 range 从
+  `^0.1.0-rc.8` 升到 `^0.1.1-rc.2`（npm semver 的 prerelease 规则下旧 range
+  无法匹配 `0.1.1-rc.2`，新版宿主下官方模块会解析到旧版本或缺失）
+* 已对照 0.1.1-rc.2 全量 diff 官方包：各契约无变化，运行时逻辑无需调整
+
+## 0.9.0 (2026-08-25)
 
 ### Features
 
-* **`keywordMatchMode` config** (`smart`(default) | `substring` | `word`): escalation keywords containing CJK keep substring matching (CJK has no word boundaries — `\b` would never match a pure-CJK keyword), pure-ASCII words match on word boundaries via lookarounds (`(?<![a-z0-9_])kw(?![a-z0-9_])`, more predictable than `\b`). Statement text like "the goal is to refactor" or "goalish" no longer falsely escalates the goal family on the substring "goal"; `substring` restores pre-0.8.0 behavior; validated in `remote.set` and normalized with fallback
-* explicit empty arrays are now legal values for all string-list config fields (`presets`, `bootstrap.tools`, family tools/keywords…): previously an emptied list was silently reverted to the default on save, so "apply no preset" was impossible to express
+* 设置卡片按语义分组折叠（首轮锚定 / 极简提示词层 / 高级 JSON 默认收起）：
+  20+ 字段不再一屏平铺，渐进披露；分组头带 `aria-expanded`
+* `bootstrap.maxTokens` 数字输入改草稿态：编辑期保留原始输入（清空/删改中间态
+  不立即跳回 0），失焦才归一化显示
 
 ### Bug Fixes
 
-* pre-step injected-context stripping now requires bootstrap enabled: with `bootstrap.enabled=false` injections were stripped while no discovery tools were registered as compensation — unrecoverable context loss
-* hot-updating `bootstrap.promoteOn` now takes effect for already-tracked sessions: the phase cache is invalidated and rebuilt from the persistent journal (persistent promotion signals survive the rebuild)
-* per-message overhead reduced: composed preset resolved once per agent instead of once per message; suppressed-context-sources Set cached by content key instead of rebuilt per message; preset lookup failure warning capped at 20 occurrences
-* settings card: `promoteOn` is a select, `maxTokens` a number input (invalid input can no longer be saved); loading placeholder for `suppressInjectedContext` matches the real default; error notices render in the header badge so they are visible while collapsed; dirty detection compares field-by-field instead of order-sensitive JSON.stringify; error color referenced the non-existent `state-danger-primary` token so errors never rendered red (now `state-error-primary`)
-* removed `filterBootstrapMessages` (exact duplicate of `stripSuppressedMessages`); fixed malformed nested JSDoc on dev_tool_search; description truncation operator-precedence bug (`split('\n')[0].slice(...)` could throw under `noUncheckedIndexedAccess` semantics)
+* `session/event` 处理器对 `agents.get(session.id)` 的隐含契约
+  （`agent.id === session.id`）加防御性兜底（按 `agent.session.id` 匹配）：
+  未来二者分离时晋升信号不再静默丢配导致 bootstrap restrict 不释放
 
-## [0.7.3](https://github.com/winliyou/dsh-plugins) (2026-08-22)
-
-### Bug Fixes
-
-* **P0 dev_tool_search used the post-restrict catalog**: tools hidden by restrict layers were undiscoverable/unlockable; it now searches a pre-restrict snapshot captured at agent setup
-* **P0 escalate() did not recompute the bootstrap deny set**: after an escalation signal, family tools stayed hidden behind the second restrict layer; escalate now resyncs the keep-set so the release takes effect on the next request
-* real Minimal tool pair remounts idempotently via a state key: unrelated hot-updates no longer destroy/recreate persistent PTY bashes (cwd/env/background jobs survive)
-* first-round maxTokens cap: listener always registered with in-callback branching (0→N hot-update works; N→0 strips the field instead of injecting 0); promotion strips any cap injected this session including stale values from before a hot-update change
-* custom tool families defined in settings survive normalizeConfig (previously silently dropped)
-* test mocks made host-faithful (schemas reflect active restrict layers); regression tests added for both P0s
-
-## [0.7.2](https://github.com/winliyou/dsh-plugins) (2026-08-22)
-
-* align with dsh 0.1.0-rc.8 dependency set
-
-## [0.7.0](https://github.com/winliyou/dsh-plugins) (2026-08-18)
+## 0.8.0 (2026-08-22)
 
 ### Features
 
-* **first-round anchoring, resident catalog after promotion (anchored-standard semantics).** Only request #1 is composed under Minimal conditions (real Minimal tool pair + minimal persona + suppressed global guide sections + stripped `skill-catalog`/`agent-instructions` injections + suppressed runtime snapshot); after the first persistent promotion signal (first `tool/call` or `assistant/message`) the session enters the **resident phase**: the bootstrap tool pair stays resident together with the discovery tools (`dev_tool_search`/`skill_search`/`skill_load`), the full catalog is unlocked on demand via `dev_tool_search`, and normal context injection becomes visible again. Performance is raised without reducing functionality — dumping the full catalog at promotion pulls the trajectory back to standard-like (the reference implementation's post-promotion regression), so the full catalog is fetched on demand instead. The tool/skill/web-search/plan/goal/subagent/workflow abilities of each mode remain fully available
-
-* **promotion is now persistent.** `scanPhase`/`observePhase` no longer reset on `compaction/end` (epoch-aware boundary removed); promotion is remembered per session like the reference implementation, so resume/reload and post-compaction rounds keep the resident catalog
-
-* **catalog is zero-trimmed by default.** `leanByDefault` defaults to `false`: orchestration tool families (subagent/workflow/ralph/goal) are never hidden unless explicitly opted in. `suppressInjectedContext` defaults to `true` (injections stay stripped for the whole session; visibility is carried by the resident discovery tools — measured: restoring injections after promotion pulls the trajectory back to standard-like, "Let me…" narration returns). Setting it to `false` restores post-promotion injections as an opt-in
-
-* **creator mode (cordis) is a target preset.** `presets` defaults to `["standard", "code", "cordis"]` in the bundle patch, the settings UI, and DEFAULT_CONFIG — the creator preset gets the same minimal-anchored first round
-
-### ⚠ Breaking (config)
-
-* **removed `skillDiscovery`, `instructionHint`, `bootstrap.compactionTools`; restored `bootstrap.discoveryTools`.** Under resident-catalog semantics the on-demand discovery is done by the resident `dev_tool_search`, so the one-shot instruction hint and the post-compaction work set are no longer needed; `bootstrap.discoveryTools` (default `dev_tool_search`/`skill_search`/`skill_load`) is restored as the resident post-promotion discovery set. The discovery tool factories (`createDevToolSearch`/`createSkillSearch`/`createSkillLoad`/`extractSkillBody`) and `loadUnlockedFromEvents` are back; saved configs ignore the removed fields; the settings UI renders the discovery-tools control again; `leanByDefault` keeps its new default (false) while `suppressInjectedContext` defaults to `true`
-
-## [0.6.0](https://github.com/winliyou/dsh-plugins) (2026-08-17)
-
-
-### ⚠ Breaking (behavior)
-
-* **function-first defaults — every optimization is now opt-in.** The previous defaults broke standard/PTC functionality: tool families removed from the catalog (PTC program calls hit `UNKNOWN_TOOL` outright), skill-catalog/AGENTS.md injections stripped, official prompt sections shadowed, request #1 restricted to two tools. These mechanisms have no lossless form (their savings come from removing context/tools), so `leanByDefault`, `suppressRuntimeContext`, `suppressInjectedContext`, `minimalPrompt.enabled`, and `bootstrap.enabled` all default to **false**: a fresh install is a zero-intervention no-op and official presets keep full functionality. Enable any mechanism on demand from the settings page; compensation paths (keyword/failure-signal escalation, `skill_search` discovery, instruction-hint) activate together with them. Tests now cover both the zero-intervention defaults and each mechanism under explicit opt-in config
-
-## [0.5.3](https://github.com/winliyou/dsh-plugins) (2026-08-17)
-
+* 新增 `keywordMatchMode` 配置（`smart` 默认 / `substring` / `word`）：含 CJK
+  的触发词保持子串匹配（CJK 无词边界，`\b` 永远匹配不到纯 CJK 关键词），纯
+  ASCII 词按词边界匹配（`(?<![a-z0-9_])kw(?![a-z0-9_])`，比 `\b` 更可预测）。
+  "the goal is to refactor" 或 "goalish" 不再因子串 "goal" 误触发 goal 族放行；
+  `substring` 恢复此前的行为；`remote.set` 校验并归一化（非法回退默认）
+* 所有字符串列表字段（`presets`、`bootstrap.tools`、工具族 tools/keywords 等）
+  允许显式空数组：此前清空列表保存会被静默还原为默认值，无法表达「不应用任何
+  preset」
 
 ### Bug Fixes
 
-* pass the live config snapshot as `base` when registering the settings namespace: without `base`, a schema without defaults (adaptive-perf's `any()`) made `settings.describe()` return `value: undefined`, and the settings page's wire validation (`invalid_type: nonoptional` at `namespaces[n].value`) failed hard, breaking the whole settings UI. With `base` the resolved value is always the full config object
+* pre-step 注入剥离要求 bootstrap 开启：`bootstrap.enabled=false` 时此前仍会
+  剥离注入而没有发现工具补偿，造成不可恢复的上下文丢失
+* 热更新 `bootstrap.promoteOn` 对已跟踪会话生效：阶段缓存失效并从持久事件流
+  重建（持久晋升信号在重建中保留）
+* 降低每条消息开销：composed preset 每个 agent 解析一次而非每条消息；抑制
+  source 集合按内容缓存；preset 查找失败告警限 20 次
+* 设置卡片：`promoteOn` 改下拉、`maxTokens` 改数字输入（非法输入不可保存）；
+  错误提示在折叠态也经头部徽标可见；dirty 判定改为逐字段比较（不再依赖键序
+  敏感的 JSON.stringify）；错误色修正为真实存在的 `state-error-primary` token
+  （此前引用不存在的 token，错误永远不显示红色）
+* 删除与 `stripSuppressedMessages` 完全重复的 `filterBootstrapMessages`；修复
+  dev_tool_search 描述截断的运算符优先级 bug
 
-## [0.5.2](https://github.com/winliyou/dsh-plugins) (2026-08-17)
-
+## 0.7.3 (2026-08-22)
 
 ### Bug Fixes
 
-* register the config namespace into the host settings service (`ctx.settings.register`) so the settings page's configurable-plugins tab lists it: the tab dispatches cards from `settings.describe()`, and a namespace that was never registered renders nothing even with a correctly keyed card. Registration is visibility-only — the card still reads/writes through the plugin's own config gateway (config.json stays authoritative, hot-reload preserved). Fail-safe when schemastery or the settings service is unavailable; duplicate registrations (HMR) are ignored
+* **dev_tool_search 使用 restrict 后的目录（P0）**：被 restrict 隐藏的工具不可
+  发现也不可解锁；改为搜索 agent 建立时捕获的 restrict 前快照
+* **escalate() 未重算 bootstrap deny 集（P0）**：放行信号后该族工具仍被第二层
+  restrict 挡住；escalate 现在同步重算 keep-set，下一次请求生效
+* 真实 Minimal 工具对经 state key 幂等重挂：无关热更新不再销毁/重建持久 PTY
+  bash（cwd/env/后台任务保留）
+* 首轮 maxTokens 封顶改为 listener 内分支（0→N 热更新生效；N→0 剥离字段而非
+  注入 0）；晋升时剥离本次会话注入的任何封顶（含热更新前的过期值）
+* 设置页定义的自定义工具族不再被 normalizeConfig 静默丢弃
+* 测试 mock 对齐宿主行为（schema 反映生效 restrict 层），两个 P0 各补回归测试
 
-## [0.5.1](https://github.com/winliyou/dsh-plugins) (2026-08-17)
+## 0.7.2 (2026-08-22)
 
+### Dependencies
 
-### Bug Fixes
+* 对齐 dsh 0.1.0-rc.8 依赖集
 
-* settings card registration: pass `key` (the settings namespace, matching the host-side service key) when registering into `settings.plugin.item` — the host `dsh-client-ui-slots` 0.1.0-rc.7 declares it as a keyed slot, and a registration without `key` fails the whole client bundle apply ("Failed to load plugins: keyed slot requires options.key")
-
-## [0.5.0](https://github.com/winliyou/dsh-plugins) (2026-08-16)
-
+## 0.7.0 (2026-08-18)
 
 ### Features
 
-* real Minimal tool pair on request #1 (`bootstrap.realPair`)
+* **首轮锚定 + 晋升后 resident 目录（anchored-standard 语义）**：只有请求 #1
+  按极简条件组装（真实 Minimal 工具对 + 极简 persona + 屏蔽全局引导段 + 剥离
+  `skill-catalog`/`agent-instructions` 注入 + 抑制运行时快照）；首个持久晋升
+  信号后进入 resident 阶段——工具对与发现工具常驻，完整目录经 `dev_tool_search`
+  按需解锁，常规注入恢复可见。只提高性能不减少功能：晋升时一次性倒出完整目录
+  会把轨迹拉回 standard-like（参考实现的晋升后回退问题），故完整目录按需取用
+* **晋升持久化**：阶段不再因 `compaction/end` 重置；晋升按会话记忆化，resume /
+  reload 与压缩后的轮次保持 resident 目录
+* **工具目录默认零裁剪**：`leanByDefault` 默认 `false`，编排类工具族（子代理/
+  工作流/ralph/goal）不再隐藏除非显式开启；`suppressInjectedContext` 默认
+  `true`（晋升后恢复注入会把轨迹拉回 standard-like，"Let me…" 叙述回归），
+  设为 `false` 恢复晋升后注入
+* **创造模式（cordis）纳入目标 preset**：`presets` 默认
+  `["standard", "code", "cordis"]`，创造模式获得同样的首轮极简锚定
 
-The bootstrap phase previously only *narrowed* the standard/PTC catalog, so
-request #1 still exposed the sandboxed standard `bash` schema (and no
-`str_replace_editor` at all — the standard preset does not mount it).
-Per dsh-anchored-standard issue #11 the first-request trajectory is decided
-by the *byte-identical* tool schema: the real Minimal pair anchors 5/5 while
-every standard-family schema (including sandboxed bash) falls standard-like
-11/11. The plugin now mounts the official minimal-preset plugins — the
-persistent PTY bash (`@deepseek-ai/dsh-tool-bash-persistent` over
-`dsh-terminal` + `dsh-terminal-bash`, with the exact minimal description)
-and `str_replace_editor` over the bare local fs (`dsh-fs-local`) — into each
-target agent's scoped tool layer, where scoped registrations shadow the
-inherited sandboxed `bash` by name and own-layer registrations are exempt
-from restrictions. The `tool:bash` guidance section is shadowed to empty at
-the same time. The packages are optionalDependencies; when they cannot be
-resolved (or on Windows, where the PTY backend is unavailable) the plugin
-degrades to the previous catalog-only behavior with a warning.
+### Breaking
 
-* permanent injected-context suppression (`suppressInjectedContext`)
+* 移除 `skillDiscovery` / `instructionHint` / `bootstrap.compactionTools`；
+  恢复 `bootstrap.discoveryTools`（默认 `dev_tool_search` / `skill_search` /
+  `skill_load`）作为晋升后常驻发现集。resident 语义下按需发现由常驻
+  `dev_tool_search` 承担，指令提示与压缩回退集不再需要；已保存的旧配置自动
+  忽略被移除字段
 
-The skill-catalog reminder and the AGENTS.md digest were previously stripped
-only on request #1 and re-injected after promotion. The reference implementation
-removes both injections entirely: even post-promotion they perturb the
-trajectory and cost thousands of tokens per request. With
-`suppressInjectedContext: true` (default) the strip now applies to every
-request of the session; `skill_search` / `skill_load` (resident after
-promotion, gated by `skillDiscovery`) replace the ~9KB catalog dump, and the
-new one-shot `instruction-hint` (`instructionHint`, default on) tells the
-model once per session that instruction files exist and should be read when
-relevant, instead of embedding their content. User-initiated skill gestures
-(`skill-invocation`) are never filtered.
+## 0.6.0 (2026-08-17)
 
-* resident discovery set now includes skill_search / skill_load
+### Breaking
 
-`bootstrap.discoveryTools` defaults to `[dev_tool_search, skill_search,
-skill_load]` so the promoted catalog keeps the on-demand discovery surface of
-the reference's resident set; skills stay reachable while the catalog
-injection stays off.
+* **功能优先——所有优化改为 opt-in**：此前默认值破坏 standard/PTC 功能（工具族
+  从目录移除、注入剥离、引导段屏蔽、首轮只留两个工具）。这些机制的收益来自
+  移除上下文/工具，没有无损形式，故 `leanByDefault`、`suppressRuntimeContext`、
+  `suppressInjectedContext`、`minimalPrompt.enabled`、`bootstrap.enabled` 全部
+  默认 `false`：全新安装零干预无副作用，官方 preset 保持完整功能；按需在设置
+  页开启，补偿路径（关键词/失败信号放行、发现工具、指令提示）随之激活
 
-## [0.4.0](https://github.com/winliyou/dsh-plugins) (2026-08-16)
+## 0.5.3 (2026-08-17)
 
+### Bug Fixes
+
+* 注册设置命名空间时把实时配置快照作为 `base` 传入：无默认值的 schema 曾使
+  `settings.describe()` 返回 `value: undefined`，设置页 wire 校验失败、整个
+  设置 UI 挂掉；传入 `base` 后返回值始终是完整配置对象
+
+## 0.5.2 (2026-08-17)
+
+### Bug Fixes
+
+* 把配置命名空间注册进宿主 settings 服务（`ctx.settings.register`），设置页
+  「插件配置」tab 才会列出卡片（tab 按 `settings.describe()` 分发，未注册的
+  命名空间不渲染）。注册只管可见性，卡片读写仍走插件自己的配置网关（config.json
+  权威、热更新保留）；settings 服务缺失时 fail-safe，重复注册（HMR）静默忽略
+
+## 0.5.1 (2026-08-17)
+
+### Bug Fixes
+
+* 设置卡片注册补 `key`（settings 命名空间，与 host 侧 service key 一致）：宿主
+  `dsh-client-ui-slots` 0.1.0-rc.7 声明为 keyed slot，缺 `key` 会让整个 client
+  bundle 激活失败（"Failed to load plugins: keyed slot requires options.key"）
+
+## 0.5.0 (2026-08-16)
 
 ### Features
 
-* minimal-prompt layer (register anchoring, per dsh-anchored-standard)
+* **首轮真实 Minimal 工具对（`bootstrap.realPair`）**：此前 bootstrap 只是收窄
+  standard/PTC 目录，请求 #1 仍是 standard 系 schema（且 standard 不挂
+  `str_replace_editor`）。现把官方 minimal preset 同款插件（持久 PTY bash
+  `@deepseek-ai/dsh-tool-bash-persistent` + `str_replace_editor`）挂进每个目标
+  agent 的会话作用域，按名阴影继承的 sandboxed bash（scoped 注册豁免
+  restrict），同时把 `tool:bash` 引导段阴影为空。官方包为
+  optionalDependencies，解析不到（或 Windows 无 PTY 后端）时降级为仅收窄目录
+  并告警
+* **常驻注入剥离（`suppressInjectedContext`，默认开启）**：技能目录提醒与
+  AGENTS.md 摘要此前只在请求 #1 剥离、晋升后恢复；实测晋升后它们仍扰动轨迹
+  且每请求多耗数千 token。开启后整个会话持续剥离，由常驻 `skill_search` /
+  `skill_load` 与一次性 `instruction-hint` 替代；用户主动的技能手势
+  （`skill-invocation`）永不过滤
+* **常驻发现集纳入 `skill_search` / `skill_load`**：`bootstrap.discoveryTools`
+  默认 `[dev_tool_search, skill_search, skill_load]`
 
-The reference's full anchoring condition is the *complete minimal system
-prompt*, not just the tool catalog: tool narrowing alone leaves the global
-orientation sections (harness:identity / harness:source / app:web-surface)
-and the standard persona in the prompt, and the model keeps narrating in the
-standard-like register ("Let me…" thinking chains). The new `minimalPrompt`
-layer shadows those sections to empty per target agent (same effect as
-minimal's `complete` persona; plan-mode and the PTC SDK sections are
-untouched) and shadows `deployment:persona` with the exact minimal-mode text
-("You are a helpful software engineer assistant."), so the assembled system
-prompt for standard / PTC sessions drops to the minimal register from request
-#1 onward — including for resumed/already-promoted sessions, which the
-bootstrap phase never touches. All knobs are configurable and hot-applied
-(`minimalPrompt.enabled` / `.persona` / `.suppressSections`).
-
-## [0.3.2](https://github.com/winliyou/dsh-plugins) (2026-08-16)
-
-
-### Bug Fixes
-
-* bootstrap tool narrowing now uses tools.restrict instead of filtering assembly.tools
-
-In PTC/code mode the assembled tool catalog contains only run_code, so
-filtering it down to the Minimal pair always hit the fail-safe and the
-first request kept the full SDK (verified live: the model still saw 15
-tools). tools.restrict drives both the API catalog and the PTC SDK
-reference section (the same mechanism the family trimming uses), so the
-bootstrap phase now temporarily denies everything except
-run_code + the Minimal pair (plus the post-compaction work set) and
-lifts the restriction on the first durable promotion signal. Verified
-live: on request #1 the model reports run_code as the only direct tool
-and the SDK declarations contain only the Minimal pair.
-
-## [0.3.1](https://github.com/winliyou/dsh-plugins) (2026-08-16)
-
-
-### Bug Fixes
-
-* raise engines.node to >=22.19.0 (node 20 is EOL; aligns with the reference preset baseline and the current LTS floor)
-
-## [0.3.0](https://github.com/winliyou/dsh-plugins/compare/adaptive-perf-v0.2.2...adaptive-perf-v0.3.0) (2026-08-16)
-
+## 0.4.0 (2026-08-16)
 
 ### Features
 
-* first-request bootstrap anchoring (inspired by dsh-anchored-standard)
+* **极简提示词层（minimalPrompt，语域锚定）**：完整的锚定条件是极简的完整
+  system prompt——只收窄工具目录不够，全局引导段与标准 persona 会让思维链保持
+  standard-like 的 "Let me…" 叙述。本层把三个全局引导段阴影为空（等同极简
+  `complete` persona 的效果；plan-mode 与 PTC SDK 段不受影响），并把
+  `deployment:persona` 按名替换为与极简模式逐字相同的文本；对已恢复/已晋升的
+  旧会话同样生效（bootstrap 阶段不触碰它们）。全部开关可配置、热生效
 
-Request #1 for target presets now exposes only the real Minimal tool pair
-(bash + str_replace_editor) and strips auto-injected context
-(skill-catalog reminder, AGENTS.md digest), which anchors the first-request
-trajectory on minimal conditions (the community measurements: the Minimal
-pair anchors 5/5 at the adapter-default budget while every standard-family
-schema falls into standard-like behavior 11/11, and a present skill catalog
-breaks the anchor 0/9). The session promotes after its first durable
-tool/call or assistant/message (promoteOn: either, or tool-call /
-assistant-message) — phase derived from durable session events, resume-safe.
-A compaction resets the phase (epoch-aware): after compaction/end the
-session falls back to the bootstrap pair plus a configurable compactionTools
-work set until a new promotion signal. bootstrap.maxTokens optionally caps
-request #1's output budget and is stripped after promotion.
-
-Wiring uses the harness's public waterfalls: system-prompt/assemble (tool
-catalog narrowing), agent/pre-step (context stripping, prepend-registered so
-the strip is the final transform), agent/request (budget cap), and
-session/event (phase feed). Degrades to the full catalog on any filter
-failure so a plugin bug can never brick a session.
-
-## [0.2.2](https://github.com/winliyou/dsh-plugins/compare/adaptive-perf-v0.2.1...adaptive-perf-v0.2.2) (2026-08-16)
-
+## 0.3.2 (2026-08-16)
 
 ### Bug Fixes
 
-* register config-gateway endpoints via a typert-loader host artifact (lib/typert.host.js) so the api-gateway claims them regardless of module-instance identity ([dsh-plugins#registry-install](https://github.com/winliyou/dsh-plugins))
+* bootstrap 工具收窄改用 `tools.restrict` 而非过滤 `assembly.tools`：PTC/code
+  模式组装目录只含 run_code，过滤收窄总是触发 fail-safe、首轮仍见完整 SDK
+  （实测模型看到 15 个工具）。`tools.restrict` 同时驱动 API 目录与 PTC SDK
+  参考段（与工具族精简同一机制），bootstrap 改为临时 deny 除 run_code 与
+  Minimal 对之外的全部工具，首个持久晋升信号解除
 
-When the package is installed from the npm registry, its typert-protocol copy differs from the harness's, so the Remote-decorator SRC markers are invisible to the gateway and settings-page calls fail with "transport failure ... HTTP 404". The typert artifact registers the same get/set endpoints into ctx.typert.local through the official loader mechanism.
-
-## [0.2.1](https://github.com/winliyou/dsh-plugins/compare/adaptive-perf-v0.2.0...adaptive-perf-v0.2.1) (2026-08-16)
-
+## 0.3.1 (2026-08-16)
 
 ### Bug Fixes
 
-* mount remote config namespaces in client bundles ([a647484](https://github.com/winliyou/dsh-plugins/commit/a64748489ddf003cb29c0527016ea089748e0c7b))
+* `engines.node` 提到 >=22.19.0（node 20 已 EOL）
 
-## [0.2.0](https://github.com/winliyou/dsh-plugins/compare/adaptive-perf-v0.1.2...adaptive-perf-v0.2.0) (2026-08-15)
-
+## 0.3.0 (2026-08-16)
 
 ### Features
 
-* convert plugins to DSH bundle installation ([caae797](https://github.com/winliyou/dsh-plugins/commit/caae797acd12c70af52b0868ec352d91a0a7ef12))
+* **首轮 bootstrap 锚定**（受 dsh-anchored-standard 启发）：请求 #1 只暴露真实
+  Minimal 工具对（bash + str_replace_editor）并剥离自动注入上下文（技能目录
+  提醒、AGENTS.md 摘要），把首轮轨迹锚定在极简条件上。首个持久 tool/call 或
+  assistant/message 后晋升；阶段从持久会话事件推导，resume 安全；compaction
+  重置阶段，压缩后回到 bootstrap 工具对 + 可配置压缩工作集直到新晋升信号。
+  `bootstrap.maxTokens` 可选封顶首轮输出预算、晋升后剥离。
+
+接线全部走宿主公开 waterfall：system-prompt/assemble（目录收窄）、
+agent/pre-step（上下文剥离，prepend 注册保证最后执行）、agent/request（预算
+封顶）、session/event（阶段供给）。任何过滤失败降级为完整目录，插件 bug 不会
+拖垮会话。
+
+## 0.2.2 (2026-08-16)
+
+### Bug Fixes
+
+* 经 typert-loader host artifact（lib/typert.host.js）注册配置网关端点，
+  api-gateway 不再受模块实例身份影响：npm registry 安装时包内 typert-protocol
+  副本与 harness 不同源，Remote 装饰器 SRC 标记对网关不可见，设置页调用报
+  "transport failure ... HTTP 404"
+
+## 0.2.1 (2026-08-16)
+
+### Bug Fixes
+
+* client bundle 挂载远程配置命名空间（修复 web boot "did not activate"）
+
+## 0.2.0 (2026-08-15)
+
+### Features
+
+* 插件转为 DSH bundle 安装方式
