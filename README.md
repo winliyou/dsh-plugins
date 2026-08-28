@@ -73,30 +73,33 @@ DSH 从源码仓库运行（不全局安装 `dsh` 与 `@deepseek-ai/*`）时，�
 
 ## 开发
 
-`@deepseek-ai/*` 内部包来自公共 registry，作为根部 `devDependencies` 由 bun 安装：
+`@deepseek-ai/*` 内部包来自公共 registry，作为根部 `devDependencies` 由 pnpm 安装
+（workspace 声明在 `pnpm-workspace.yaml`，pnpm 版本由根 `package.json` 的
+`packageManager` 字段锁定，Corepack 会自动匹配）：
 
 ```bash
-bun install        # 安装依赖
-bun run build      # 全仓构建：每包 tsc 编译 src/ → lib/，esbuild 打包 client
-bun run typecheck  # tsc --noEmit（host + client 两套 tsconfig）
-bun run test       # vitest 回归（host 插件 / config-store / 自适应引擎等）
-bun run test:ci    # build + test（发布前验证）
+pnpm install       # 安装依赖
+pnpm run build     # 全仓构建：每包 tsc 编译 src/ → lib/，esbuild 打包 client
+pnpm run typecheck # tsc --noEmit（host + client 两套 tsconfig）
+pnpm run test      # vitest 回归（host 插件 / config-store / 自适应引擎等）
+pnpm run test:ci   # build + test（发布前验证）
 ```
 
 ## 版本管理与发布
 
 版本号遵循语义化版本：破坏性变更升 MAJOR，新功能升 MINOR，修复升 PATCH。
 **版本号在本地修改**，CI 绝不改写：直接编辑各包 `package.json` 的 `version`
-（或 `bunx npm version patch`），提交并推送即可。GitHub Actions
+（或 `npm version patch`），提交并推送即可。GitHub Actions
 （`.github/workflows/publish.yml`）在推送 main 且 `packages/*` 有变更时自动测试，
 并按已提交的版本号发布尚未发布过的包（已存在的版本自动跳过，幂等）。
 
 ```bash
 # 例：发一个 patch
-(cd packages/sandbox-extra-roots && bunx npm version patch)
-(cd packages/adaptive-perf && bunx npm version patch)
-(cd packages/session-archive && bunx npm version patch)
+(cd packages/sandbox-extra-roots && npm version patch)
+(cd packages/adaptive-perf && npm version patch)
+(cd packages/session-archive && npm version patch)
 git add -A && git commit -m "..." && git push
 ```
 
-也可手动发布单个包：`cd packages/<pkg> && bunx npm@latest publish --access public`。
+也可手动发布单个包（CI 走的是 npm OIDC Trusted Publishing，本地手发需要自己
+登录 npm）：`cd packages/<pkg> && pnpm publish --access public --no-git-checks`。

@@ -32,22 +32,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Bun is the only toolchain entry point: install / test / version reads
-      # all run through bun. Publishing goes through `bunx npm@latest` because
-      # bun can't do npm OIDC trusted publishing yet (oven-sh/bun#15601).
-      # bunx resolves the npm CLI and runs it with the runner's system Node
-      # (preinstalled on ubuntu-latest), which is the stack that handles the
-      # OIDC exchange — no separate setup-node step needed.
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      # pnpm is the only toolchain entry point: install / test / version reads
+      # all run through pnpm. pnpm 版本取自 package.json 的 packageManager 字段,
+      # 与本地保持一致(Corepack 也认这个字段)。
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      # setup-node 提供 Node(下面的 `node -e` 与 pnpm 自身都要用)并缓存
+      # pnpm store;必须在 action-setup 之后,cache: pnpm 才能找到 store 路径。
+      - name: Setup Node
+        uses: actions/setup-node@v7
         with:
-          bun-version: 1.3.14
+          node-version: 24
+          cache: pnpm
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Run tests
-        run: bun run test:ci
+        run: pnpm run test:ci
 
       - name: Detect changed packages
         id: changed
@@ -82,11 +85,11 @@ jobs:
               continue
             fi
 
-            PKG_NAME=$(bun -e "console.log(require('./$PKG_DIR/package.json').name)")
-            PKG_VERSION=$(bun -e "console.log(require('./$PKG_DIR/package.json').version)")
+            PKG_NAME=$(node -e "console.log(require('./$PKG_DIR/package.json').name)")
+            PKG_VERSION=$(node -e "console.log(require('./$PKG_DIR/package.json').version)")
             echo "Checking $PKG_NAME@$PKG_VERSION ..."
 
-            PUBLISHED=$(bunx npm view "$PKG_NAME@$PKG_VERSION" version --registry=https://registry.npmjs.org 2>/dev/null || true)
+            PUBLISHED=$(pnpm view "$PKG_NAME@$PKG_VERSION" version --registry=https://registry.npmjs.org 2>/dev/null || true)
             if [ "$PUBLISHED" = "$PKG_VERSION" ]; then
               echo "$PKG_NAME@$PKG_VERSION already published, skipping."
               continue
@@ -94,9 +97,13 @@ jobs:
 
             echo "Publishing $PKG_NAME@$PKG_VERSION ..."
             cd "$PKG_DIR"
-            # `bunx npm@latest`: OIDC Trusted Publishing happens automatically
+            # `pnpm publish`: OIDC Trusted Publishing happens automatically
             # when id-token: write is set and the package has a trusted
             # publisher configured on npmjs.com. --provenance adds attestation.
-            bunx npm@latest publish --provenance --access public --registry=https://registry.npmjs.org
+            # pnpm 11.0.x 曾在这里抛 404(pnpm/pnpm#11513,已由 #11526 修复),
+            # 11.24.0 起 pnpm 自己的发版流程就是走的这条路。
+            # --no-git-checks: checkout 出来是 detached HEAD,pnpm 默认的分支
+            # 检查会拒绝发布。
+            pnpm publish --provenance --access public --no-git-checks --registry=https://registry.npmjs.org
             cd ../..
           done

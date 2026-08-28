@@ -1,0 +1,7 @@
+packages:
+  - 'packages/*'
+# pnpm 默认拦截所有依赖的构建脚本；这里放行 bun 时代实际构建过的两个
+# （esbuild 的二进制安装、koffi 的原生模块编译），保持与迁移前一致的行为。
+allowBuilds:
+  esbuild: true
+  koffi: true
