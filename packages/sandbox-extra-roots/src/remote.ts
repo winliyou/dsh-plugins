@@ -13,16 +13,36 @@
  */
 
 import { createRequire } from "node:module";
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Context } from "@deepseek-ai/cordis";
 import type { ConfigStore } from "./config-store.js";
 
+// 安装闭包共享 fallback:$DSH_HOME/profiles/node_modules 由 harness 启动时
+// heal 出来(symlink 镜像 harness 实际使用的依赖闭包,npm 安装与源码运行
+// 都会建立)。优先从这里解析,保证插件与 harness 用同一模块实例;Node ESM
+// 不支持目录导入,用包目录的 package.json 作 require 锚解析入口文件
+// (require.resolve 默认 realpath 化,得到 harness 同源实体路径)。
+// 失败返回 null,由调用方 fall through 原有解析链。
+function loadInstallFallback(specifier: string): Promise<any> | null {
+  try {
+    const dshHome = process.env.DSH_HOME?.trim() ? resolve(process.env.DSH_HOME) : join(homedir(), ".dsh");
+    const anchor = join(dshHome, "profiles", "node_modules", specifier, "package.json");
+    const real = realpathSync(createRequire(anchor).resolve(specifier));
+    return import(pathToFileURL(real).href);
+  } catch {
+    return null;
+  }
+}
+
 // @deepseek-ai/dsh-typert-protocol 是 ESM 包。Node 20 早期版本尚不支持
 // require(ESM)，因此统一用 import() 加载；fallback 时先用 createRequire
 // 解析出实际文件，再以 file URL 导入。
 async function loadTypert(): Promise<typeof import("@deepseek-ai/dsh-typert-protocol")> {
+  const fromFallback = loadInstallFallback("@deepseek-ai/dsh-typert-protocol");
+  if (fromFallback !== null) return fromFallback;
   try {
     return await import("@deepseek-ai/dsh-typert-protocol");
   } catch {}

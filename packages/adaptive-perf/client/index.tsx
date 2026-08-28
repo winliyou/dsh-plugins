@@ -27,7 +27,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       invalidFamilies: "families 必须是合法 JSON 对象",
       enabled: "启用插件",
       presets: "目标 preset",
-      fieldPresets: "逗号分隔的 preset id（如 standard, code）。留空 = 不应用任何 preset",
+      fieldPresets: "逗号分隔的 preset id（如 standard, code, ptc）。留空 = 不应用任何 preset",
       suppressRuntimeContext: "抑制运行时上下文快照",
       fieldSuppressRuntimeContext: "等同极简模式的 includeRuntimeContext: false，每次请求省掉快照文本（零功能损失）",
       leanByDefault: "启动即精简工具目录",
@@ -79,7 +79,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
       invalidFamilies: "families must be valid JSON object",
       enabled: "Enable plugin",
       presets: "Target presets",
-      fieldPresets: "Comma-separated preset ids (e.g. standard, code). Empty = apply to no preset.",
+      fieldPresets: "Comma-separated preset ids (e.g. standard, code, ptc). Empty = apply to no preset.",
       suppressRuntimeContext: "Suppress runtime-context snapshot",
       fieldSuppressRuntimeContext: "Same as minimal's includeRuntimeContext: false; drops the snapshot text from every request (zero feature loss)",
       leanByDefault: "Lean tool catalog at session start",
@@ -298,7 +298,7 @@ import type { TypertRemoteContribution } from "@deepseek-ai/dsh-typert-protocol"
           React.createElement(TextField, {
             label: t("presets"),
             hint: t("fieldPresets"),
-            value: draft === null ? "standard, code, cordis" : (draft.presets || []).join(", "),
+            value: draft === null ? "standard, code, ptc, cordis" : (draft.presets || []).join(", "),
             disabled: draft === null,
             onChange: (v: any) => setDraft({ ...draft, presets: v.split(/[,，\s]+/).filter((x: any) => x.length > 0) })
           }),

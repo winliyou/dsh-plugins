@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.2](https://github.com/winliyou/dsh-plugins) (2026-08-28)
+
+### Bug Fixes
+
+* **支持从源码运行的 DSH**：官方包解析链首插安装闭包共享 fallback
+  `$DSH_HOME/profiles/node_modules/<pkg>`（harness 启动时 heal 的依赖闭包
+  symlink 镜像，npm 安装与源码运行都会建立），以 realpath 导入保证与
+  harness 同一模块实例；失败回落原有解析链（本包依赖树 → profile 依赖树）。
+  全局不安装 `@deepseek-ai/*`、`dsh plugin add` 本地路径链接安装时，官方包
+  不再依赖 profile 内的 npm 副本。已对照 dsh 源码 0.1.2-alpha.1 复核
+  sandbox/fs 契约无变化
+
 ## [0.4.1](https://github.com/winliyou/dsh-plugins) (2026-08-28)
 
 ### Bug Fixes

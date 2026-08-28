@@ -14,6 +14,7 @@
  */
 
 import { createRequire } from "node:module";
+import { realpathSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { BigIntStats } from "node:fs";
 import { homedir } from "node:os";
@@ -33,9 +34,31 @@ function profileAnchors() {
   ];
 }
 
-/** 加载一个官方 ESM 包。优先本包依赖树，失败后从 harness profile 解析
- * 文件 URL 再 import——与 harness 解析到同一 realpath、共享模块实例。 */
+/**
+ * 安装闭包共享 fallback:$DSH_HOME/profiles/node_modules 由 harness 启动时
+ * heal 出来,把 harness 实际使用的依赖闭包(symlink)镜像到 profiles 层,
+ * npm 安装与源码运行两种形态都会建立。优先从这里解析,保证插件与 harness
+ * 解析到同一模块实例(源码模式下 symlink 指向源码包目录,由 harness 进程内
+ * 的 tsx loader 加载 TS 源)。Node ESM 不支持目录导入,因此用包目录的
+ * package.json 作 require 锚解析出入口文件;require.resolve 默认 realpath 化,
+ * 得到 harness 同源的实体路径。解析失败返回 null,调用方 fall through
+ * 原有解析链(本包依赖树 → profile 依赖树)。
+ */
+function loadInstallFallback(specifier: string): Promise<any> | null {
+  try {
+    const anchor = join(dshHome(), "profiles", "node_modules", specifier, "package.json");
+    const real = realpathSync(createRequire(anchor).resolve(specifier));
+    return import(pathToFileURL(real).href);
+  } catch {
+    return null;
+  }
+}
+
+/** 加载一个官方 ESM 包。优先安装闭包共享 fallback(与 harness 同一模块
+ * 实例),失败后走本包依赖树,再从 harness profile 依赖树解析。 */
 async function loadPackage(specifier: string): Promise<any> {
+  const fromFallback = loadInstallFallback(specifier);
+  if (fromFallback !== null) return fromFallback;
   try {
     return await import(specifier);
   } catch {}

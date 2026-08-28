@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.2](https://github.com/winliyou/dsh-plugins) (2026-08-28)
+
+### Bug Fixes
+
+* **支持从源码运行的 DSH**：typert-protocol 解析链首插安装闭包共享 fallback
+  `$DSH_HOME/profiles/node_modules/<pkg>`（harness 启动时 heal 的依赖闭包
+  symlink 镜像，npm 安装与源码运行都会建立），以 realpath 导入保证与
+  harness 同一模块实例；失败回落原有解析链。已对照 dsh 源码 0.1.2-alpha.1
+  复核 workspaceRegistry/sessionPersistence 契约与事件形状无变化
+
 ## [0.3.1](https://github.com/winliyou/dsh-plugins) (2026-08-28)
 
 ### Bug Fixes

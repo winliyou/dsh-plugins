@@ -265,7 +265,7 @@ describe("adaptive-perf pure functions + config-store", () => {
     const parsed = ap.normalizeConfig({ presets: "standard, code" });
     expect(parsed.presets.length === 2, "字符串解析路径不变").toBe(true);
     const defaulted = ap.normalizeConfig({});
-    expect(defaulted.presets.length === 3 && defaulted.bootstrap.tools.length === 2, "undefined 仍回退默认").toBe(true);
+    expect(defaulted.presets.length === 4 && defaulted.presets.includes("ptc") && defaulted.bootstrap.tools.length === 2, "undefined 仍回退默认(0.10.0 起 presets 含 ptc)").toBe(true);
   });
 
   it("关键词匹配:P2 常见词误触发回归(smart 词边界 / CJK 子串 / 模式切换)", () => {
@@ -353,9 +353,9 @@ describe("adaptive-perf 自适应引擎", () => {
     const stdSections = sectionCalls.filter((c) => c.agent === "s-std");
     expect(stdSections.length === 4
       && stdSections.filter((c) => c.text === "").length === 3
-      && stdSections.some((c) => c.name === "harness:identity" && c.order === -100)
-      && stdSections.some((c) => c.name === "harness:source" && c.order === -99)
-      && stdSections.some((c) => c.name === "app:web-surface" && c.order === -98)
+      && stdSections.some((c) => c.name === "harness:identity" && c.order === -1000)
+      && stdSections.some((c) => c.name === "harness:source" && c.order === -900)
+      && stdSections.some((c) => c.name === "app:web-surface" && c.order === -800)
       && stdSections.some((c) => c.name === "deployment:persona" && c.text === "You are a helpful software engineer assistant."), "AP: 极简提示词层-3 引导段屏蔽 + persona 替换").toBe(true);
 
     emit("agent/created", { agent: agent("s-min", "minimal") });

@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.10.0](https://github.com/winliyou/dsh-plugins) (2026-08-28)
+
+### Features
+
+* **适配 DSH 0.1.2 的 PTC preset 更名**：0.1.2 把 PTC 模式的 preset id 由
+  `code` 改为 `ptc`（commit "rename code-mode to ptc"），默认 presets 改为
+  `['standard', 'code', 'ptc', 'cordis']`——新旧宿主都覆盖，不存在的 id 无
+  副作用；设置页默认值/提示文本同步。section 阴影 order 常量更新为 0.1.2
+  参考值（阴影按 name 匹配、order 仅排序，新旧宿主效果一致）
+
+### Bug Fixes
+
+* **支持从源码运行的 DSH**：真实 Minimal 工具对的官方包导入链首插安装闭包
+  共享 fallback `$DSH_HOME/profiles/node_modules/<pkg>`（harness 启动时
+  heal 的依赖闭包镜像，npm 安装与源码运行都会建立），以 realpath 导入保证
+  与 harness 同一模块实例。修复本地路径安装（插件 realpath 在插件仓库）时
+  裸 import 解析不到官方包、realPair 静默降级的问题；remote 服务的
+  typert-protocol 同样优先 fallback。已对照 dsh 源码 0.1.2-alpha.1 复核
+  systemPrompt/tools/skills/agentPresets 契约无变化
+
 ## [0.9.1](https://github.com/winliyou/dsh-plugins) (2026-08-28)
 
 ### Bug Fixes

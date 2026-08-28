@@ -74,6 +74,11 @@
  * 只收窄目录、不替换 schema），绝不拖垮 harness。
  */
 
+import { createRequire } from 'node:module';
+import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createConfigStore } from './config-store.js';
 
 // remote 服务（设置页 UI 的配置读写）可选：typert-protocol 不可用时
@@ -112,8 +117,10 @@ export const name = 'adaptive-perf';
 export const DEFAULT_CONFIG = {
   /** 总开关：关闭后插件对会话不产生任何影响。 */
   enabled: true,
-  /** 应用自适应的 agent preset 列表（composedPreset 返回值）。 */
-  presets: ['standard', 'code', 'cordis'],
+  /** 应用自适应的 agent preset 列表（composedPreset 返回值）。'ptc' 是
+   * DSH 0.1.2 起对原 'code'（PTC 模式）的重命名；保留 'code' 兼容
+   * 0.1.1-rc.x 安装版宿主，宿主不存在的 id 不会有会话命中，无副作用。 */
+  presets: ['standard', 'code', 'ptc', 'cordis'],
   /**
    * 默认策略（0.7.0）：首轮锚定、晋升后 resident 目录（dsh-anchored-standard
    * 语义）。非极简 preset 的会话：请求 #1 按极简条件组装（真实 Minimal 工具
@@ -404,12 +411,17 @@ export function validateConfig(partial: any): void {
 
 // ── 纯函数（导出便于回归测试）────────────────────────────────────────────
 
-/** 被极简提示词层屏蔽的全局引导段（name, order，与 dsh-app-boot /
- * dsh-web-app / dsh-system-prompt 的注册一致）。 */
+/**
+ * 被极简提示词层屏蔽的全局引导段（name, order）。段名与 dsh-app-boot /
+ * dsh-web-app 的注册一致；阴影按 name 覆盖（宿主 layer.sections.insert 按
+ * name upsert），order 仅参与最终排序、不参与匹配，且空段在装配时被丢弃。
+ * DSH 0.1.2 把这些段的 order 调整为 -1000/-900/-800（0.1.1 为
+ * -100/-99/-98），此处沿用 0.1.2 参考值，对新旧宿主效果一致。
+ */
 export const SECTION_SHADOWS = [
-  ['harness:identity', -100],
-  ['harness:source', -99],
-  ['app:web-surface', -98],
+  ['harness:identity', -1000],
+  ['harness:source', -900],
+  ['app:web-surface', -800],
 ];
 
 /** persona 段的注册名与顺序（dsh-system-prompt 的 PERSONA_SECTION/PERSONA_ORDER）。 */
@@ -504,11 +516,12 @@ export const MINIMAL_BASH_DESCRIPTION = [
 
 /**
  * 被真实工具对按名阴影的工具引导段：standard 的 sandboxed bash 注册了
- * `tool:bash`（order 105）引导段，挂载真实工具对后该文本已与可见工具不符，
- * 按名阴影为空段（装配时丢弃）。
+ * `tool:bash` 引导段，挂载真实工具对后该文本已与可见工具不符，按名阴影为
+ * 空段（装配时丢弃）。阴影按 name 覆盖，order 仅排序：DSH 0.1.2 的
+ * FIRST_PARTY_SECTION_ORDER.TOOL_BASH 为 1000（0.1.1 为 105），效果一致。
  */
 export const TOOL_GUIDANCE_SHADOWS = [
-  ['tool:bash', 105],
+  ['tool:bash', 1000],
 ];
 
 /** 真实工具对挂载所需的官方插件包说明符（声明在 optionalDependencies）。 */
@@ -521,12 +534,31 @@ export const REAL_PAIR_SPECS = {
 };
 
 /**
+ * 官方包默认导入：安装闭包共享 fallback（$DSH_HOME/profiles/node_modules，
+ * harness 启动时 heal 出来的依赖闭包镜像，与 harness 同模块实例）优先，
+ * 失败再走本包依赖树。源码运行 + 本地路径安装时插件 realpath 在插件仓库，
+ * 裸 import 无法解析官方包，这一 fallback 是真实工具对能挂载的关键；
+ * npm 安装模式下它同样命中 harness 同源包，优于 profile 内的依赖副本。
+ * Node ESM 不支持目录导入：用包目录的 package.json 作 require 锚解析入口
+ * 文件（require.resolve 默认 realpath 化，得到 harness 同源实体路径）。
+ */
+function defaultRealPairImport(spec: string): Promise<any> {
+  try {
+    const dshHome = process.env.DSH_HOME?.trim() ? resolve(process.env.DSH_HOME) : join(homedir(), '.dsh');
+    const anchor = join(dshHome, 'profiles', 'node_modules', spec, 'package.json');
+    const real = realpathSync(createRequire(anchor).resolve(spec));
+    return import(pathToFileURL(real).href);
+  } catch {}
+  return import(spec);
+}
+
+/**
  * 加载真实 Minimal 工具对所需模块。任一包不可用即整体返回 null（调用方
  * 降级为旧行为），绝不抛出。
- * @param importFn - 测试可注入的 import 实现（默认动态 import）。
+ * @param importFn - 测试可注入的 import 实现（默认经安装闭包 fallback 导入）。
  */
 export async function loadRealPairModules(importFn?: any): Promise<any> {
-  const dynamicImport = importFn ?? ((spec: any) => import(spec as string));
+  const dynamicImport = importFn ?? defaultRealPairImport;
   const modules: any = {};
   for (const [key, spec] of Object.entries(REAL_PAIR_SPECS)) {
     try {

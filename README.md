@@ -86,6 +86,33 @@ cd ../session-archive && bunx npm@latest publish --access public
 调用 pnpm 安装依赖，并自动把声明了 `dsh.bundle` 的包加入
 `dsh.profile.bundles`，随后 DSH 会应用包内 `cordis.patch.yml` 完成插件注册。
 
+### 从 DSH 源码运行（全局不安装 @deepseek-ai 包）
+
+DSH 也可以从源码仓库运行（仓库内 `pnpm run build` 后 `pnpm dsh <args...>`，
+或构建产物入口），不再从 npm 全局安装 `dsh` 与 `@deepseek-ai/*`。此工作流下
+本仓库插件无需任何额外配置即可工作：
+
+- **官方包解析**：harness 启动时会把自身依赖闭包 symlink 镜像到
+  `$DSH_HOME/profiles/node_modules`（`healProfilesModuleFallback`，npm 安装
+  形态同样建立）。插件加载 `@deepseek-ai/*` 官方包时**优先从这里以 realpath
+  导入**——与 harness 解析到同一模块实例；失败才回落到插件自身依赖树
+  （`optionalDependencies` 的 npm 副本）与 profile 依赖树。因此全局是否还
+  安装过 `@deepseek-ai/*` 不影响插件。
+- **安装插件**：与 npm 形态相同的命令，包名换成本地路径：
+  ```bash
+  dsh plugin --profile web add /absolute/path/to/dsh-plugins/packages/sandbox-extra-roots
+  dsh plugin --profile web add /absolute/path/to/dsh-plugins/packages/adaptive-perf
+  dsh plugin --profile web add /absolute/path/to/dsh-plugins/packages/session-archive
+  ```
+  `dsh plugin` 仍由 pnpm 完成 link 与 bundle 对账；本地路径安装时插件目录
+  以链接形式进入 profile（hoisted node_modules），缺失的依赖按上面说的
+  顺序回落解析。
+- **版本对应**：插件声明的依赖 range 以 npm 上已发布的 rc 为准；源码仓库
+  （如 0.1.2-alpha.1）超前于 npm 版本时，上述共享 fallback 保证插件使用的
+  是 harness 同源实现（插件对官方包只依赖稳定契约，已对照 0.1.2-alpha.1
+  逐项核对；`agent preset id` 在 0.1.2 由 `code` 更名 `ptc`，
+  adaptive-perf 默认 presets 同时包含两者）。
+
 ```bash
 # 安装到默认 web profile（0.2.1+ 才包含 web boot 修复，见下文）
 dsh plugin --profile web add @chaoset/sandbox-extra-roots
