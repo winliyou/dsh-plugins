@@ -6,3 +6,7 @@ packages/*/config.json
 # build artifacts
 packages/*/lib/
 packages/*/client/client.cjs
+
+# AI 工作目录(会话中间文件与 worktree)
+.workwork/
+.worktrees/
