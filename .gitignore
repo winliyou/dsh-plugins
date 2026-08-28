@@ -10,3 +10,7 @@ packages/*/client/client.cjs
 # AI 工作目录(会话中间文件与 worktree)
 .workwork/
 .worktrees/
+.workbuddy-ai/
+
+# 工具临时文件(如 pnpm / 编辑器落盘时产生的 _tmp_* 空文件)
+_tmp_*
