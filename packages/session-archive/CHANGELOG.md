@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.4-alpha.0 (2026-09-01)
+
+### Bug Fixes
+
+* 适配 DSH 0.1.2-alpha.3：`@deepseek-ai/dsh-typert-protocol` 依赖 range 从
+  `^0.1.1-rc.2` 升到 `^0.1.2-alpha.3`（npm semver 的 prerelease 规则下旧 range
+  无法匹配 `0.1.2-alpha.3`，新版宿主下面板远程服务会因官方包解析到旧版本而不可用）
+* 已对照 0.1.2-alpha.3 复核 workspaceRegistry（`archivedSessionIds` /
+  `enqueueOperation` / `requireState` / `setState`）与 sessionPersistence
+  （`list` / `locate` / `readFrom`）契约、`session/title` / `user/message` /
+  `assistant/message` 事件形状均无变化，运行时逻辑无需调整；已在实际
+  0.1.2-alpha.3 web profile 上验证插件正常激活
+
 ## 0.3.3 (2026-08-29)
 
 ### Features
