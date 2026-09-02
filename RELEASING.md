@@ -23,6 +23,29 @@
 > 关闭后，`dsh-sandbox`→`dsh-llm`、`dsh-llm-pi-ai` 的 peers 需要显式声明才能
 > 在测试环境解析）。
 
+### 功能一致性原则
+
+两条分支的**功能集保持一致**：一个功能要么两边都有，要么两边都没有。唯一
+允许的代码差异是 **dsh 预发布线的破坏性 API 变更迫使的适配**（现状即
+`dsh-any-connect`：dsh 0.1.2 移除了 `settingsNamespace()`、把
+`installSettingsSection()` 挪到 provider 服务，分线实现不可避免）——适配只
+改变「怎么接进宿主」，不改变功能本身。
+
+由此推论：
+
+- 功能开发默认落在活跃的 alpha 分支，完成后 cherry-pick 回 main（宿主无关的
+  改动通常零冲突）；只在稳定线有意义的功能（如针对 rc.2 的修复）直接在 main
+  做并反向同步。
+- CHANGELOG 双记录：同一功能在两条分支各记一节，版本号按各自规则取。
+- 周期性体检（每次宿主适配完成后跑一次）：
+
+  ```bash
+  # 三个无分线代码的包：预期零差异
+  git diff main alpha -- packages/adaptive-perf/src packages/adaptive-perf/client
+  # 有分线实现的包：预期 diff 全部是 dsh API 适配，不出现功能增删
+  git diff main alpha -- packages/dsh-any-connect/src
+  ```
+
 ## 版本号规则
 
 - 遵循 semver：破坏性变更 MAJOR、新功能 MINOR、修复 PATCH。版本号只在本地
@@ -69,6 +92,8 @@
 后才打），未完成的继续，不会重复发布。
 
 ## 跨分支同步
+
+同步的目标是维持功能一致性原则：功能差异零容忍，宿主适配差异才合法。
 
 - **与宿主版本无关**的修复/功能：在 alpha 开发，cherry-pick 回 main（或反向）。
   只搬 `src/`、`client/`、`CHANGELOG.md` 和 `package.json` 里与依赖无关的字段；
