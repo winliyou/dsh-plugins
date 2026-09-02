@@ -169,6 +169,24 @@ describe('WorkBuddyCredentialStore', () => {
     expect(store.desktopAuthPath()).toBe(second)
     await expect(store.resolve()).resolves.toMatchObject({ accessToken: 'at-b', nickname: 'B' })
   })
+
+  it('treats a blank authFile repoint as no override and returns to platform probing', async () => {
+    // 回归：settings 文档把未设置的 authFile 物化成空串，onChange 会把它原样
+    // 传给 setDesktopPath——空串曾把探测路径钉死为单个空路径，插件整体变成
+    // signed-out，设置页卡片因此消失。
+    const dir = await mkdtemp(join(tmpdir(), 'wb-store-'))
+    CLEANUP.push(() => rm(dir, { recursive: true, force: true }))
+    const store = new WorkBuddyCredentialStore({
+      desktopPath: join(dir, 'explicit.info'),
+      ownPath: join(dir, 'own.json'),
+      refresh: async credential => ({ accessToken: credential.accessToken }),
+    })
+    store.setDesktopPath('')
+    expect(store.desktopAuthPath()).toBe(defaultDesktopAuthCandidates()[0])
+    expect(store.desktopAuthPath()).not.toBe('')
+    store.setDesktopPath('   ')
+    expect(store.desktopAuthPath()).toBe(defaultDesktopAuthCandidates()[0])
+  })
 })
 
 describe('Windows default desktop path probing', () => {
