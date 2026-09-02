@@ -8,36 +8,7 @@ allowBuilds:
   esbuild: true
   koffi: true
   protobufjs: true
-# 供应链防护：第三方依赖发布满 24 小时才允许安装。dsh 官方预发布包需要
-# 即时跟进，由下方清单排除；清单版本号由 scripts/adapt-dsh.mjs 随宿主
-# 升级统一改写。
-minimumReleaseAge: 1440
-minimumReleaseAgeExclude:
-  - '@deepseek-ai/dsh-agent@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-brand@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-code-runtime@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-fs-local@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-fs@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-invariants@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-llm@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-pwsh-local@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-sandbox-policy@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-sandbox@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-scope@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-session-projection@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-session@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-settings@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-shell@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-subprocess@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-system-prompt@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-terminal-bash@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-terminal@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-timeout@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-tool-bash-persistent@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-tool-str-replace-editor@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-tools@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-typert-protocol@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-user-approval@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-util-crypto@0.1.2-alpha.3'
-  - '@deepseek-ai/dsh-util-values@0.1.2-alpha.3'
+# 供应链防护：依赖发布满 24 小时才允许安装。稳定线（本分支）的 dsh 官方
+# 包都早已超过 24 小时，无需排除清单；预发布线（alpha 分支）要即时跟进 dsh
+# 预发布包，在那边维护 minimumReleaseAgeExclude 清单（adapt-dsh.mjs 改写）。
 autoInstallPeers: false

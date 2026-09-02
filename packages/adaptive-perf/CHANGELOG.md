@@ -1,19 +1,5 @@
 # Changelog
 
-## 0.10.2-alpha.0 (2026-09-01)
-
-### Bug Fixes
-
-* 适配 DSH 0.1.2-alpha.3：6 个 `@deepseek-ai/*` optionalDependencies 的 range 从
-  `^0.1.1-rc.2` 升到 `^0.1.2-alpha.3`（npm semver 的 prerelease 规则下旧 range
-  无法匹配 `0.1.2-alpha.3`，新版宿主下官方模块会解析到旧版本或缺失）；根
-  `@deepseek-ai/cordis` 升到 `^4.0.2`、`@deepseek-ai/schemastery` 升到 `^3.18.2`
-* 已对照 0.1.2-alpha.3 全量 diff 官方包：systemPrompt / tools / skills /
-  agentPresets 契约与 `SECTION_ORDERS`（harness:identity -1000 / harness:source
-  -900 / app:web-surface -800 / tool:bash 1000）、minimal preset 工具对挂载
-  形状均无变化，运行时逻辑无需调整；已在实际 0.1.2-alpha.3 web profile 上
-  验证三个插件正常激活
-
 ## 0.10.1 (2026-08-29)
 
 ### Features
