@@ -15,6 +15,21 @@ README 面向用户，面向开发者的内容以 RELEASING.md 为准。
   搬运**；基础设施文件（workflows / scripts / 根配置 / 文档）两分支保持一致，
   直接 cherry-pick。
 
+## 开发工作流：worktree，不要切分支
+
+主检出目录固定停在 `alpha`（活跃线）。需要另一条分支时用 git worktree，
+**绝不在主检出目录里来回 checkout**：`lib/` 与 `node_modules` 被 gitignore，
+切分支后残留的是上一条分支的构建产物和依赖解析（曾导致旧宿主线的
+`installSettingsSection` lib 在新源码下直接崩溃）。
+
+```bash
+git worktree add .worktrees/main main      # 首次创建（.worktrees/ 已 gitignore）
+cd .worktrees/main && pnpm install && pnpm run build   # 每个工作树独立安装构建
+```
+
+跨分支 cherry-pick 在两个工作树目录之间直接进行，互不污染；每次进入工作树
+或主检出目录后，先确认 `lib/` 是当前分支的产物（不确定就重新 build）。
+
 ## 常用命令
 
 ```bash
