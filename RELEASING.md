@@ -96,6 +96,10 @@
 
 同步的目标是维持功能一致性原则：功能差异零容忍，宿主适配差异才合法。
 
+- **工作区隔离**：`main` 与 `alpha` 用 git worktree 并存（主检出目录固定停在
+  `alpha`，`.worktrees/main` 是稳定线工作树），不要在主检出目录里切分支——
+  `lib/` 与 `node_modules` 不受 git 管理，切分支会残留上一条线的构建产物与
+  依赖解析。进入任一工作树后先 `pnpm install`，构建产物可疑就重新 build。
 - **与宿主版本无关**的修复/功能：在 alpha 开发，cherry-pick 回 main（或反向）。
   只搬 `src/`、`client/`、`CHANGELOG.md` 和 `package.json` 里与依赖无关的字段；
   **依赖 range 与 `pnpm-lock.yaml` 永不跨分支搬运**——到达目标分支后按该线的
@@ -132,10 +136,10 @@ pnpm run test:ci && git push
 2. **预发布线进入 rc**：dsh 发 `0.1.2-rc.1` 时仍在 alpha 分支适配，版本后缀
    换成 `-rc.N`，发布到 `rc` dist-tag。
 3. **dsh 转正**：在 alpha 分支把各包版本号去掉预发布后缀（`0.3.2-alpha.0` →
-   `0.3.2`；若稳定线热修已占用该基础号，先跳到下一个基础号），合并回 main：
-   `git checkout main && git merge alpha`——此刻两线目标宿主相同，可以合并；
-   `pnpm-lock.yaml` 冲突任取一边后 `pnpm install` 重新生成。在 main 上推送
-   发布 `latest`，然后 `git checkout alpha && git merge main` 对齐两分支，
+   `0.3.2`；若稳定线热修已占用该基础号，先跳到下一个基础号），然后合并回
+   稳定线：在 `.worktrees/main` 工作树里 `git merge alpha`——此刻两线目标宿主
+   相同，可以合并；`pnpm-lock.yaml` 冲突任取一边后 `pnpm install` 重新生成。
+   在 main 上推送发布 `latest`，再回到 alpha 分支 `git merge main` 对齐两分支，
    等待 dsh 的下一条预发布线。
 4. **循环**：dsh 出下一条预发布线，回到第 1 步。若某个时期同时活跃的宿主线
    超过两条（如 `0.1.2-rc` 与 `0.1.3-alpha` 并行），照同样模型再拉一条分支
