@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.6-alpha.0 (2026-09-03)
+
+### Bug Fixes
+
+* 修复侧栏额度徽章与设置卡片在浏览器中崩溃（`ReferenceError: React is not
+  defined`）：client 构建的 JSX 此前按 tsconfig 回落 classic 转换，产物引用裸
+  `React.createElement`，页面无全局 React 即崩。构建脚本显式 `jsx: automatic`
+  并将 `react/jsx-runtime` 设为 external（宿主 ModuleLoader 两线均映射该模块，
+  官方 client 插件即此形态）
+* 模型下拉框不再显示模型介绍文案：倍率只随模型名显示（`GLM-5.2 · x0.79`），
+  description 字段不再携带任何内容，彻底消除费率重复
+
+### Changes
+
+* 版本号跳号：0.3.5 基础号留给稳定线发布同一修复
+
 ## 0.3.5-alpha.0 (2026-09-03)
 
 ### Features

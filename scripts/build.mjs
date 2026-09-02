@@ -42,7 +42,13 @@ async function buildClient(pkgDir, pkgName, pkgId) {
     format: "cjs",
     platform: "browser",
     target: ["es2020"],
-    external: ["react"],
+    // JSX 走 automatic 运行时（宿主 ModuleLoader 映射 react 与
+    // react/jsx-runtime，官方 client 插件即此形态）。不显式声明时 esbuild
+    // 按 tsconfig 解析回 classic 转换，产物引用裸 `React.createElement`——
+    // 页面没有全局 React 就会在渲染时抛 ReferenceError（曾让侧栏徽章与
+    // 设置卡片在稳定版宿主上崩溃）。
+    jsx: "automatic",
+    external: ["react", "react/jsx-runtime"],
     write: false,
   });
   const body = result.outputFiles[0].text;
