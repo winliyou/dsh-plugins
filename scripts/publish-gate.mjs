@@ -16,7 +16,7 @@
 // 捕获计划。dist-tag 由版本后缀派生：`0.10.2-alpha.0` → alpha、`1.2.3-rc.4`
 // → rc、无后缀 → latest（纯字符串解析，不引入 semver 依赖）。
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -95,6 +95,16 @@ function distTag(version) {
   return m ? m[1] : "latest";
 }
 
+// CHANGELOG 是否有该版本的小节（与 scripts/release-notes.mjs 同一判定）。
+// 缺失不阻断发布，但 GitHub Release 说明会退化为占位文本，提前警告。
+function changelogHasSection(dir, version) {
+  const p = join(ROOT, "packages", dir, "CHANGELOG.md");
+  if (!existsSync(p)) return false;
+  return readFileSync(p, "utf8")
+    .split("\n")
+    .some((l) => l === `## ${version}` || l.startsWith(`## ${version} `));
+}
+
 const plan = [];
 let failed = false;
 
@@ -120,6 +130,9 @@ for (const dir of PACKAGES) {
   }
 
   log(`→ ${name}@${version} 计划发布，dist-tag: ${distTag(version)}`);
+  if (!changelogHasSection(dir, version)) {
+    log(`! ${name}@${version} 在 CHANGELOG.md 中没有对应小节，GitHub Release 说明将使用占位文本。`);
+  }
   plan.push({ dir, name, version, tag: distTag(version) });
 }
 
