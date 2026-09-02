@@ -12,7 +12,7 @@ export type WorkBuddyModelInfo = WorkBuddyUpstreamModel
 
 /**
  * Static CLI models observed on the CN endpoint (re-verified against the live
- * catalog 2026-09-01, including the thinking-effort and billing metadata). The
+ * catalog 2026-09-02, including the thinking-effort and billing metadata). The
  * upstream refresh replaces this list at startup; it exists so the provider
  * registers with a usable catalog even while the first fetch is in flight or
  * offline.
