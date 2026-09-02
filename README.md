@@ -30,7 +30,7 @@ dsh plugin --profile web add @chaoset/adaptive-perf
 dsh plugin --profile web add @chaoset/session-archive
 dsh plugin --profile web add @chaoset/dsh-any-connect
 
-# 预发布线（适配 DSH 0.1.2-alpha.x，发布在 alpha dist-tag，npm tag 语法）
+# 预发布线（适配 dsh 预发布版本，发布在对应 dist-tag，npm tag 语法）
 dsh plugin --profile web add @chaoset/sandbox-extra-roots@alpha
 
 # 从本地源码安装（包名换成 monorepo 子包的绝对路径）
@@ -96,8 +96,9 @@ pnpm run test:ci   # build + test（发布前验证）
 分支模型、版本号规则、跨分支同步与 DSH 宿主升级适配的完整约定见
 [RELEASING.md](RELEASING.md)。速查：
 
-- 分支跟随 DSH 宿主线：`main` = 稳定线（发 `latest`），`alpha` = 预发布线
-  （发 `alpha` dist-tag）。
+- 分支跟随 DSH 宿主线：`main` = 稳定线（发 `latest`），`alpha` = 下一条
+  预发布线（`-alpha.N` 进入 rc 阶段后换 `-rc.N`，dist-tag 跟随后缀）。双线
+  并行是常态，main 的工作树始终处于可直接发布状态。
 - 版本号在本地手工修改（编辑各包 `package.json` 的 `version`），CI 绝不改写；
   alpha 线版本带 `-alpha.N` 后缀，dist-tag 由后缀自动派生。
 - 推送后 CI（`.github/workflows/publish.yml`）自动测试并发布。该发什么由
