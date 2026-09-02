@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.2-alpha.1 (2026-09-02)
+
+### Changes
+
+* 适配 DSH 0.1.2-alpha.5：6 个 `@deepseek-ai/dsh-*` optionalDependencies 的下限从
+  `^0.1.2-alpha.3` 升到 `^0.1.2-alpha.5`（semver 同元组 prerelease 规则下旧 range
+  本就匹配 alpha.4/alpha.5，升下限是声明实测基线）；仓库侧 minimumReleaseAgeExclude
+  清单由 adapt-dsh 按 lockfile 闭包重建（27 → 35 项，覆盖闭包新增的 dsh 子包）
+* 已对照 0.1.2-alpha.5 全量 diff 官方包（38 个）：依赖的 dsh-terminal /
+  dsh-terminal-bash / dsh-tool-bash-persistent / dsh-fs-local 仅移除内联的 invariant
+  助手，dsh-tool-str-replace-editor 无变化；契约相关的 dsh-agent / dsh-tools 仅内部
+  调整（`session.ownEvents()` 换用、注释措辞），systemPrompt / tools / agentPresets
+  契约与 minimal preset 工具对挂载形状无变化；全仓 build + typecheck + 152 项测试
+  在 alpha.5 依赖闭包上通过
+
 ## 0.10.2-alpha.0 (2026-09-01)
 
 ### Bug Fixes

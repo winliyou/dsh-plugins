@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.4-alpha.1 (2026-09-02)
+
+### Changes
+
+* 适配 DSH 0.1.2-alpha.5：`@deepseek-ai/dsh-sandbox` 与
+  `@deepseek-ai/dsh-typert-protocol` 依赖下限从 `^0.1.2-alpha.3` 升到
+  `^0.1.2-alpha.5`（声明实测基线）；仓库侧 exclude 清单按 lockfile 闭包重建
+  （27 → 35 项）
+* 已对照 0.1.2-alpha.5 全量 diff 官方包：dsh-sandbox 的 lib 仅移除内联 invariant
+  助手，`canonicalPath` / `writableRoots` / `SandboxProvider.confine` 签名无变化；
+  dsh-sandbox-policy 仅 invariant 内联调整；全仓 build + typecheck + 152 项测试在
+  alpha.5 依赖闭包上通过
+
 ## 0.4.4-alpha.0 (2026-09-01)
 
 ### Bug Fixes

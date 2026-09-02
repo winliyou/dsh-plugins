@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.1-alpha.1 (2026-09-02)
+
+### Changes
+
+* 适配 DSH 0.1.2-alpha.5：dsh 子包与 devDeps peers 依赖下限从 `^0.1.2-alpha.3` 升到
+  `^0.1.2-alpha.5`（声明实测基线）；仓库侧 exclude 清单按 lockfile 闭包重建
+  （27 → 35 项）
+* 已对照 0.1.2-alpha.5 全量 diff 官方包：dsh-llm-pi-ai 的模型发现路径内部重构
+  （`storedApiKey` 裸函数 → `storedProfile`（headers + 惰性凭证解析）），导出面与
+  配置 schema 无变化，adapter 自有的 `resolveApiKey` 不经过该内部路径；dsh-llm 的
+  typert 快照更新（`CoordinatorMessageSource` → `AgentMessageSource`，宿主内部消息
+  分类，插件不引用）；dsh-client-ui-renderer 为 inject face 新增 `keyedHooks` 轴
+  （加法兼容，原 `hooks` 轴不变）；dsh-settings / dsh-attachment / dsh-home-paths /
+  dsh-host-webserver / dsh-atomic-write 仅移除内联 invariant 助手；多数官方包移除了
+  dsh-invariants peer（下游依赖压力变小）；全仓 build + typecheck + 152 项测试在
+  alpha.5 依赖闭包上通过
+
 ## 0.3.1-alpha.0 (2026-09-02)
 
 alpha 线首版：与 main 的 0.3.1 功能一致，依赖适配到最新 dsh（0.1.2-alpha.3

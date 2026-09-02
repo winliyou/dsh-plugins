@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.4-alpha.1 (2026-09-02)
+
+### Changes
+
+* 适配 DSH 0.1.2-alpha.5：`@deepseek-ai/dsh-typert-protocol` 依赖下限从
+  `^0.1.2-alpha.3` 升到 `^0.1.2-alpha.5`（声明实测基线）；仓库侧 exclude 清单按
+  lockfile 闭包重建（27 → 35 项）
+* 已对照 0.1.2-alpha.5 全量 diff 官方包：dsh-typert-protocol 仅移除内联 invariant
+  助手；dsh-session 本次有 14 个文件内部调整，但逐项核对与插件契约面
+  （`archivedSessionIds` / `enqueueOperation` / `list` / `locate` / `readFrom`、
+  `session/title` / `user/message` / `assistant/message` 事件形状）零交集——变化是
+  宿主内部逻辑与 `SessionSeq` / `SessionLogOffset` 品牌类型细化；全仓 build +
+  typecheck + 152 项测试在 alpha.5 依赖闭包上通过
+
 ## 0.3.4-alpha.0 (2026-09-01)
 
 ### Bug Fixes
