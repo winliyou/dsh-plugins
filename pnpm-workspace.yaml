@@ -1,10 +1,13 @@
 packages:
   - 'packages/*'
-# pnpm 默认拦截所有依赖的构建脚本；这里放行 bun 时代实际构建过的两个
-# （esbuild 的二进制安装、koffi 的原生模块编译），保持与迁移前一致的行为。
+# pnpm 默认拦截所有依赖的构建脚本；这里放行的几个都是实际需要构建步骤的
+# （esbuild 的二进制安装、koffi 的原生模块编译；@google/genai 与 protobufjs
+# 由 dsh-anyconnect 引入的 pi-ai 间接依赖，同样有必需的构建步骤）。
 allowBuilds:
+  '@google/genai': true
   esbuild: true
   koffi: true
+  protobufjs: true
 minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-agent@0.1.2-alpha.3'
   - '@deepseek-ai/dsh-brand@0.1.2-alpha.3'

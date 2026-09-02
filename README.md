@@ -7,6 +7,7 @@ DSH（DeepSeek Harness）host 层全局插件的 monorepo：
 | [`@chaoset/sandbox-extra-roots`](packages/sandbox-extra-roots/) | 沙盒额外允许写入目录（Seatbelt/bwrap/Landlock + fs fence） |
 | [`@chaoset/adaptive-perf`](packages/adaptive-perf/) | 极简性能自适应：标准/PTC 模式首轮按极简条件锚定，能力按需放行 |
 | [`@chaoset/session-archive`](packages/session-archive/) | 归档会话管理：浏览、批量恢复或彻底删除归档会话 |
+| [`@chaoset/dsh-anyconnect`](packages/dsh-anyconnect/) | 接入 WorkBuddy 桌面 App 的模型到 DSH（零配置 + 思考强度/费率显示；源自 corrinehu/dsh-workbuddy-connect 的独立分支） |
 
 每个包都提供：
 
@@ -23,10 +24,11 @@ DSH（DeepSeek Harness）host 层全局插件的 monorepo：
 的包加入 `dsh.profile.bundles`，随后 DSH 应用包内 `cordis.patch.yml` 完成插件注册。
 
 ```bash
-# 从 npm 安装（三个包一起）
+# 从 npm 安装（四个包一起）
 dsh plugin --profile web add @chaoset/sandbox-extra-roots
 dsh plugin --profile web add @chaoset/adaptive-perf
 dsh plugin --profile web add @chaoset/session-archive
+dsh plugin --profile web add @chaoset/dsh-anyconnect
 
 # 从本地源码安装（包名换成 monorepo 子包的绝对路径）
 dsh plugin --profile web add /absolute/path/to/dsh-plugins/packages/session-archive
@@ -35,6 +37,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-plugins/packages/session-arch
 dsh plugin --profile web remove @chaoset/sandbox-extra-roots
 dsh plugin --profile web remove @chaoset/adaptive-perf
 dsh plugin --profile web remove @chaoset/session-archive
+dsh plugin --profile web remove @chaoset/dsh-anyconnect
 ```
 
 其他来源：
