@@ -145,8 +145,8 @@ Publishing）。之后手工补归档，否则门禁不认识这个版本：
 `git tag <目录>-v<版本> && git push origin <目录>-v<版本>`；GitHub Release
 在网页上补，说明用 `node scripts/release-notes.mjs <目录> <版本>` 生成。
 
-## 一次性设置建议
+## 分支保护（暂不开启）
 
-在 GitHub → Settings → Branches 给 `main` 与 `alpha` 开分支保护（要求
-"Publish to npm" / "Test" check 通过）。本仓库是 push 即发布（npm Trusted
-Publishing），分支保护能拦住误推直接进 npm。
+当前只有仓库所有者一人提交，未开启分支保护。若未来开放协作或 PR，建议给
+`main` 与 `alpha` 开保护并要求 "Publish to npm" / "Test" check 通过——本仓库
+是 push 即发布（npm Trusted Publishing），保护能拦住误推直接进 npm。
