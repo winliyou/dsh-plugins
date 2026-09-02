@@ -1,9 +1,20 @@
 # Changelog
 
+## 0.3.1 (2026-09-02)
+
+### Changes
+
+* npm 包名定为 `@chaoset/dsh-any-connect`（原迁移时的 `dsh-anyconnect` 因
+  unpublish 后 24 小时同名保护无法复用，且更清晰的连字符命名与 monorepo 目录
+  `packages/dsh-any-connect` 一致）。同步更新：heartbeat `package` 字段、
+  status 路由路径、CLI 命令名（`dsh-any-connect`）、client 插件名、
+  `cordis.patch.yml`。内部标识（provider 路由 `workbuddy`、设置命名空间
+  `anyconnect`）不变——它们是接入的 Agent 名与产品标识，非包名。
+
 ## 0.3.0 (2026-09-02)
 
 本包的第一个独立版本：由 corrinehu/dsh-workbuddy-connect 迁移而来，纳入
-dsh-plugins monorepo，标识改为 @chaoset/dsh-anyconnect（插件名
+dsh-plugins monorepo，标识改为 @chaoset/dsh-any-connect（插件名
 `llm-anyconnect`、设置命名空间 `anyconnect`；provider 路由保留 `workbuddy`）。
 
 ### Features
@@ -19,7 +30,7 @@ dsh-plugins monorepo，标识改为 @chaoset/dsh-anyconnect（插件名
   发送，WorkBuddy 上游拒绝该 role（HTTP 400 code 11128）
 * 兜底目录同步到 cli 的 15 个模型（新增 hy4-preview / hy3-x / glm-5.3 /
   glm-5.3-flash）
-* 保留 `dsh-anyconnect` CLI（doctor / status / logout，含宿主心跳检测）
+* 保留 `dsh-any-connect` CLI（doctor / status / logout，含宿主心跳检测）
 * 版本改为运行时读 `package.json`（monorepo 用 tsc 构建，无 tsdown `define`；
   顺带消除"发布产物报旧版本号"的失败模式）
 

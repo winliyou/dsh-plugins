@@ -3,7 +3,7 @@
  * typert.host.js — 手写的 Typert host 工件（typert-loader 机制）。
  *
  * 本包没有 Remote 服务：host 侧通过 `webServer` 注册同域状态路由
- * （`/plugins/dsh-anyconnect/status`），浏览器卡片用 `fetch` 读取，不走
+ * （`/plugins/dsh-any-connect/status`），浏览器卡片用 `fetch` 读取，不走
  * typert 网关。这里仍导出一个空的 TYPERT 工件，原因有二：
  *
  * 1. monorepo 的 `test/bundle.test.ts` 断言每个包的 exports 都暴露
@@ -16,7 +16,7 @@
  */
 
 export const TYPERT = {
-  package: '@chaoset/dsh-anyconnect',
+  package: '@chaoset/dsh-any-connect',
   face: 'host',
   schemas: [],
   invocations: [],

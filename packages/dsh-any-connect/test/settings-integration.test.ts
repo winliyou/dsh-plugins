@@ -35,7 +35,7 @@ afterEach(async () => {
 
 describe('WorkBuddy Host settings integration', () => {
   it('exposes the provider directory entry, the settings section, and the fallback model list', async () => {
-    root = await mkdtemp(join(tmpdir(), 'dsh-anyconnect-settings-'))
+    root = await mkdtemp(join(tmpdir(), 'dsh-any-connect-settings-'))
     vi.stubEnv('DSH_HOME', root)
     const ctx = new Context()
     context = ctx

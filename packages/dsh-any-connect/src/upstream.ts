@@ -4,7 +4,7 @@
  * ported from Sliverkiss/workbuddy2api (MIT), whose Go implementation is
  * battle-tested against the real endpoint.
  *
- * @module dsh-anyconnect/upstream
+ * @module dsh-any-connect/upstream
  */
 
 import type { WorkBuddyCredential } from './auth.js'

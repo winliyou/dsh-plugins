@@ -1,6 +1,6 @@
 {
-  "name": "@chaoset/dsh-anyconnect",
-  "version": "0.3.0",
+  "name": "@chaoset/dsh-any-connect",
+  "version": "0.3.1",
   "description": "DSH plugin: bring models offered by WorkBuddy-style desktop agents into DeepSeek Harness — zero configuration, per-model thinking effort, and billing rate at a glance",
   "type": "module",
   "license": "MIT",
@@ -20,7 +20,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "dsh-anyconnect": "./lib/bin.js"
+    "dsh-any-connect": "./lib/bin.js"
   },
   "dsh": {
     "bundle": {
@@ -52,8 +52,8 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/winliyou/dsh-plugins.git",
-    "directory": "packages/dsh-anyconnect"
+    "url": "git+https://github.com/winliyou/dsh-plugins.git",
+    "directory": "packages/dsh-any-connect"
   },
   "publishConfig": {
     "access": "public"
