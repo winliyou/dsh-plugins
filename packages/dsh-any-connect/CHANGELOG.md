@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.5-alpha.0 (2026-09-03)
+
+### Features
+
+* 主页面侧栏底部新增 WorkBuddy 剩余额度徽章（`sidebar.footer.action` 槽位，
+  list 型注册字段为 id/order）：每 2 分钟静默轮询，未登录或无额度数据时不
+  渲染；侧栏收起（wide=false）退化为纯数字
+* 模型费率去重：倍率只保留在模型名后缀（`GLM-5.2 · x0.79`），模型描述不再
+  重复展示倍率，改为携带上游的模型文案（`descriptionZh`/`descriptionEn`
+  按登录区域取用）
+
+### Changes
+
+* 版本号跳号：alpha 线跳过 0.3.4 基础号，给稳定线留出 0.3.4 的发布空间
+  （不变式：预发布必须高于一切已发布版本）
+
 ## 0.3.4-alpha.0 (2026-09-03)
 
 ### Bug Fixes

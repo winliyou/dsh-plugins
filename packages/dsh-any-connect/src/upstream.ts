@@ -52,6 +52,13 @@ export interface WorkBuddyUpstreamModel {
    * on {@link WorkBuddyModelBilling.credits} for diagnostics.
    */
   billing?: WorkBuddyModelBilling
+  /**
+   * Region-resolved upstream marketing copy ("能力均衡，适合日常使用" /
+   * "Great for daily use"), stamped at fetch time because the model surfaces
+   * render it beside the name and cannot localize later. Absent when the
+   * upstream omits both spellings.
+   */
+  description?: string
 }
 
 /** Reasoning metadata the upstream catalog declares for one model. */
@@ -510,6 +517,7 @@ export class WorkBuddyUpstreamClient {
       throw new Error('workbuddy model catalog lists no cli agent models')
     }
     const byId = new Map<string, WorkBuddyUpstreamModel>()
+    const region = regionOf(credential.domain)
     for (const model of rawModels) {
       if (typeof model !== 'object' || model === null) continue
       const wrapped = model as Record<string, unknown>
@@ -518,6 +526,9 @@ export class WorkBuddyUpstreamClient {
       const input = typeof wrapped['maxInputTokens'] === 'number' ? wrapped['maxInputTokens'] : 0
       const output = typeof wrapped['maxOutputTokens'] === 'number' ? wrapped['maxOutputTokens'] : 0
       if (input <= 0 || output <= 0) continue
+      const descriptionZh = typeof wrapped['descriptionZh'] === 'string' ? wrapped['descriptionZh'].trim() : ''
+      const descriptionEn = typeof wrapped['descriptionEn'] === 'string' ? wrapped['descriptionEn'].trim() : ''
+      const localized = region === 'global' ? descriptionEn || descriptionZh : descriptionZh || descriptionEn
       byId.set(id, {
         id,
         name: typeof wrapped['name'] === 'string' && wrapped['name'] !== '' ? wrapped['name'] : id,
@@ -526,6 +537,7 @@ export class WorkBuddyUpstreamClient {
         supportsImages: wrapped['supportsImages'] === true && wrapped['disabledMultimodal'] !== true,
         ...resolveUpstreamReasoning(wrapped),
         ...resolveUpstreamBilling(wrapped),
+        ...localized === '' ? {} : { description: localized },
       })
     }
     const models = cliIds
