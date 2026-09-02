@@ -218,7 +218,9 @@ describe("client.cjs 构建产物冒烟（__ModuleLoader__ 契约）", () => {
         expect(entries[0].id, `${name}: id 为 @chaoset/<pkg>`).toBe(`@chaoset/${name}`);
         expect(typeof entries[0].factory, `${name}: factory 是函数`).toBe("function");
         const mod = entries[0].factory((spec: string) =>
-          spec === "react" ? reactStub : {});
+          spec === "react" ? reactStub
+          : spec === "react/jsx-runtime" ? { jsx: reactStub.createElement, jsxs: reactStub.createElement, Fragment: reactStub.Fragment }
+          : {});
         expect(typeof mod?.apply, `${name}: factory 返回带 apply 的模块`).toBe("function");
       } finally {
         (globalThis as any).window = prevWindow;
