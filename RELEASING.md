@@ -72,12 +72,19 @@
 
 ## 日常发布流程
 
-1. 在目标分支改代码，为每个受影响的包：
+**发布门槛：功能完全实现 + 测试全绿 + dsh 测试实例真实验证通过，三者齐备
+才 bump 版本并推送。** 版本一旦发到 npm 不可撤回，"发布后再验证发现问题
+再发一版"会产生大量无意义的版本号（2026-09-03 单日 6+ 版本的教训）。
+
+1. 在目标分支改代码，`pnpm run test:ci` 全绿。
+2. 启动隔离测试实例（独立 `DSH_HOME` + 本地路径安装插件），在真实浏览器
+   里验证功能与控制台（详见 AGENTS.md「发布纪律」）。未通过就回到 1，
+   **不要 push**。
+3. 验证通过后，为每个受影响的包：
    - 在 `CHANGELOG.md` 顶部新增 `## <版本> (YYYY-MM-DD)` 小节——GitHub
      Release 说明自动取自这里（`scripts/release-notes.mjs`），不写就没有说明；
-   - 升 `package.json` 的 `version`。
-2. 改了依赖就 `pnpm install`；然后 `pnpm run test:ci`。
-3. 提交推送。CI（`.github/workflows/publish.yml`）自动执行：测试 → 状态式
+   - 升 `package.json` 的 `version`（bump 是最后一步）。
+4. 提交推送。CI（`.github/workflows/publish.yml`）自动执行：测试 → 状态式
    门禁 → 发布 → 打 git tag `<目录>-v<版本>` → 创建 GitHub Release。
 
 发布门禁（`scripts/publish-gate.mjs`）的判定，按每个包依次：
