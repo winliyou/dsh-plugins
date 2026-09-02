@@ -176,6 +176,25 @@ describe('WorkBuddyUpstreamClient.fetchCredits', () => {
     expect(credits.accounts[0]).toEqual({ packageName: 'pkg', remain: 30, size: 100 })
   })
 
+  it('adds not-yet-started cycle grants to a drained cyclic package', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => fakeResponse(billingEnvelope([
+      {
+        PackageName: 'pkg',
+        CycleCapacitySize: 100,
+        CycleCapacityRemain: 0,
+        CycleCapacityUsed: 100,
+        RemainCycles: 3,
+        CapacityRemain: 999,
+      },
+    ]))))
+
+    const credits = await new WorkBuddyUpstreamClient().fetchCredits(CREDENTIAL)
+    // Current cycle drained but three cycles never started: the package is not
+    // empty. Numerator and denominator span the same scope (1 + RemainCycles).
+    expect(credits.accounts[0]).toEqual({ packageName: 'pkg', remain: 300, size: 400 })
+    expect(credits.total).toBe(300)
+  })
+
   it('selects cycle remain when there is cycle usage even without size (second branch)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeResponse(billingEnvelope([
       { PackageName: 'pkg', CycleCapacitySize: 0, CycleCapacityRemain: 20, CycleCapacityUsed: 5, CapacityRemain: 1 },

@@ -582,16 +582,26 @@ export class WorkBuddyUpstreamClient {
       const cycleRemain = numberField('CycleCapacityRemain')
       const cycleUsed = numberField('CycleCapacityUsed')
       const capacityRemain = numberField('CapacityRemain')
+      const remainCycles = numberField('RemainCycles')
       let remain: number
-      if (size > 0) remain = cycleRemain
-      else if (cycleRemain > 0 || cycleUsed > 0) remain = cycleRemain
-      else remain = capacityRemain
+      if (size > 0) {
+        // True availability of a cyclic package = this cycle's remainder plus
+        // the full grant of every cycle that has not started yet: a package
+        // with its current cycle drained is not empty while RemainCycles > 0.
+        remain = cycleRemain + remainCycles * size
+      } else if (cycleRemain > 0 || cycleUsed > 0) {
+        remain = cycleRemain
+      } else {
+        remain = capacityRemain
+      }
       if (remain < 0) remain = 0
       total += remain
       accounts.push({
         packageName: typeof account['PackageName'] === 'string' ? account['PackageName'] : '(unnamed)',
         remain,
-        size: size > 0 ? size : numberField('CapacitySize'),
+        // The bar's denominator spans the same scope as the numerator: current
+        // cycle plus the not-yet-started ones.
+        size: size > 0 ? size * (1 + remainCycles) : numberField('CapacitySize'),
       })
     }
     return { total, accounts }

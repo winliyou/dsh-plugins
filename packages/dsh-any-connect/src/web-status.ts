@@ -78,7 +78,9 @@ export async function workBuddyWebStatus(
   const modelsField: readonly WorkBuddyWebModelBadge[] = models
     .filter(model => model.billing?.free === true || (model.billing?.badges?.length ?? 0) > 0)
     .map(model => {
-      const rate = normalizeCredits(model.billing?.credits)
+      // A free model's card row already carries the 免费 chip; the
+      // "x0.00 credits per message" line under it would be pure noise.
+      const rate = model.billing?.free === true ? undefined : normalizeCredits(model.billing?.credits)
       return {
         id: model.id,
         name: model.name,
