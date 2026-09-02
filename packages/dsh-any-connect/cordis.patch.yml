@@ -1,7 +1,7 @@
-# @chaoset/dsh-anyconnect bundle patch
+# @chaoset/dsh-any-connect bundle patch
 #
 # Installed automatically by:
-#   dsh plugin --profile <name> add @chaoset/dsh-anyconnect
+#   dsh plugin --profile <name> add @chaoset/dsh-any-connect
 #
 # This patch inserts the host plugin row with the default configuration. The
 # plugin reads WorkBuddy desktop credentials from the app's own location, so
@@ -9,7 +9,7 @@
 # credential file.
 
 - insert:
-    - id: dsh-anyconnect
-      name: '@chaoset/dsh-anyconnect'
+    - id: dsh-any-connect
+      name: '@chaoset/dsh-any-connect'
       config:
         authFile: ''

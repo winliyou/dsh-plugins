@@ -1,13 +1,13 @@
-# @chaoset/dsh-anyconnect — DSH 模型接入插件（WorkBuddy 桌面 Agent）
+# @chaoset/dsh-any-connect — DSH 模型接入插件（WorkBuddy 桌面 Agent）
 
 将 WorkBuddy 桌面 App 中包含的各种模型（GLM-5.3、GLM-5.2、DeepSeek-V4-Pro、
 DeepSeek-V4-Flash、Kimi-K3、MiniMax-M3、Hy3 等）自动接入 DeepSeek Harness，
 实现在 DSH 对话窗口里零配置使用。
 
 > **来源说明**：本包是 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect)
-> （MIT）的独立分支。原仓库维护已趋停滞，本包在 @chaoset 组织下独立演进，包名
-> 取 `anyconnect` 是因为后续可能接入其他类似 WorkBuddy 的桌面 Agent（它们提供
-> 的模型都能经此接入 DSH）。原作者的实现是本包的基础，致以谢意。
+> （MIT）的独立分支。原仓库维护已趋停滞，本包在 @chaoset 组织下独立演进，命名
+> 取 `any-connect`（anyconnect）是因为后续可能接入其他类似 WorkBuddy 的桌面
+> Agent（它们提供的模型都能经此接入 DSH）。原作者的实现是本包的基础，致以谢意。
 
 ## 功能
 
@@ -38,18 +38,18 @@ DeepSeek-V4-Flash、Kimi-K3、MiniMax-M3、Hy3 等）自动接入 DeepSeek Harne
 
 ```bash
 # Web（推荐）
-dsh plugin --profile web add @chaoset/dsh-anyconnect
+dsh plugin --profile web add @chaoset/dsh-any-connect
 dsh web
 
 # Desktop（DSH Desktop 桌面版）
-dsh plugin --profile desktop add @chaoset/dsh-anyconnect
+dsh plugin --profile desktop add @chaoset/dsh-any-connect
 dsh --profile desktop
 
 # 从本地源码安装
-dsh plugin --profile web add /absolute/path/to/dsh-plugins/packages/dsh-anyconnect
+dsh plugin --profile web add /absolute/path/to/dsh-plugins/packages/dsh-any-connect
 
 # 卸载
-dsh plugin --profile web remove @chaoset/dsh-anyconnect
+dsh plugin --profile web remove @chaoset/dsh-any-connect
 ```
 
 > 给 AI agent：直接执行 `dsh plugin ...` 命令即可，不要手动编辑
@@ -57,12 +57,12 @@ dsh plugin --profile web remove @chaoset/dsh-anyconnect
 
 ## CLI
 
-包附带 `dsh-anyconnect` 命令，用于排查登录与宿主健康：
+包附带 `dsh-any-connect` 命令，用于排查登录与宿主健康：
 
 ```bash
-dsh-anyconnect doctor     # 全面体检（凭据、令牌、宿主心跳、模型目录）
-dsh-anyconnect status     # 当前登录态与积分
-dsh-anyconnect logout     # 移除本插件的凭据副本（不动桌面 App 的登录）
+dsh-any-connect doctor     # 全面体检（凭据、令牌、宿主心跳、模型目录）
+dsh-any-connect status     # 当前登录态与积分
+dsh-any-connect logout     # 移除本插件的凭据副本（不动桌面 App 的登录）
 ```
 
 ## 配置
@@ -84,7 +84,7 @@ Windows 用户目录；也可用 `WORKBUDDY_AUTH_FILE` 环境变量直接指定�
 
 ## 与上游的差异
 
-- 包名/标识改为 `@chaoset/dsh-anyconnect`（插件名 `llm-anyconnect`、设置命名
+- 包名/标识改为 `@chaoset/dsh-any-connect`（插件名 `llm-anyconnect`、设置命名
   空间 `anyconnect`），provider 路由仍叫 `workbuddy`（接入的 Agent 名，非包标识）。
 - 版本改为运行时读 `package.json`（monorepo 无 tsdown `define`），杜绝发布产物
   报旧版本号的漂移。

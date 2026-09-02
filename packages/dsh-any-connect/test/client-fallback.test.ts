@@ -37,14 +37,14 @@ describe('client card fallback', () => {
     function apply(ctx: any): void {
       try {
         const namespace = 'settings.anyconnect'
-        ctx.effect(() => ctx.locale.register(namespace, { zh: {}, en: {} }), 'dsh-anyconnect: settings copy')
+        ctx.effect(() => ctx.locale.register(namespace, { zh: {}, en: {} }), 'dsh-any-connect: settings copy')
         const t = ctx.locale.bind(namespace)
         ctx.slots.inject('settings.plugin.item', () => {
           throw new Error('not reached')
         })
         void t
       } catch (error: unknown) {
-        console.error('[dsh-anyconnect] client card failed to load (host provider unaffected):', error)
+        console.error('[dsh-any-connect] client card failed to load (host provider unaffected):', error)
       }
     }
 

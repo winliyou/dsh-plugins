@@ -8,7 +8,7 @@
  * This asymmetry is intentional: the host is the load-bearing half, and
  * a missing heartbeat unambiguously means the host never started.
  *
- * @module dsh-anyconnect/host-heartbeat
+ * @module dsh-any-connect/host-heartbeat
  */
 
 import { execFileSync } from 'node:child_process'
@@ -26,7 +26,7 @@ const HEARTBEAT_FORMAT_VERSION = 1
 /** On-disk shape of the heartbeat. */
 export interface WorkBuddyHostHeartbeat {
   version: typeof HEARTBEAT_FORMAT_VERSION
-  package: 'dsh-anyconnect'
+  package: 'dsh-any-connect'
   pluginVersion: string
   /** Epoch milliseconds when the host registered the provider. */
   registeredAt: number
@@ -47,7 +47,7 @@ export function workbuddyHostHeartbeatPath(): string {
 export async function writeHostHeartbeat(): Promise<void> {
   const document: WorkBuddyHostHeartbeat = {
     version: HEARTBEAT_FORMAT_VERSION,
-    package: 'dsh-anyconnect',
+    package: 'dsh-any-connect',
     pluginVersion: ANYCONNECT_VERSION,
     registeredAt: Date.now(),
     pid: process.pid,
@@ -80,13 +80,13 @@ export async function readHostHeartbeat(): Promise<WorkBuddyHostHeartbeat | unde
     const parsed = JSON.parse(raw) as Partial<WorkBuddyHostHeartbeat>
     if (
       parsed.version === HEARTBEAT_FORMAT_VERSION
-      && parsed.package === 'dsh-anyconnect'
+      && parsed.package === 'dsh-any-connect'
       && typeof parsed.registeredAt === 'number'
       && typeof parsed.pid === 'number'
     ) {
       return {
         version: HEARTBEAT_FORMAT_VERSION,
-        package: 'dsh-anyconnect',
+        package: 'dsh-any-connect',
         pluginVersion: typeof parsed.pluginVersion === 'string' ? parsed.pluginVersion : 'unknown',
         registeredAt: parsed.registeredAt,
         pid: parsed.pid,

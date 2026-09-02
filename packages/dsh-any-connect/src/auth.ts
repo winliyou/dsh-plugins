@@ -5,7 +5,7 @@
  * The effective credential is whichever of the two expires later, so a
  * refresh by either side wins.
  *
- * @module dsh-anyconnect/auth
+ * @module dsh-any-connect/auth
  */
 
 import { readFile, rm, stat } from 'node:fs/promises'

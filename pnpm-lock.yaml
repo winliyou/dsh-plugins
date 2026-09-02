@@ -1,7 +1,7 @@
 lockfileVersion: '9.0'
 
 settings:
-  autoInstallPeers: true
+  autoInstallPeers: false
   excludeLinksFromLockfile: false
 
 importers:
@@ -57,7 +57,7 @@ importers:
         specifier: ^0.1.2-alpha.3
         version: 0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2)(@deepseek-ai/dsh-invariants@0.1.2-alpha.3(@deepseek-ai/cordis@4.0.2))
 
-  packages/dsh-anyconnect:
+  packages/dsh-any-connect:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: ^4.0.1

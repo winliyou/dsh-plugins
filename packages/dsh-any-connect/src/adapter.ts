@@ -3,7 +3,7 @@
  * into the Harness LLM seam, assembled from public `dsh-llm-pi-ai`
  * extension points the way `dsh-codex-connect` assembles its Codex route.
  *
- * @module dsh-anyconnect/adapter
+ * @module dsh-any-connect/adapter
  */
 
 import { createProvider } from '@earendil-works/pi-ai'
@@ -48,7 +48,7 @@ const INERT_AUTH: { credentials: CredentialStore; authContext: AuthContext } = {
     async read() { return undefined },
     async list() { return [] },
     async modify() {
-      throw new Error('dsh-anyconnect: the workbuddy route has no pi-ai credential lifecycle')
+      throw new Error('dsh-any-connect: the workbuddy route has no pi-ai credential lifecycle')
     },
     async delete() {},
   },
@@ -212,7 +212,7 @@ export function createWorkBuddyAdapter(options: WorkBuddyAdapterOptions): WorkBu
     provider: WORKBUDDY_PROVIDER,
     displayName: 'WorkBuddy',
     streamIdleTimeoutMs: WORKBUDDY_STREAM_IDLE_TIMEOUT_MS,
-    retryPolicy: resolveRetryPolicy(undefined, 'dsh-anyconnect retryPolicy'),
+    retryPolicy: resolveRetryPolicy(undefined, 'dsh-any-connect retryPolicy'),
     configuredMaxTokens: new Map(),
     ...REQUEST_IMAGE_BUDGETS,
     piProvider: provider,
