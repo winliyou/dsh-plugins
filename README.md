@@ -24,11 +24,14 @@ DSH（DeepSeek Harness）host 层全局插件的 monorepo：
 的包加入 `dsh.profile.bundles`，随后 DSH 应用包内 `cordis.patch.yml` 完成插件注册。
 
 ```bash
-# 从 npm 安装（四个包一起）
+# 从 npm 安装（四个包一起，正式线 = latest dist-tag）
 dsh plugin --profile web add @chaoset/sandbox-extra-roots
 dsh plugin --profile web add @chaoset/adaptive-perf
 dsh plugin --profile web add @chaoset/session-archive
 dsh plugin --profile web add @chaoset/dsh-any-connect
+
+# 预发布线（适配 DSH 0.1.2-alpha.x，发布在 alpha dist-tag，npm tag 语法）
+dsh plugin --profile web add @chaoset/sandbox-extra-roots@alpha
 
 # 从本地源码安装（包名换成 monorepo 子包的绝对路径）
 dsh plugin --profile web add /absolute/path/to/dsh-plugins/packages/session-archive
@@ -43,8 +46,8 @@ dsh plugin --profile web remove @chaoset/dsh-any-connect
 其他来源：
 
 - **GitHub**：`dsh plugin --profile web add github:owner/repo` 或 Release tarball 的
-  URL。本仓库是 monorepo，子包若未提供独立仓库/Release tarball，请优先用 npm
-  包名或本地路径安装。
+  URL（Release 由 CI 随每次发布按 `<目录>-v<版本>` 自动创建）。本仓库是
+  monorepo，子包没有独立仓库，请优先用 npm 包名或本地路径安装。
 - **镜像站**：`dsh plugin --profile web add @chaoset/session-archive --registry=https://registry.npmmirror.com`（或设置 `npm_config_registry`）。
 
 安装后**重启 harness** 生效（或等待 DSH 对配置层变更的响应）。
@@ -90,19 +93,17 @@ pnpm run test:ci   # build + test（发布前验证）
 
 ## 版本管理与发布
 
-版本号遵循语义化版本：破坏性变更升 MAJOR，新功能升 MINOR，修复升 PATCH。
-**版本号在本地修改**，CI 绝不改写：直接编辑各包 `package.json` 的 `version`
-（或 `npm version patch`），提交并推送即可。GitHub Actions
-（`.github/workflows/publish.yml`）在推送 main 且 `packages/*` 有变更时自动测试，
-并按已提交的版本号发布尚未发布过的包（已存在的版本自动跳过，幂等）。
+分支模型、版本号规则、跨分支同步与 DSH 宿主升级适配的完整约定见
+[RELEASING.md](RELEASING.md)。速查：
 
-```bash
-# 例：发一个 patch
-(cd packages/sandbox-extra-roots && npm version patch)
-(cd packages/adaptive-perf && npm version patch)
-(cd packages/session-archive && npm version patch)
-git add -A && git commit -m "..." && git push
-```
-
-也可手动发布单个包（CI 走的是 npm OIDC Trusted Publishing，本地手发需要自己
-登录 npm）：`cd packages/<pkg> && pnpm publish --access public --no-git-checks`。
+- 分支跟随 DSH 宿主线：`main` = 稳定线（发 `latest`），`alpha` = 预发布线
+  （发 `alpha` dist-tag）。
+- 版本号在本地手工修改（编辑各包 `package.json` 的 `version`），CI 绝不改写；
+  alpha 线版本带 `-alpha.N` 后缀，dist-tag 由后缀自动派生。
+- 推送后 CI（`.github/workflows/publish.yml`）自动测试并发布。该发什么由
+  git tag + npm 状态判定（`scripts/publish-gate.mjs`）：**版本号落后于 npm
+  已发布版本的包会直接让 CI 失败**（防止「改了代码忘升版本」被静默跳过）；
+  发布成功后自动打 `<目录>-v<版本>` tag 并创建 GitHub Release（说明取自该包
+  CHANGELOG 的对应小节）。
+- DSH 宿主升级适配一键完成：`node scripts/adapt-dsh.mjs <新宿主版本>`
+  （改全部 `@deepseek-ai/dsh-*` 依赖 range 与 workspace 排除清单）。
