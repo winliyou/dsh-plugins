@@ -273,11 +273,13 @@ class WorkBuddyPiAiAdapter extends PiAiAdapter {
     return models.map(model => {
       const info = this.infoFor(model.id)
       if (info === undefined) return model
-      const rate = normalizeCredits(info.billing?.credits)
       return {
         ...model,
         name: withRate(model.name, info),
-        ...rate === undefined ? {} : { description: rate },
+        // The upstream marketing copy — never the rate: the rate already
+        // rides the name, and surfaces that render both fields showed it
+        // twice (the /model popup next to the composer seat).
+        ...info.description === undefined ? {} : { description: info.description },
       }
     })
   }
@@ -286,11 +288,10 @@ class WorkBuddyPiAiAdapter extends PiAiAdapter {
     const resolved = await super.resolveModel(provider, model, signal)
     const info = this.infoFor(model)
     if (info === undefined) return resolved
-    const rate = normalizeCredits(info.billing?.credits)
     return {
       ...resolved,
       name: withRate(resolved.name, info),
-      ...rate === undefined ? {} : { description: rate },
+      ...info.description === undefined ? {} : { description: info.description },
     }
   }
 }

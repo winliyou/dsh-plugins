@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { WorkBuddyPluginCard } from './WorkBuddyPluginCard.js'
 import type { WorkBuddyPluginCardInjected } from './WorkBuddyPluginCard.js'
+import { SidebarCredits } from './SidebarCredits.js'
 import { en, zh } from './locales.js'
 import type { WorkBuddySettingsKey } from './locales.js'
 
@@ -13,6 +14,17 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** WorkBuddy plugin card copy. */
     'settings.anyconnect': WorkBuddySettingsKey
+  }
+  // Owner 声明镜像：sidebar.footer.action 的槽位契约在
+  // dsh-client-ui-sidebar 的 client/contract/slots.d.ts 里，本包没有把它
+  // 作为类型依赖引入，这里按其形状（kind/scope/owner: { wide }）镜像一份
+  // 使注册可类型检查。若日后引入 owner 包的类型，删除本段避免重复声明。
+  interface SlotMap {
+    'sidebar.footer.action': {
+      kind: 'list'
+      scope: 'root'
+      owner: { wide: boolean }
+    }
   }
 }
 
@@ -50,6 +62,14 @@ export function apply(ctx: ClientContext): void {
       priority: 30,
       inject: (): WorkBuddyPluginCardInjected => ({ t }),
     }, WorkBuddyPluginCard))
+    // 主页面常驻的剩余额度徽章：侧栏底部动作位，随侧栏收起退化为纯数字。
+    // footer.action 是 list 型槽位：注册字段是 id/order（keyed 槽位才是 key/priority）。
+    ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+      name: 'sidebar.footer.action',
+      id: 'workbuddy-credits',
+      order: 40,
+      inject: (): WorkBuddyPluginCardInjected => ({ t }),
+    }, SidebarCredits))
   } catch (error: unknown) {
     // Degrade silently on the page: the host provider still serves models.
     // Developers see the full cause in the browser console; users see no banner.
