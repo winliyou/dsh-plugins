@@ -8,31 +8,30 @@
 | 分支 | 适配的 DSH 线 | 版本号形态 | dist-tag |
 |---|---|---|---|
 | `main` | 稳定线（当前 `0.1.1-rc.2`） | 纯 semver（如 `0.10.1`） | `latest` |
-| `alpha` | 预发布线（当前 `0.1.2-alpha.x`） | `-alpha.N` 后缀（如 `0.10.2-alpha.0`） | `alpha` |
+| `alpha` | 下一条预发布线（当前 `0.1.2-alpha.x`） | `-alpha.N` 后缀（如 `0.10.2-alpha.0`） | `alpha` |
 
-分支跟随的是 **DSH 宿主线**，不是「开发/测试」阶段。用户装到哪个版本完全由
-版本号后缀决定（见 dist-tag 规则），与改动发生在哪个分支无关——所以 main 上
-出现 `-alpha.N` 版本不会污染 `latest`，只是意味着该包的稳定线源码暂时停在
-上一个正式版本。
+**双线并行是常态，不是过渡方案**：DSH 快速迭代期间，rc 稳定线与 alpha 预发布
+线长期同时存在，两条分支各自跟随一条线持续维护。不变式只有一条：**main 的工作
+树必须始终处于「可直接发布」状态**（版本号与依赖线 = npm 上 latest 的下一个
+候选），任何时刻都能直接热修稳定线。分支跟随的是 **DSH 宿主线**，不是「开发/
+测试」阶段；用户装到哪个版本完全由版本号后缀决定（见 dist-tag 规则），与改动
+发生在哪个分支无关。
 
-### 历史遗留的一次性状态（2026-09 记录）
-
-`0.10.2-alpha.0`（adaptive-perf）/ `0.4.4-alpha.0`（sandbox-extra-roots）/
-`0.3.4-alpha.0`（session-archive）这三个 alpha 适配是在双分支拆分（86cbdf5）
-之前的共同历史（dba42b3）里完成并发布的，因此 **main 的工作树在这三个包上与
-alpha 分支一致、版本号带 `-alpha.N` 后缀**。这不影响正确性（后缀决定
-dist-tag），但意味着在 DSH `0.1.2` 转正、alpha 线内容晋升（见「正式化」）之前，
-main 工作树不能直接用来给稳定线用户发 patch 版本。稳定线若确需热修：把该包的
-`@deepseek-ai/dsh-*` 依赖 range 临时改回 `^0.1.1-rc.2`，`pnpm install` 后再改
-代码、升 patch 号发布。
+> 2026-09 已把 main 上误入的 alpha 适配内容回退（三个包依赖回 `^0.1.1-rc.2`、
+> 版本号回 `0.10.1` / `0.4.3` / `0.3.3`，CHANGELOG 的 alpha 小节归还 alpha
+> 分支），并补齐 rc.2 闭包的 peer devDeps（`dsh-timeout` 等——auto-install-peers
+> 关闭后，`dsh-sandbox`→`dsh-llm`、`dsh-llm-pi-ai` 的 peers 需要显式声明才能
+> 在测试环境解析）。
 
 ## 版本号规则
 
 - 遵循 semver：破坏性变更 MAJOR、新功能 MINOR、修复 PATCH。版本号只在本地
   手工修改（直接编辑各包 `package.json` 的 `version`），CI 绝不改写。
 - 同一个包在两条分支上的版本号**各自独立递增**，不要求两线同步跳号。
-- alpha 线发版：在 alpha 分支升 `-alpha.N` 的 N（功能级变化也可升基础版本
-  号），发布到 `alpha` dist-tag。
+- 预发布线发版：在 alpha 分支升 `-alpha.N` 的 N（功能级变化也可升基础版本
+  号），发布到 `alpha` dist-tag；该 dsh 线进入 rc 阶段后，后缀换 `-rc.N`
+  （同一基础号内递增，如 `0.10.2-alpha.2` → `0.10.2-rc.1`），dist-tag 自动
+  变为 `rc`。
 - 正式版永远取**下一个未被任何线占用**的正式号：`0.10.2-alpha.0` 的正式化
   版本是 `0.10.2`（semver 中正式版大于同号预发布版）；若该号已被另一条线
   占用，取下一位。
@@ -78,8 +77,9 @@ main 工作树不能直接用来给稳定线用户发 patch 版本。稳定线�
   巨大，跨分支 merge 它们必然冲突。
 - **基础设施文件**（`.github/workflows/`、`scripts/`、`RELEASING.md`、根
   `package.json`、`.npmrc`）：两分支保持一致，直接 cherry-pick，不手改。
-- `pnpm-workspace.yaml` 的 `minimumReleaseAgeExclude` 清单跟随各分支自己的
-  宿主线，由 `scripts/adapt-dsh.mjs` 维护，同样不跨分支搬运。
+- `pnpm-workspace.yaml` 两分支内容不同（`minimumReleaseAgeExclude` 清单各自
+  跟随自己的宿主线；稳定线的官方包都超过发布时长门槛、无需清单），cherry-pick
+  基建提交时跳过该文件。
 
 ## DSH 宿主升级适配
 
@@ -94,16 +94,23 @@ pnpm run test:ci && git push
 ```
 
 `adapt-dsh.mjs` 支持 `--dry-run` 预览；它只改写已有依赖行，新引入的 dsh 子
-依赖需要手工向 exclude 清单补行。
+依赖需要手工向 exclude 清单补行。稳定线（main）跟进新的 rc（如 `0.1.1-rc.3`）
+时同样在 main 上执行同一流程；稳定线无需维护排除清单。
 
-## 正式化（DSH 0.1.2 转正时）
+## 双线生命周期（常态循环）
 
-1. 在 alpha 分支把各包版本号改为正式号（按版本号规则取号），推送——发布到
-   `latest`，预发布线用户自动跟进。
-2. `git checkout main && git merge alpha`：此时两线目标宿主相同，可以合并；
-   `pnpm-lock.yaml` 冲突就任取一边后 `pnpm install` 重新生成。合并后 main
-   回到「工作树 = latest 源码」的正常状态。
-3. DSH 出下一条预发布线时，再从 main 拉出新的适配分支。
+1. **dsh 出新预发布线**：alpha 分支执行「DSH 宿主升级适配」流程，以
+   `-alpha.N` 版本发布到 `alpha` dist-tag。main 不动，继续服务稳定线。
+2. **预发布线进入 rc**：dsh 发 `0.1.2-rc.1` 时仍在 alpha 分支适配，版本后缀
+   换成 `-rc.N`，发布到 `rc` dist-tag。
+3. **dsh 转正**：在 alpha 分支把各包版本号改为正式号（按版本号规则取号），
+   `git checkout main && git merge alpha`——此刻两线目标宿主相同，可以合并；
+   `pnpm-lock.yaml` 冲突任取一边后 `pnpm install` 重新生成。在 main 上推送
+   发布 `latest`，然后 `git checkout alpha && git merge main` 对齐两分支，
+   等待 dsh 的下一条预发布线。
+4. **循环**：dsh 出下一条预发布线，回到第 1 步。若某个时期同时活跃的宿主线
+   超过两条（如 `0.1.2-rc` 与 `0.1.3-alpha` 并行），照同样模型再拉一条分支
+   即可——分支数跟随活跃宿主线数，dist-tag 始终由版本后缀决定、与分支名无关。
 
 ## 手动兜底
 
