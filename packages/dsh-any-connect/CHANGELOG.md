@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.8-alpha.0 (2026-09-03)
+
+### Changes
+
+* 思考强度按模型精确对齐实际可用集：声明了 `supportedEfforts` 的模型恰好
+  提供声明的档位（glm-5.3 为 low/high/xhigh + off，glm-5.3-flash 为
+  low/high/max + off）；未声明的旧目录行只提供其 `defaultEffort` 一档。
+  依据：上游 wire 不校验 effort 值（无效值同样 200），且对旧模型实测
+  minimal 与 max 的思考量无差异——旧模型上提供可选强度是虚假控制，
+  单档默认值才反映模型实际运行状态
+* 移除设置 → 通用设置中的 WorkBuddy 剩余积分行（设置 → 插件的卡片已有
+  完整额度展示，通用设置中的重复行没有必要）
+
+### Changes (版本)
+
+* 版本号跳号：0.3.7 基础号留给稳定线发布同一改动
+
 ## 0.3.7-alpha.0 (2026-09-03)
 
 ### Changes
