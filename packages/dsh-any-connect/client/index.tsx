@@ -7,7 +7,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { WorkBuddyPluginCard } from './WorkBuddyPluginCard.js'
 import type { WorkBuddyPluginCardInjected } from './WorkBuddyPluginCard.js'
-import { SidebarCredits } from './SidebarCredits.js'
+import { GeneralCreditsRow } from './GeneralCreditsRow.js'
 import { en, zh } from './locales.js'
 import type { WorkBuddySettingsKey } from './locales.js'
 
@@ -16,15 +16,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** WorkBuddy plugin card copy. */
     'settings.anyconnect': WorkBuddySettingsKey
   }
-  // Owner 声明镜像：sidebar.footer.action 的槽位契约在
-  // dsh-client-ui-sidebar 的 client/contract/slots.d.ts 里，本包没有把它
-  // 作为类型依赖引入，这里按其形状（kind/scope/owner: { wide }）镜像一份
-  // 使注册可类型检查。若日后引入 owner 包的类型，删除本段避免重复声明。
+  // Owner 声明镜像：settings.general.item 的槽位契约在 dsh-client-ui-settings
+  // 的 client/contract/slots.d.ts 里（kind: list、owner 刻意为空——行自绘
+  // 内部，含标签），本包未把 owner 包作为类型依赖引入，这里按其形状镜像
+  // 一份使注册可类型检查。若日后引入 owner 包类型，删除本段避免重复声明。
   interface SlotMap {
-    'sidebar.footer.action': {
+    'settings.general.item': {
       kind: 'list'
       scope: 'root'
-      owner: { wide: boolean }
+      owner: Record<string, never>
     }
   }
 }
@@ -63,14 +63,15 @@ export function apply(ctx: ClientContext): void {
       priority: 30,
       inject: (): WorkBuddyPluginCardInjected => ({ t }),
     }, WorkBuddyPluginCard))
-    // 主页面常驻的剩余额度徽章：侧栏底部动作位，随侧栏收起退化为纯数字。
-    // footer.action 是 list 型槽位：注册字段是 id/order（keyed 槽位才是 key/priority）。
-    ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-      name: 'sidebar.footer.action',
-      id: 'workbuddy-credits',
-      order: 40,
+    // 剩余额度作为设置→通用设置的一行（语言/外观等全局偏好所在页），
+    // 与宿主设置行的语义和视觉对齐；详情（分包进度条、模型优惠）留在
+    // 设置→插件的卡片。list 型槽位注册字段为 id/order。
+    ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+      name: 'settings.general.item',
+      id: 'anyconnect-credits',
+      order: 35,
       inject: (): WorkBuddyPluginCardInjected => ({ t }),
-    }, SidebarCredits))
+    }, GeneralCreditsRow))
   } catch (error: unknown) {
     // Degrade silently on the page: the host provider still serves models.
     // Developers see the full cause in the browser console; users see no banner.
