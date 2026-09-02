@@ -50,7 +50,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/winliyou/dsh-plugins.git",
+    "url": "git+https://github.com/winliyou/dsh-plugins.git",
     "directory": "packages/sandbox-extra-roots"
   },
   "publishConfig": {
@@ -60,5 +60,9 @@
     "@deepseek-ai/dsh-brand": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-invariants": "^0.1.1-rc.2",
     "@deepseek-ai/dsh-timeout": "^0.1.1-rc.2"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/winliyou/dsh-plugins/issues"
+  },
+  "homepage": "https://github.com/winliyou/dsh-plugins/tree/main/packages/sandbox-extra-roots#readme"
 }
