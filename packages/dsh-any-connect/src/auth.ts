@@ -245,8 +245,15 @@ export class WorkBuddyCredentialStore {
    */
   private resolveDesktopCandidates(): string[] {
     const fromEnv = process.env[WORKBUDDY_AUTH_FILE_ENV]
-    const explicit = this.desktopPathOverride
-      ?? (fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv : undefined)
+    // The settings schema materializes an unset `authFile` as an empty
+    // string, and `onChange` hands that string here verbatim. A blank
+    // override must fall through to the platform probe order exactly like a
+    // blank env var does — otherwise a fresh install probes a single empty
+    // path, finds nothing, and the whole plugin reads as signed out.
+    const fromConfig = this.desktopPathOverride !== undefined && this.desktopPathOverride.trim() !== ''
+      ? this.desktopPathOverride
+      : undefined
+    const explicit = fromConfig ?? (fromEnv !== undefined && fromEnv.trim() !== '' ? fromEnv : undefined)
     if (explicit !== undefined) return [explicit]
     return defaultDesktopAuthCandidates()
   }
