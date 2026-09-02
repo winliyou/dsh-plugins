@@ -89,7 +89,8 @@ Windows 用户目录；也可用 `WORKBUDDY_AUTH_FILE` 环境变量直接指定�
 - 版本改为运行时读 `package.json`（monorepo 无 tsdown `define`），杜绝发布产物
   报旧版本号的漂移。
 - 上游 v0.3.0-alpha.0 的费率显示、思考强度、`developer`→`system` 改写、
-  15 模型兜底目录均已并入稳定线。
+  15 模型兜底目录均已并入（main 稳定线锁 rc.2 依赖；alpha 分支适配
+  0.1.2-alpha.3）。
 
 ## 免责声明
 

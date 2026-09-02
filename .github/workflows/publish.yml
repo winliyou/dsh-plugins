@@ -3,7 +3,10 @@ name: Publish to npm
 on:
   push:
     branches:
+      # main = 稳定线（dsh-any-connect 锁 rc.2 依赖，发 latest）
+      # alpha = dsh alpha 适配线（发 -alpha.N 到 alpha tag）
       - main
+      - alpha
     paths:
       - 'packages/**'
       - 'package.json'

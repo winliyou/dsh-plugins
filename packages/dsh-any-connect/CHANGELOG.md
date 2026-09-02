@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.1-alpha.0 (2026-09-02)
+
+alpha 线首版：与 main 的 0.3.1 功能一致，依赖适配到最新 dsh（0.1.2-alpha.3
+线，与 monorepo 其余包对齐）。
+
+### Changes
+
+* 依赖升级：dsh 子包 `^0.1.2-alpha.3`、cordis `^4.0.2`、schemastery
+  `^3.18.2`、pi-ai `^0.84.2`
+* 跟随 dsh 0.1.2 API 变化：`settingsNamespace()` / `installSettingsSection()`
+  移除 → `SettingsNamespace` 名义类型 + `ctx.settings.installSection(...)`；
+  `@deepseek-ai/dsh-client-runtime` 移除 → client 用 cordis `Context` +
+  `dsh-client-ui-renderer` 类型
+* 补齐 dsh-llm-pi-ai 的 peer devDeps（authorization / invariants /
+  launch-environment / timeout / fs）——auto-install-peers 关闭后 peers 不
+  自动安装，测试需显式解析
+* 版本 `-alpha.N` 后缀，CI 发布到 `alpha` dist-tag
+
 ## 0.3.1 (2026-09-02)
 
 ### Changes
