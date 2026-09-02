@@ -118,9 +118,11 @@ pnpm install                                # 重新生成 lockfile
 pnpm run test:ci && git push
 ```
 
-`adapt-dsh.mjs` 支持 `--dry-run` 预览；它只改写已有依赖行，新引入的 dsh 子
-依赖需要手工向 exclude 清单补行。稳定线（main）跟进新的 rc（如 `0.1.1-rc.3`）
-时同样在 main 上执行同一流程；稳定线无需维护排除清单。
+`adapt-dsh.mjs` 支持 `--dry-run` 预览；它按 lockfile 闭包整块重建 exclude
+清单，宿主新引入的 dsh 子依赖会自动纳入。若 `pnpm install` 仍报某 dsh 包
+解析不到（闭包外的新依赖），把该包手工补进清单后重试。稳定线（main）跟进
+新的 rc（如 `0.1.1-rc.3`）时同样在 main 上执行同一流程；稳定线无需维护排除
+清单。
 
 ## 双线生命周期（常态循环）
 

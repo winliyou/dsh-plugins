@@ -8,9 +8,8 @@
 // schemastery 等非 dsh-* 包不在范围内（独立版本线，另行手工升级）。
 //
 // 脚本不做的事（按 RELEASING.md 手工完成）：
-//   - 升各包版本号、写 CHANGELOG（发布决策，不属于依赖适配）
+//   - 升各包版本号、写 CHANGELOG（发布决策）
 //   - pnpm install 重新生成 lockfile（需要网络）
-//   - 新引入 dsh 子依赖时向 exclude 清单补行（脚本只改写已有行的版本号）
 
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -50,32 +49,29 @@ function adaptPackageJson(path) {
   if (!dryRun) writeFileSync(path, JSON.stringify(json, null, 2) + "\n");
 }
 
-// 逐行改写 minimumReleaseAgeExclude 清单里的版本号；离开清单（遇到下一个
-// 顶级键）即停。注释与空行原样保留。
+// 从 pnpm-lock.yaml 提取当前 @deepseek-ai/dsh-* 闭包的包名，整块重建
+// minimumReleaseAgeExclude 清单（全部指向新版本）。闭包重建而非逐行改写：
+// 宿主新版本常引入新的 dsh 子依赖，逐行改写会漏掉它们——新版本通常发布
+// 未满 24 小时，install 会因供应链门槛解析不到而直接失败。清单不存在的
+// 分支（稳定线）跳过。
 function adaptWorkspaceYaml() {
   const path = join(ROOT, "pnpm-workspace.yaml");
-  const lines = readFileSync(path, "utf8").split("\n");
-  let inExcludes = false;
-  let count = 0;
-  const out = lines.map((line) => {
-    if (/^minimumReleaseAgeExclude:/.test(line)) {
-      inExcludes = true;
-      return line;
-    }
-    if (!inExcludes) return line;
-    const m = line.match(/^(\s*-\s*'[^']+@)[^']+(')\s*$/);
-    if (m) {
-      count++;
-      return `${m[1]}${version}${m[2]}`;
-    }
-    if (line.trim() === "" || line.trim().startsWith("#")) return line;
-    inExcludes = false;
-    return line;
-  });
-  if (count > 0) {
-    console.log(`  pnpm-workspace.yaml [minimumReleaseAgeExclude] ${count} 项 → @${version}`);
-    if (!dryRun) writeFileSync(path, out.join("\n"));
+  const text = readFileSync(path, "utf8");
+  const listStart = text.indexOf("minimumReleaseAgeExclude:");
+  if (listStart === -1) {
+    console.log("  pnpm-workspace.yaml: 无 minimumReleaseAgeExclude 清单，跳过（稳定线无需排除）");
+    return;
   }
+  const lock = readFileSync(join(ROOT, "pnpm-lock.yaml"), "utf8");
+  const names = new Set();
+  for (const m of lock.matchAll(/@deepseek-ai\/(dsh-[a-z0-9-]+)/g)) names.add(m[1]);
+  const entries = [...names].sort().map((n) => `  - '@deepseek-ai/${n}@${version}'`);
+  const rest = text.slice(listStart).split("\n");
+  let end = 1;
+  while (end < rest.length && !/^[A-Za-z]/.test(rest[end])) end++;
+  const block = ["minimumReleaseAgeExclude:", ...entries, ""].join("\n");
+  writeFileSync(path, text.slice(0, listStart) + block + rest.slice(end).join("\n"));
+  console.log(`  pnpm-workspace.yaml [minimumReleaseAgeExclude] 从 lockfile 闭包重建：${entries.length} 项 → @${version}`);
 }
 
 console.log(`适配 DSH 宿主 ${version}${dryRun ? "（dry-run，不写入）" : ""}:`);

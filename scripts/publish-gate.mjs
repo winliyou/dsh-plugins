@@ -8,7 +8,7 @@
 //   2. npm 上该包不存在 / 该版本不存在           → 发布
 //   3. npm 上该版本已存在                        → 警告跳过（tag 机制上线前的历史版本，
 //                                                  无法区分「故意不重发」与「忘了升版本」）
-//   4. npm 上存在比待发版本更高的版本            → 失败（改了代码没升版本号从此是红灯；
+//   4. npm 的同线（stable/alpha/rc…）存在更高版本 → 失败（改了代码没升版本号从此是红灯；
 //                                                  任一包失败则本次不发布任何包）
 //
 // stdout 只输出计划 JSON（`[{"dir","name","version","tag"}]`），人类可读
@@ -95,6 +95,13 @@ function distTag(version) {
   return m ? m[1] : "latest";
 }
 
+// 版本所属的"线"：预发布标识（alpha/rc/beta…）或 stable。双分支模型下
+// 预发布线与稳定线各自独立递增（如 alpha 线的 0.3.1-alpha.1 低于稳定线的
+// 0.3.1 是文档化常态），"版本落后"只应在线内判定。
+function versionLine(version) {
+  return distTag(version) === "latest" ? "stable" : distTag(version);
+}
+
 // CHANGELOG 是否有该版本的小节（与 scripts/release-notes.mjs 同一判定）。
 // 缺失不阻断发布，但 GitHub Release 说明会退化为占位文本，提前警告。
 function changelogHasSection(dir, version) {
@@ -122,9 +129,10 @@ for (const dir of PACKAGES) {
     continue;
   }
 
-  const newer = published.find((v) => compareVersions(v, version) > 0);
+  const line = versionLine(version);
+  const newer = published.find((v) => versionLine(v) === line && compareVersions(v, version) > 0);
   if (newer) {
-    log(`✗ ${name}@${version} 落后于 npm 上已有的 ${newer}，拒绝发布。请升 package.json 的 version 并补 CHANGELOG。`);
+    log(`✗ ${name}@${version} 落后于 ${line} 线 npm 上已有的 ${newer}，拒绝发布。请升 package.json 的 version 并补 CHANGELOG。`);
     failed = true;
     continue;
   }
