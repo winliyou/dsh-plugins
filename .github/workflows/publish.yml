@@ -3,36 +3,43 @@ name: Publish to npm
 on:
   push:
     branches:
-      # main = 稳定线（dsh-any-connect 锁 rc.2 依赖，发 latest）
-      # alpha = dsh alpha 适配线（发 -alpha.N 到 alpha tag）
+      # main = dsh 稳定线适配（发 latest）；alpha = dsh 预发布线适配（发
+      # alpha 等 dist-tag）。分支模型与发布规则见 RELEASING.md。
       - main
       - alpha
     paths:
       - 'packages/**'
       - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
       - 'scripts/**'
       - '.github/workflows/publish.yml'
   release:
     types: [published]
   workflow_dispatch:
 
-# 连续推送时避免两个发布流程并发跑(检测-发布窗口会互相踩)。
-# 不取消进行中的发布:已开始的 npm publish 让它跑完,排队的用最新代码重来。
+# 仓库级并发组（不按分支区分）：main 与 alpha 的发布也必须排队——两个分支
+# 可能存在同版本号的包，并发发布会双发同一版本，npm 会拒绝第二个、白红一个
+# job。不取消进行中的发布：已开始的 npm publish 让它跑完，排队的用最新代码重来。
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish
   cancel-in-progress: false
 
 jobs:
   test-and-publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+      # 发布成功后要打 git tag 并创建 GitHub Release
       # npm Trusted Publishing (OIDC): publish without a long-lived token
       id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
+          # 全量历史：publish-gate 靠 git tag 判定「该版本是否已发布归档」，
+          # 浅克隆会漏 tag 导致重复发布尝试。
           fetch-depth: 0
 
       # pnpm is the only toolchain entry point: install / test / version reads
@@ -55,61 +62,26 @@ jobs:
       - name: Run tests
         run: pnpm run test:ci
 
-      - name: Detect changed packages
-        id: changed
+      # 状态式门禁：该发什么由 git tag 与 npm 注册表状态决定，与推送形状无关
+      # （判定规则见 scripts/publish-gate.mjs 头注释）。版本号落后于 npm 的包
+      # 会让整个 job 失败——「改了代码没升版本」从此是红灯而不是静默跳过。
+      - name: Plan publish
+        id: plan
+        run: |
+          PLAN=$(node scripts/publish-gate.mjs)
+          echo "plan=$PLAN" >> "$GITHUB_OUTPUT"
+
+      - name: Publish planned packages
+        id: publish
+        if: steps.plan.outputs.plan != '[]'
         env:
-          BEFORE: ${{ github.event.before }}
-          SHA: ${{ github.sha }}
-          IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+          PLAN: ${{ steps.plan.outputs.plan }}
         run: |
-          if [ "$IS_DISPATCH" = "true" ]; then
-            # Manual trigger: every package is a candidate; publishing skips
-            # versions that already exist on the registry.
-            CHANGED=$(ls packages | tr '\n' ' ' | sed 's/ $//')
-          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD -- packages | awk -F/ 'NF >= 2 {print $2}' | sort -u)
-          else
-            CHANGED=$(git diff --name-only "$BEFORE" "$SHA" -- packages | awk -F/ 'NF >= 2 {print $2}' | sort -u)
-          fi
-          echo "changed=$(echo "$CHANGED" | tr '\n' ' ' | sed 's/ $//')" >> "$GITHUB_OUTPUT"
-
-      - name: Publish changed packages
-        run: |
-          CHANGED="${{ steps.changed.outputs.changed }}"
-          if [ -z "$CHANGED" ]; then
-            echo "No package changes detected, skipping publish."
-            exit 0
-          fi
-
-          for pkg in $CHANGED; do
-            PKG_DIR="packages/$pkg"
-            if [ ! -f "$PKG_DIR/package.json" ]; then
-              echo "Skip $PKG_DIR: not a package directory"
-              continue
-            fi
-
-            PKG_NAME=$(node -e "console.log(require('./$PKG_DIR/package.json').name)")
-            PKG_VERSION=$(node -e "console.log(require('./$PKG_DIR/package.json').version)")
-            echo "Checking $PKG_NAME@$PKG_VERSION ..."
-
-            PUBLISHED=$(pnpm view "$PKG_NAME@$PKG_VERSION" version --registry=https://registry.npmjs.org 2>/dev/null || true)
-            if [ "$PUBLISHED" = "$PKG_VERSION" ]; then
-              echo "$PKG_NAME@$PKG_VERSION already published, skipping."
-              continue
-            fi
-
-            # dist-tag: 正式版走 latest,预发布版（如 0.10.2-alpha.0）走它的
-            # prerelease 标签（alpha / rc / beta）。npm 默认一律打 latest,
-            # 会让 `npm install <pkg>` 拉到预发布版;这里按 dsh 自身的发布
-            # 方式(0.1.2-alpha.3 挂在 alpha tag 上)对齐。
-            # 纯字符串解析,不引入 semver 依赖:取 '-' 后第一段里的首个
-            # 字母串(0.10.2-alpha.0 -> alpha;1.2.3-rc.4 -> rc)。
-            PKG_TAG=$(printf '%s' "$PKG_VERSION" | sed -n 's/^[^-]*-\([A-Za-z][A-Za-z0-9]*\).*$/\1/p')
-            if [ -z "$PKG_TAG" ]; then
-              PKG_TAG=latest
-            fi
-            echo "Publishing $PKG_NAME@$PKG_VERSION under dist-tag '$PKG_TAG' ..."
-            cd "$PKG_DIR"
+          PUBLISHED=""
+          while IFS= read -r entry; do
+            dir="${entry%%@*}"; rest="${entry#*@}"; version="${rest%%@*}"; dist_tag="${rest#*@}"
+            echo "Publishing packages/$dir@$version under dist-tag '$dist_tag' ..."
+            cd "packages/$dir"
             # `pnpm publish`: OIDC Trusted Publishing happens automatically
             # when id-token: write is set and the package has a trusted
             # publisher configured on npmjs.com. --provenance adds attestation.
@@ -117,6 +89,30 @@ jobs:
             # 11.24.0 起 pnpm 自己的发版流程就是走的这条路。
             # --no-git-checks: checkout 出来是 detached HEAD,pnpm 默认的分支
             # 检查会拒绝发布。
-            pnpm publish --provenance --access public --no-git-checks --tag "$PKG_TAG" --registry=https://registry.npmjs.org
+            pnpm publish --provenance --access public --no-git-checks --tag "$dist_tag" --registry=https://registry.npmjs.org
             cd ../..
+            PUBLISHED="$PUBLISHED $dir@$version"
+          done < <(node -e 'for (const p of JSON.parse(process.argv[1])) console.log(`${p.dir}@${p.version}@${p.tag}`)' "$PLAN")
+          echo "published=$PUBLISHED" >> "$GITHUB_OUTPUT"
+
+      # 发布成功后归档：git tag（`<目录>-v<版本>`，发布门禁据此幂等跳过）+
+      # GitHub Release（说明取该包 CHANGELOG 对应版本小节，README 的 tarball
+      # 安装方式由此获得与 npm 一致的版本）。发布中途失败时直接重跑整个 job：
+      # 已发布的包被门禁跳过，未完成的继续。
+      - name: Create git tags and GitHub releases
+        if: steps.publish.outputs.published != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISHED: ${{ steps.publish.outputs.published }}
+        run: |
+          for entry in $PUBLISHED; do
+            dir="${entry%%@*}"; rest="${entry#*@}"; version="${rest#*@}"
+            tag="$dir-v$version"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "Release $tag already exists, skipping."
+              continue
+            fi
+            PKG_NAME=$(node -e "console.log(require('./packages/$dir/package.json').name)")
+            NOTES=$(node scripts/release-notes.mjs "$dir" "$version")
+            gh release create "$tag" --target "$GITHUB_SHA" --title "$PKG_NAME v$version" --notes "$NOTES"
           done

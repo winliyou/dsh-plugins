@@ -1,0 +1,44 @@
+name: Test
+
+# PR 校验：推送 main / alpha 的测试由发布工作流顺带完成，这里只补 PR 这一环
+# （此前对 main/alpha 的 PR 不会触发任何测试）。
+on:
+  pull_request:
+    branches:
+      - main
+      - alpha
+    paths:
+      - 'packages/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - 'scripts/**'
+      - '.github/workflows/*'
+
+# 同一 PR 连续推送时取消旧的测试，只跑最新代码。
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and test
+        run: pnpm run test:ci
