@@ -52,6 +52,19 @@ dsh plugin --profile web remove @chaoset/dsh-any-connect
 
 安装后**重启 harness** 生效（或等待 DSH 对配置层变更的响应）。
 
+### 安装排障（两个已知坑）
+
+- **刚发布的版本装不上 / 装到旧版**：若环境配置了镜像源（如
+  `registry.npmmirror.com`），新发布的版本可能尚未同步；显式指定官方源
+  安装：`dsh plugin --profile web add @chaoset/dsh-any-connect --registry=https://registry.npmjs.org`。
+- **pnpm 供应链策略拦下安装**：pnpm v11 默认拦截依赖的构建脚本并启用
+  发布满 24 小时才可安装的策略。`dsh plugin add` 首次执行可能报
+  `pnpm failed`——到 profile 目录（`$DSH_HOME/profiles/<name>`）的
+  `pnpm-workspace.yaml` 里把 `allowBuilds` 占位的 `set this to true or
+  false` 改为 `true`，刚发布的 `@chaoset/*@<版本>` 加进
+  `minimumReleaseAgeExclude`，然后**重跑一次 `dsh plugin add`**（首次失败
+  时 bundle 对账未完成，插件不会真正注册）。
+
 > 不要只把包名写进 profile 的 `package.json`（或直接跑 `pnpm add`）：那只会安装
 > 依赖，不会做 bundle 对账、不会注册 bundle 层，web boot 会报
 > `pending (waiting for service: remote.xxxConfig)`。
