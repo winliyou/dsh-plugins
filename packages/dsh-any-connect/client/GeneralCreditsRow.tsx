@@ -1,4 +1,4 @@
-/** Sidebar footer badge: live WorkBuddy credit total, polled quietly. */
+/** General-settings row: WorkBuddy remaining credit, refreshed quietly. */
 
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -9,19 +9,31 @@ import type { WorkBuddyPluginCardInjected } from './WorkBuddyPluginCard.js'
 
 const POLL_INTERVAL_MS = 120_000
 
-const badgeStyle: CSSProperties = {
-  display: 'inline-flex',
+/**
+ * The General section stacks preference rows and each row draws its own
+ * internals (its slot contract says so); these styles follow the section's
+ * visual language — separated by a hairline, label in the primary tone and
+ * the value right-aligned in the secondary tone.
+ */
+const rowStyle: CSSProperties = {
+  display: 'flex',
   alignItems: 'center',
-  gap: 5,
-  padding: '2px 9px',
-  borderRadius: 999,
-  border: '1px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-module-platform)',
+  justifyContent: 'space-between',
+  gap: 12,
+  padding: '12px 0',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
+}
+const labelStyle: CSSProperties = {
+  color: 'var(--dsw-alias-label-primary)',
+  fontSize: 13,
+  fontWeight: 500,
+  lineHeight: '20px',
+}
+const valueStyle: CSSProperties = {
   color: 'var(--dsw-alias-label-secondary)',
-  font: 'inherit',
-  fontSize: 12,
-  lineHeight: '18px',
-  whiteSpace: 'nowrap',
+  fontSize: 13,
+  lineHeight: '20px',
+  fontVariantNumeric: 'tabular-nums',
 }
 
 function formatNumber(value: number): string {
@@ -29,13 +41,13 @@ function formatNumber(value: number): string {
 }
 
 /**
- * Compact credit total for the sidebar footer. Renders nothing until the
- * status route reports a signed-in account with credit data, so users without
- * a WorkBuddy sign-in never see a dead widget. Polls slower than the settings
- * card (the badge is ambient information, not a live meter), and the host
- * collapse state (`wide`) decides between the full copy and the bare number.
+ * One General-settings row showing the WorkBuddy credit total. Renders
+ * nothing until the status route reports a signed-in account with credit
+ * data, so users without a WorkBuddy sign-in never see an empty row. The
+ * full breakdown (per-package bars, model offers) stays on the plugin card
+ * in 设置 → 插件.
  */
-export function SidebarCredits({ t, wide }: PropsRuntime<'sidebar.footer.action'> & Partial<WorkBuddyPluginCardInjected>) {
+export function GeneralCreditsRow({ t }: PropsRuntime<'settings.general.item'> & Partial<WorkBuddyPluginCardInjected>) {
   const [total, setTotal] = useState<number | undefined>(undefined)
 
   useEffect(() => {
@@ -67,15 +79,11 @@ export function SidebarCredits({ t, wide }: PropsRuntime<'sidebar.footer.action'
     }
   }, [])
 
-  // 无 t（宿主未注入翻译座）或未登录/无额度数据：安静地不渲染，侧栏 footer
-  // 是全局区域，不能给没有 WorkBuddy 登录的用户留一个死部件。
   if (t === undefined || total === undefined) return null
   return (
-    <span style={badgeStyle} title={t('creditsHeading')}>
-      <span aria-hidden="true">⚡</span>
-      {wide === false
-        ? formatNumber(total)
-        : t('sidebarCredits', { total: formatNumber(total) })}
-    </span>
+    <div style={rowStyle}>
+      <span style={labelStyle}>{t('generalCreditsLabel')}</span>
+      <span style={valueStyle}>{formatNumber(total)}</span>
+    </div>
   )
 }
