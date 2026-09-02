@@ -51,13 +51,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/winliyou/dsh-plugins.git",
+    "url": "git+https://github.com/winliyou/dsh-plugins.git",
     "directory": "packages/adaptive-perf"
   },
   "publishConfig": {
     "access": "public"
   },
-  "engines": {
-    "node": ">=22.19.0"
-  }
+  "bugs": {
+    "url": "https://github.com/winliyou/dsh-plugins/issues"
+  },
+  "homepage": "https://github.com/winliyou/dsh-plugins/tree/main/packages/adaptive-perf#readme"
 }

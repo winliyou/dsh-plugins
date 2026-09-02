@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # 只跟踪 GitHub Actions 版本：npm 依赖由 scripts/adapt-dsh.mjs 随宿主线
+  # 手工升级（dsh 预发布线不适合自动提 PR），避免两套机制打架。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

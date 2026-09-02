@@ -61,9 +61,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "engines": {
-    "node": ">=22.19.0"
-  },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-client-locale": "^0.1.2-alpha.3",
@@ -79,5 +76,9 @@
     "@deepseek-ai/dsh-launch-environment": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-timeout": "^0.1.2-alpha.3",
     "@deepseek-ai/dsh-fs": "^0.1.2-alpha.3"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/winliyou/dsh-plugins/issues"
+  },
+  "homepage": "https://github.com/winliyou/dsh-plugins/tree/main/packages/dsh-any-connect#readme"
 }
