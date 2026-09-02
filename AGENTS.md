@@ -30,6 +30,29 @@ cd .worktrees/main && pnpm install && pnpm run build   # 每个工作树独立�
 跨分支 cherry-pick 在两个工作树目录之间直接进行，互不污染；每次进入工作树
 或主检出目录后，先确认 `lib/` 是当前分支的产物（不确定就重新 build）。
 
+## 发布纪律（重要）
+
+**在功能完全实现、测试通过、并在 dsh 测试实例中真实验证可用之前，不推送
+触发发布的代码，不 bump 版本。** 一次功能开发的完整顺序：
+
+1. 开发 + `pnpm run test:ci`（build + typecheck + test）全绿；
+2. 启动隔离测试实例真实验证（不占用用户的 `~/.dsh`）：
+
+   ```bash
+   DSH_HOME=/tmp/dsh-verify/home node <dsh>/lib/bin.js --profile web --port 3181 --no-open
+   # 浏览器打开（alpha 线宿主要用启动日志里带 token 的 URL），检查：
+   # 页面渲染、插件卡片/设置行、模型列表，控制台零报错
+   ```
+
+   插件用本地路径安装（`dsh plugin add /abs/path/to/packages/<pkg>`，符号
+   链接即装），**验证的是工作树产物，与 npm 发布产物同源**；
+3. 验证通过后才：bump `package.json` 版本 + 写 CHANGELOG → commit → push
+   （CI 自动发布）。版本号 bump 是收尾动作，不是开发动作。
+
+反例（2026-09-03 的教训）：先发布再验证，React 崩溃、徽章位置不当等问题
+在发布后才暴露，一天内连发 6+ 个修正版本。工作未完成期间代码可以本地
+commit（worktree 隔离），但**不要 push**——push 即发布。
+
 ## 常用命令
 
 ```bash
