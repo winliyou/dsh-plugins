@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.2 (2026-09-03)
+
+### Changes
+
+* alpha 线合并 + 稳定线跟进 DSH 0.1.2-rc.1：6 个 `@deepseek-ai/dsh-*`
+  optionalDependencies 由 `^0.1.1-rc.2` 升到 `^0.1.2-rc.1`（合入 alpha 线
+  0.10.2-alpha.0 / 0.10.2-alpha.1 的适配内容，功能与 0.10.1 一致）
+* 已对照 0.1.2-rc.1 全量 diff 官方包（36 个：逐包与 0.1.2-alpha.5 字节对比，
+  除版本号外零差异——rc.1 是纯转正 bump）：依赖的 dsh-terminal /
+  dsh-terminal-bash / dsh-tool-bash-persistent / dsh-fs-local /
+  dsh-tool-str-replace-editor 与契约相关的 dsh-agent / dsh-tools 均与
+  alpha.5 适配时一致，systemPrompt / tools / agentPresets 契约与 minimal
+  preset 工具对挂载形状无变化；全仓 build + typecheck + 162 项测试在 rc.1
+  依赖闭包上通过
+
 ## 0.10.1 (2026-08-29)
 
 ### Features

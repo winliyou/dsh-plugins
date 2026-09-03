@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.4 (2026-09-03)
+
+### Changes
+
+* alpha 线合并 + 稳定线跟进 DSH 0.1.2-rc.1：`@deepseek-ai/dsh-typert-protocol`
+  由 `^0.1.1-rc.2` 升到 `^0.1.2-rc.1`（合入 alpha 线 0.3.4-alpha.0 /
+  0.3.4-alpha.1 的适配内容，功能与 0.3.3 一致）
+* 已对照 0.1.2-rc.1 全量 diff 官方包（36 个：逐包与 0.1.2-alpha.5 字节对比，
+  除版本号外零差异——rc.1 是纯转正 bump）：面板远程服务的
+  workspaceRegistry（`archivedSessionIds` / `enqueueOperation` /
+  `requireState` / `setState`）与 sessionPersistence（`list` / `locate` /
+  `readFrom`）契约、`session/title` / `user/message` / `assistant/message`
+  事件形状与 alpha.5 适配时一致；全仓 build + typecheck + 162 项测试在
+  rc.1 依赖闭包上通过
+
 ## 0.3.3 (2026-08-29)
 
 ### Features

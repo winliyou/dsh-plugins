@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.8 (2026-09-03)
+
+### Changes
+
+* alpha 线合并 + 稳定线跟进 DSH 0.1.2-rc.1：`@deepseek-ai/dsh-*` 依赖线由
+  `^0.1.1-rc.2` 升到 `^0.1.2-rc.1`，并合入 alpha 线的 0.1.2 宿主适配（功能
+  与 0.3.7 一致，不含新功能）
+* 0.1.2 线破坏性 API 适配（自 alpha 线合入）：上游移除了
+  `settingsNamespace()`——命名空间现为普通字符串（`'anyconnect'`，附
+  `SettingsNamespace` 类型标注）；`installSettingsSection()` 自由函数改为
+  provider 服务上的 `settings.installSection()`，经
+  `ctx.inject(['settings'], …)` 延迟装配；client 的 `ClientContext` 改由
+  `@deepseek-ai/cordis` 引入并补 `dsh-client-ui-renderer` 副作用导入；
+  上游在 0.1.2 线删除了 `dsh-client-runtime` 包（止于 `0.1.1-rc.2`），本包
+  依赖同步移除
+* 已对照 0.1.2-rc.1 全量 diff 官方包（36 个：逐包与 0.1.2-alpha.5 字节对比，
+  除版本号外零差异——rc.1 是纯转正 bump）：settings / llm / llm-pi-ai /
+  client-ui-settings-plugins / client-ui-slots / attachment 各契约面与
+  alpha.5 适配时一致，运行时逻辑无需调整；全仓 build + typecheck + 162 项
+  测试在 rc.1 依赖闭包上通过
+
 ## 0.3.7 (2026-09-03)
 
 ### Changes
