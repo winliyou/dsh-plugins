@@ -46,12 +46,12 @@ function adaptPackageJson(path) {
   // npm 消费者 `npm view <pkg> dsh.host` 可查；根 package.json 私有不
   // 发布、无 dsh 对象，自然跳过。
   if (json.dsh && json.dsh.host !== version) {
-    changes.push(["dsh", "host", json.dsh.host ?? "(缺省)"]);
+    changes.push(["dsh", "host", json.dsh.host ?? "(缺省)", version]);
     json.dsh.host = version;
   }
   if (changes.length === 0) return;
-  for (const [section, name, from] of changes) {
-    console.log(`  ${rel} [${section}] ${name}: ${from} → ^${version}`);
+  for (const [section, name, from, to] of changes) {
+    console.log(`  ${rel} [${section}] ${name}: ${from} → ${to}`);
   }
   if (!dryRun) writeFileSync(path, JSON.stringify(json, null, 2) + "\n");
 }
@@ -77,8 +77,8 @@ function adaptWorkspaceYaml() {
   let end = 1;
   while (end < rest.length && !/^[A-Za-z]/.test(rest[end])) end++;
   const block = ["minimumReleaseAgeExclude:", ...entries, ""].join("\n");
-  writeFileSync(path, text.slice(0, listStart) + block + rest.slice(end).join("\n"));
-  console.log(`  pnpm-workspace.yaml [minimumReleaseAgeExclude] 从 lockfile 闭包重建：${entries.length} 项 → @${version}`);
+  if (!dryRun) writeFileSync(path, text.slice(0, listStart) + block + rest.slice(end).join("\n"));
+  console.log(`  pnpm-workspace.yaml [minimumReleaseAgeExclude] 从 lockfile 闭包重建：${entries.length} 项 → @${version}${dryRun ? "（dry-run，未写入）" : ""}`);
 }
 
 console.log(`适配 DSH 宿主 ${version}${dryRun ? "（dry-run，不写入）" : ""}:`);

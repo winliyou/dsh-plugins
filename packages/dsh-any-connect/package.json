@@ -26,6 +26,7 @@
     "dsh-any-connect": "./lib/bin.js"
   },
   "dsh": {
+    "host": "0.1.2-rc.1",
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
