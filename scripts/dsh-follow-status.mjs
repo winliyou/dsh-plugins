@@ -75,11 +75,24 @@ function dshBaselines(manifest) {
   return baselines;
 }
 
+/** 解析分支名到可 git show 的引用：CI 的 checkout 只有 origin/<branch>
+ *  远端引用而没有本地分支，本地恰好相反的场景也存在——两者按序回退。 */
+function branchRef(branch) {
+  for (const ref of [`origin/${branch}`, branch]) {
+    try {
+      execFileSync("git", ["rev-parse", "--verify", "--quiet", ref], { cwd: ROOT });
+      return ref;
+    } catch {}
+  }
+  return branch;
+}
+
 /** 读某分支的全部 package.json 基线并聚合成单一基线（应全仓一致）。 */
 function branchBaseline(ref) {
+  const resolved = ref === null ? null : branchRef(ref);
   const read = (path) => {
-    if (ref === null) return JSON.parse(readFileSync(join(ROOT, path), "utf8"));
-    return JSON.parse(execFileSync("git", ["show", `${ref}:${path}`], { cwd: ROOT, encoding: "utf8" }));
+    if (resolved === null) return JSON.parse(readFileSync(join(ROOT, path), "utf8"));
+    return JSON.parse(execFileSync("git", ["show", `${resolved}:${path}`], { cwd: ROOT, encoding: "utf8" }));
   };
   const paths = ["package.json", ...readdirSync(join(ROOT, "packages"), { withFileTypes: true })
     .filter((e) => e.isDirectory())
