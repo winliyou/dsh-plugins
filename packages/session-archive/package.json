@@ -23,6 +23,7 @@
     "./package.json": "./package.json"
   },
   "dsh": {
+    "host": "0.1.2-rc.1",
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
