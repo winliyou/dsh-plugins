@@ -585,10 +585,10 @@ export function realPairMounts(modules: any, cwd: any): any[] {
     : (process.env.DSH_CWD && process.env.DSH_CWD.trim().length > 0 ? process.env.DSH_CWD : process.cwd());
   return [
     { module: modules.terminal, config: {} },
-    { module: modules.terminalBash, config: { timeoutMs: 300000 } },
-    { module: modules.bashPersistent, config: { timeoutMs: 300000, description: MINIMAL_BASH_DESCRIPTION } },
+    { module: modules.terminalBash, config: { timeoutMs: REALPAIR_TIMEOUT_MS } },
+    { module: modules.bashPersistent, config: { timeoutMs: REALPAIR_TIMEOUT_MS, description: MINIMAL_BASH_DESCRIPTION } },
     { module: modules.fsLocal, config: { cwd: resolvedCwd } },
-    { module: modules.strReplaceEditor, config: { maxOutputChars: 16000 } },
+    { module: modules.strReplaceEditor, config: { maxOutputChars: REALPAIR_MAX_OUTPUT_CHARS } },
   ];
 }
 
@@ -608,7 +608,7 @@ export function mountRealPair(agent: any, mounts: any, warn: any): any[] {
     try {
       const fiber = agent.ctx.plugin(mount.module, mount.config ?? {});
       disposers.push(() => {
-        try { fiber.dispose(); } catch {}
+        quietDispose(() => fiber.dispose());
       });
     } catch (error) {
       warn?.(`mountRealPair failed for ${String(mount.module?.name ?? 'module')}: ${String((error as Error)?.message ?? String(error))}`);
@@ -618,6 +618,35 @@ export function mountRealPair(agent: any, mounts: any, warn: any): any[] {
 }
 
 
+
+// ── 命名常量（避免魔法数字散落；值与语义绑定，改动需同步注释）────────
+/** realPair 工具对里 bash 类工具的命令超时（5 分钟，与官方 minimal preset 对齐）。 */
+const REALPAIR_TIMEOUT_MS = 300000;
+/** str_replace_editor 单次输出的字符封顶。 */
+const REALPAIR_MAX_OUTPUT_CHARS = 16000;
+/** dev_tool_search 单次返回的匹配条目上限。 */
+const DEV_SEARCH_MATCH_LIMIT = 25;
+/** dev_tool_search 结果里单条描述的最大字符数。 */
+const DEV_SEARCH_DESC_CHARS = 90;
+/** skill_search 单次返回的匹配条目上限。 */
+const SKILL_SEARCH_MATCH_LIMIT = 20;
+/** preset lookup 失败告警的全局上限：pre-step 每条消息都会探测未接管会话，
+ *  宿主服务长期故障时不能每条消息刷一条 warn。 */
+const MAX_PRESET_LOOKUP_WARNINGS = 20;
+
+/**
+ * 释放路径的静默执行：单个 disposer（或任意清理 thunk）的失败不抛出、
+ * 不打断其余清理。全量吞错是有意的 fail-safe——卸载/重建路径上任何一步
+ * 失败都不应影响后续步骤与主流程；需要排查时看宿主日志的 warn。
+ */
+function quietDispose(dispose: () => void): void {
+  try { dispose(); } catch {}
+}
+
+/** 逐个静默释放一个 disposer 集合（数组 / Map.values() / Set 皆可迭代）。 */
+function disposeAll(disposers: Iterable<() => void>): void {
+  for (const dispose of disposers) quietDispose(dispose);
+}
 
 /**
  * 从 agent/pre-step 的 decision.messages 剥离指定 source.kind 的消息。
@@ -647,10 +676,12 @@ export const PROMOTE_EVENTS = {
  * loadUnlockedFromEvents 从持久事件恢复）。
  */
 export function createDevToolSearch({ schemasOf, onUnlock, catalogHint }: any): any {
-  const hint = catalogHint ?? [
-    'This session starts with a minimal resident set: bash, str_replace_editor.',
-    'Everything else is unlocked on demand through this tool.',
-  ].join('\n');
+  // 必传：文案由调用方按当前常驻集合描述（skill_search/skill_load 是否
+  // 常驻因阶段而异），本函数不内置默认值，避免两份文案漂移。
+  if (typeof catalogHint !== 'string' || catalogHint.length === 0) {
+    throw new Error('createDevToolSearch: catalogHint is required');
+  }
+  const hint = catalogHint;
   return {
     name: 'dev_tool_search',
     description: [
@@ -713,14 +744,14 @@ export function createDevToolSearch({ schemasOf, onUnlock, catalogHint }: any): 
             const haystack = `${schema.name || ''} ${schema.description || ''}`.toLowerCase();
             return wanted.every((token: any) => haystack.includes(token));
           })
-          .slice(0, 25);
+          .slice(0, DEV_SEARCH_MATCH_LIMIT);
         if (matches.length === 0) {
           lines.push(`No tools match "${query}".`);
         } else {
           lines.push(`Matching tools (${matches.length}):`);
           for (const schema of matches) {
             // split 恒返回至少一个元素,[0] 运行时必定义;?? 仅用于 noUncheckedIndexedAccess。
-            const desc = (String(schema.description || '').split('\n')[0] ?? '').slice(0, 90);
+            const desc = (String(schema.description || '').split('\n')[0] ?? '').slice(0, DEV_SEARCH_DESC_CHARS);
             lines.push(`- ${schema.name}: ${desc}`);
           }
           lines.push('Unlock with dev_tool_search({"toolNames": ["<exact name>"]}).');
@@ -771,13 +802,13 @@ export function createSkillSearch({ skillsOf }: any): any {
           const haystack = tokens(`${skill?.name ?? ''} ${skill?.description ?? ''} ${skill?.whenToUse ?? ''}`).join(' ');
           return wanted.every((token: any) => haystack.includes(token));
         });
-        const head = matches.slice(0, 20);
+        const head = matches.slice(0, SKILL_SEARCH_MATCH_LIMIT);
         const lines = head.map((skill: any) => {
           const desc = String(skill?.description || '').split('\n')[0] ?? '';
           return `- ${skill?.name}: ${desc}`;
         });
         if (lines.length === 0) return { text: `No skills match "${args?.query}". Use skill_search with other keywords.` };
-        const extra = matches.length > 20 ? `\n…(${matches.length - 20} more)` : '';
+        const extra = matches.length > SKILL_SEARCH_MATCH_LIMIT ? `\n…(${matches.length - SKILL_SEARCH_MATCH_LIMIT} more)` : '';
         return { text: `Matching skills (${matches.length}):\n${lines.join('\n')}${extra}\n\nLoad one with skill_load (exact name).` };
       } catch (error) {
         return { text: `skill_search unavailable: ${String((error as Error)?.message ?? String(error))}` };
@@ -886,22 +917,6 @@ export function observePhase(state: any, sessionId: any, event: any): void {
   }
 }
 
-/**
- * 按 keep 集合收窄装配后的工具目录。
- * @returns { tools, missing } —— missing 非空表示 keep 中的工具在目录里缺失，
- * 调用方决定是否降级（全目录放行）。
- */
-export function filterBootstrapTools(assembly: any, keep: any): any {
-  const keepSet = keep instanceof Set ? keep : new Set(keep);
-  const tools = Array.isArray(assembly?.tools) ? assembly.tools : [];
-  const available = new Set(tools.map((tool: any) => tool?.name).filter((n: any) => typeof n === 'string'));
-  const missing = [...keepSet].filter((n: any) => !available.has(n));
-  return {
-    tools: tools.filter((tool: any) => keepSet.has(tool.name)),
-    missing,
-  };
-}
-
 /** 首轮输出预算：未晋升 → 封顶；已晋升 → 若仍带着封顶值则剥离。
  * 剥离条件是"值等于当前配置的 cap 或本会话曾写入过的任何旧 cap":
  * 用户在晋升前后改过 cap 的话,header 里残留的是旧值,只比对当前值
@@ -1008,7 +1023,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
      *  宿主服务长期故障时不能每条消息刷一条 warn。 */
     let presetLookupWarnings = 0;
     const warnPresetLookup = (agentId: any, error: any) => {
-      if (presetLookupWarnings >= 20) return;
+      if (presetLookupWarnings >= MAX_PRESET_LOOKUP_WARNINGS) return;
       presetLookupWarnings++;
       warn(`preset lookup failed for agent ${agentId}: ${(error as Error)?.message ?? String(error)}`);
     };
@@ -1050,7 +1065,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
           warn(`suppressRuntimeContext failed for agent ${a.agent.id}: ${(error as Error)?.message ?? String(error)}`);
         }
       } else if (!want && a.suppressDisposer !== null) {
-        try { a.suppressDisposer(); } catch {}
+        quietDispose(() => a.suppressDisposer());
         a.suppressDisposer = null;
       }
     }
@@ -1058,9 +1073,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
     /** 应用/更新极简提示词层（persona 阴影 + 全局引导段屏蔽 +
      *  真实工具对替换后的 tool 引导段阴影）。 */
     function applyMinimalPrompt(a: any) {
-      for (const disposer of a.promptDisposers) {
-        try { disposer(); } catch {}
-      }
+      disposeAll(a.promptDisposers);
       a.promptDisposers = [];
       if (!cfg.enabled || !cfg.minimalPrompt.enabled) return;
       const sp = a.agent.ctx.systemPrompt;
@@ -1090,7 +1103,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
     function applyFamilies(a: any) {
       if (!cfg.enabled || !cfg.leanByDefault) {
         for (const [id, disposer] of a.familyDisposers) {
-          try { disposer(); } catch {}
+          quietDispose(disposer);
           a.familyDisposers.delete(id);
         }
         return;
@@ -1099,7 +1112,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       for (const [id, disposer] of a.familyDisposers) {
         const family = cfg.families[id];
         if (family === void 0 || family.enabled === false || a.escalated.has(id)) {
-          try { disposer(); } catch {}
+          quietDispose(disposer);
           a.familyDisposers.delete(id);
         }
       }
@@ -1145,7 +1158,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       a.escalated.add(familyId);
       const disposer = a.familyDisposers.get(familyId);
       if (disposer !== void 0) {
-        try { disposer(); } catch {}
+        quietDispose(disposer);
         a.familyDisposers.delete(familyId);
       }
       // 族 restrict 释放后还须重算 bootstrap deny:两层 restrict 取交集,
@@ -1192,9 +1205,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       const cwd = a.agent.session?.header?.cwd ?? null;
       const key = active ? 'on:' + String(cwd) : 'off';
       if (a.realPairKey === key) return;
-      for (const dispose of a.realPairDisposers) {
-        try { dispose(); } catch {}
-      }
+      disposeAll(a.realPairDisposers);
       a.realPairDisposers = [];
       if (active) {
         const mounts = realPairMounts(realPairModules, cwd);
@@ -1220,7 +1231,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       const want = enabled ? cfg.bootstrap.discoveryTools : [];
       for (const [name, disposer] of a.toolDisposers) {
         if (!want.includes(name)) {
-          try { disposer(); } catch {}
+          quietDispose(disposer);
           a.toolDisposers.delete(name);
         }
       }
@@ -1340,26 +1351,18 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       bootstrapState.delete(agentId);
       if (a === void 0) return;
       if (a.suppressDisposer !== null) {
-        try { a.suppressDisposer(); } catch {}
+        quietDispose(() => a.suppressDisposer());
       }
-      for (const disposer of a.promptDisposers) {
-        try { disposer(); } catch {}
-      }
+      disposeAll(a.promptDisposers);
       a.promptDisposers = [];
-      for (const dispose of a.realPairDisposers) {
-        try { dispose(); } catch {}
-      }
+      disposeAll(a.realPairDisposers);
       a.realPairDisposers = [];
       if (a.bootstrapDisposer !== null) {
-        try { a.bootstrapDisposer(); } catch {}
+        quietDispose(() => a.bootstrapDisposer());
       }
-      for (const disposer of a.toolDisposers.values()) {
-        try { disposer(); } catch {}
-      }
+      disposeAll(a.toolDisposers.values());
       a.toolDisposers.clear();
-      for (const disposer of a.familyDisposers.values()) {
-        try { disposer(); } catch {}
-      }
+      disposeAll(a.familyDisposers.values());
     }
 
     // ── 事件监听（注册在 host 根作用域，与 dsh-agent-presets 同款用法）──
@@ -1513,7 +1516,7 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       const key = keep === null ? null : [...keep].sort().join(',');
       if (key === a.bootstrapKey) return;
       if (a.bootstrapDisposer !== null) {
-        try { a.bootstrapDisposer(); } catch {}
+        quietDispose(() => a.bootstrapDisposer());
         a.bootstrapDisposer = null;
         a.bootstrapKey = null;
       }

@@ -3,46 +3,37 @@
 // 它打 `dsh-v<基线>` 归档 tag（表示"该提交 = 对 dsh 此稳定版的已验证
 // 适配"）；`pnpm run dsh-status` 的判定逻辑见 dsh-follow-status.mjs。
 //
-// 基线不一致（不同包指向不同版本）时 exit 1——那意味着适配只做了一半。
+// 严格模式：任何非 `^<版本>` 形态的 dsh 依赖、基线不一致、dsh.host 缺失
+// 或不一致都 exit 1——发布归档的 tag 不允许带糊的状态。
 
-import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { aggregateBaseline, manifestPaths, scanManifest, ROOT } from "./lib/dsh-deps.mjs";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const DEP_PREFIX = "@deepseek-ai/dsh-";
-const SECTIONS = ["dependencies", "optionalDependencies", "devDependencies", "peerDependencies"];
+const manifests = manifestPaths(ROOT).map((path) => ({
+  path,
+  manifest: JSON.parse(readFileSync(join(ROOT, path), "utf8")),
+}));
 
-const baselines = new Set();
-const paths = [
-  "package.json",
-  ...readdirSync(join(ROOT, "packages"), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => `packages/${entry.name}/package.json`),
-];
-for (const path of paths) {
-  const manifest = JSON.parse(readFileSync(join(ROOT, path), "utf8"));
-  for (const section of SECTIONS) {
-    const deps = manifest[section];
-    if (!deps) continue;
-    for (const [name, range] of Object.entries(deps)) {
-      if (!name.startsWith(DEP_PREFIX)) continue;
-      const m = /^\^([0-9][^\s]*)$/.exec(range);
-      if (m === null) {
-        console.error(`dsh-baseline: ${path} [${section}] ${name} 不是 ^<版本> 形态: ${range}`);
-        process.exit(1);
-      }
-      baselines.add(m[1]);
-    }
+// 严格校验 1:所有 dsh-* range 都是 ^<版本> 形态
+for (const { path, manifest } of manifests) {
+  for (const { section, name, range } of scanManifest(manifest).invalid) {
+    console.error(`dsh-baseline: ${path} [${section}] ${name} 不是 ^<版本> 形态: ${range}`);
+    process.exit(1);
   }
 }
-if (baselines.size === 0) {
-  console.error("dsh-baseline: 未找到任何 @deepseek-ai/dsh-* 依赖");
+
+const { baseline, host } = aggregateBaseline((path) => JSON.parse(readFileSync(join(ROOT, path), "utf8")));
+if (baseline.startsWith("[不一致")) {
+  console.error(`dsh-baseline: 依赖基线不一致: ${baseline}`);
   process.exit(1);
 }
-if (baselines.size > 1) {
-  console.error(`dsh-baseline: 依赖基线不一致: ${[...baselines].join(" / ")}`);
+if (typeof host !== "string") {
+  console.error("dsh-baseline: 发布包缺少 dsh.host 适配声明（package.json 的 dsh.host 字段）");
   process.exit(1);
 }
-console.log([...baselines][0]);
+if (host !== baseline) {
+  console.error(`dsh-baseline: dsh.host (${host}) 与依赖基线 (${baseline}) 不一致`);
+  process.exit(1);
+}
+console.log(baseline);
