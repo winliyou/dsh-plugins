@@ -30,10 +30,18 @@ cd .worktrees/main && pnpm install && pnpm run build   # 每个工作树独立�
 跨分支 cherry-pick 在两个工作树目录之间直接进行，互不污染；每次进入工作树
 或主检出目录后，先确认 `lib/` 是当前分支的产物（不确定就重新 build）。
 
+**命令执行目录纪律（2026-09-05 的教训）**：一切会产生文件改动的操作——
+包括 `node -e` 内联脚本、`sed -i`、代码生成——都必须先 `cd` 进目标 worktree
+再执行，或在命令里写绝对路径。shell 的 cwd 会在多次调用间保留，"以为在
+worktree、实际改了主检出"曾让 dsh.host 字段改动散落两处，npm 发布产物
+（0.10.4）因此缺字段，被迫多发一个版本。提交前用 `pwd` + `git status`
+确认所在位置与预期一致。
+
 ## 发布纪律（重要）
 
-**在功能完全实现、测试通过、并在 dsh 测试实例中真实验证可用之前，不推送
-触发发布的代码，不 bump 版本。** 一次功能开发的完整顺序：
+**在功能完全实现、本地测试通过、并在 dsh 测试实例中真实验证可用之前，不
+bump 版本、不提交推送。** 版本号是发布动作的一部分，不是开发动作——功能
+有问题就修功能，绝不靠"再发一版"解决。一次功能开发的完整顺序：
 
 1. 开发 + `pnpm run test:ci`（build + typecheck + test）全绿；
 2. 启动隔离测试实例真实验证（不占用用户的 `~/.dsh`）：
@@ -46,12 +54,16 @@ cd .worktrees/main && pnpm install && pnpm run build   # 每个工作树独立�
 
    插件用本地路径安装（`dsh plugin add /abs/path/to/packages/<pkg>`，符号
    链接即装），**验证的是工作树产物，与 npm 发布产物同源**；
-3. 验证通过后才：bump `package.json` 版本 + 写 CHANGELOG → commit → push
-   （CI 自动发布）。版本号 bump 是收尾动作，不是开发动作。
+3. 验证通过后才：bump `package.json` 版本 + 写 CHANGELOG → 提交。
+4. **推送前逐提交复核**：`git log --oneline origin/<分支>..HEAD` 与
+   `git diff origin/<分支>..HEAD` 对照——提交信息声称的每项变更都要在
+   diff 里找到，diff 里每处行为变更都要有 CHANGELOG 与版本号对应；
+   对不上就不要推。然后 push（CI 自动发布），完成后核对 npm 的版本号与
+   `dsh.host` 字段符合预期。
 
-反例（2026-09-03 的教训）：先发布再验证，React 崩溃、徽章位置不当等问题
-在发布后才暴露，一天内连发 6+ 个修正版本。工作未完成期间代码可以本地
-commit（worktree 隔离），但**不要 push**——push 即发布。
+反例：2026-09-03 先发布再验证，一天连发 6+ 个修正版本；2026-09-05 改动
+散落两个工作树，0.10.4 发布产物缺字段，被迫多发 0.10.5。工作未完成期间
+代码可以本地 commit（worktree 隔离），但**不要 push**——push 即发布。
 
 ## 常用命令
 
@@ -62,8 +74,28 @@ pnpm run typecheck      # host + client 两套 tsconfig --noEmit
 pnpm run test           # vitest 回归
 pnpm run test:ci        # build + typecheck + test（提交/发布前必跑）
 pnpm run gate           # 发布门禁干跑：只读，看哪些包会被发布/为何被跳过
+pnpm run dsh-status     # 两分支 dsh 依赖基线 vs npm dist-tags 对照（详见 RELEASING.md）
 pnpm run adapt 0.1.2-alpha.4   # dsh 宿主升级适配（--dry-run 预览），详见 RELEASING.md
 ```
+
+## 已知技术债（重构候选，动手前先规划）
+
+按 2026-09-05 可维护性审查登记，均为「有测试兜底前的已知债务」，不阻塞
+日常开发，但改动相邻代码时应优先考虑顺手消化：
+
+- `packages/adaptive-perf/src/index.ts` 约 1700 行，`apply()` 一个闭包约
+  740 行、19 个内嵌函数，`cfg`/`agents`/`bootstrapState` 等闭包状态被网状
+  共享——拆分需按审查结论选「闭包工厂分组」或「Runtime 类」方案，单独
+  规划、纯搬移分提交。前置：已提取 `quietDispose`/`disposeAll` 助手。
+- 客户端三包的 REMOTE_CONTRIBUTION + 设置卡挂载样板近乎逐字重复
+  （`adaptive-perf/client/index.tsx` 与 `sandbox-extra-roots/client/index.tsx`），
+  可仿 config-store 模式提取 `client/contribution.ts` 并用 bundle.test 锁
+  一致性；typert descriptor 配错会静默失效，需测试实例手验。
+- scripts 的 semver 比较、CHANGELOG 小节判定、包目录枚举各有多份实现
+  （dsh-baseline/dsh-follow-status 的基线提取已合并），可提取 `scripts/lib/`；
+  脚本无自动化测试，发布时才暴露回归。
+- 客户端 `ctx.locale.register` 重复注册防护仅 sandbox-extra-roots 有，
+  adaptive-perf / session-archive 待对齐（HMR 场景防御，需实例手验）。
 
 ## 约定
 
