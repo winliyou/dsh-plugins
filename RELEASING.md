@@ -5,17 +5,38 @@
 
 ## 分支模型
 
-| 分支 | 适配的 DSH 线 | 版本号形态 | dist-tag |
-|---|---|---|---|
-| `main` | 稳定线（当前 `0.1.1-rc.2`） | 纯 semver（如 `0.10.1`） | `latest` |
-| `alpha` | 下一条预发布线（当前 `0.1.2-alpha.x`） | `-alpha.N` 后缀（如 `0.10.2-alpha.0`） | `alpha` |
+| 分支 | 适配的 DSH 线 | 跟随的 dist-tag | 版本号形态 | dist-tag |
+|---|---|---|---|---|
+| `main` | 稳定线（当前 `0.1.2-rc.1`） | `latest` | 纯 semver（如 `0.10.3`） | `latest` |
+| `alpha` | 预发布线（当前 `0.1.2-alpha.5`） | `alpha` | `-alpha.N` 后缀（进入 rc 阶段换 `-rc.N`，如 `0.10.4-alpha.0`） | `alpha` / `rc` |
 
-**双线并行是常态，不是过渡方案**：DSH 快速迭代期间，rc 稳定线与 alpha 预发布
+**双线并行是常态，不是过渡方案**：DSH 快速迭代期间，稳定线与 alpha 预发布
 线长期同时存在，两条分支各自跟随一条线持续维护。不变式只有一条：**main 的工作
 树必须始终处于「可直接发布」状态**（版本号与依赖线 = npm 上 latest 的下一个
 候选），任何时刻都能直接热修稳定线。分支跟随的是 **DSH 宿主线**，不是「开发/
 测试」阶段；用户装到哪个版本完全由版本号后缀决定（见 dist-tag 规则），与改动
 发生在哪个分支无关。
+
+### 宿主跟随规则
+
+分支与 DSH 宿主版本的归属判据只有一条：**main 跟 npm 的 `latest`，alpha 跟
+npm 的 `alpha` dist-tag**。不看版本号形态（alpha/rc）——rc 发布进了 `latest`
+就归 main 线跟进，`alpha` tag 指向谁 alpha 分支就适配谁。
+
+配套的两条不变式：
+
+- **alpha 分支的 dsh 依赖 range 永远以 `alpha` dist-tag 为基线**。semver 上
+  `^X.Y.Z-alpha.N` 天然覆盖同基础号的后续 rc 与正式版，因此 DSH 发 rc 不需要
+  alpha 分支抬高 range；只有 `alpha` tag 前进（新预发布线开跑）才执行适配。
+  抬高基线（如跟随 rc）会让还在旧 alpha 上的用户依赖声明失配。
+- **收敛期对齐的暂替语义**：「双线生命周期」第 3 步的对齐会把 main 的
+  range / lockfile / exclude 清单整体带进 alpha，alpha 分支暂时处于 main
+  形态。这是合法状态，但 alpha 在此状态下不得发版；恢复 alpha 形态用
+  `pnpm run adapt <alpha tag 版本>` + `pnpm install`（adapt 不比较新旧，
+  重跑即重建基线与排除清单）。
+
+核对手段：`pnpm run dsh-status`（本地随时跑）；CI 的 `dsh-follow.yml` 每日
+与 push 时自动核对，不一致发 warning（刻意非阻塞——提醒，不是门禁）。
 
 > 2026-09 已把 main 上误入的 alpha 适配内容回退（三个包依赖回 `^0.1.1-rc.2`、
 > 版本号回 `0.10.1` / `0.4.3` / `0.3.3`，CHANGELOG 的 alpha 小节归还 alpha
@@ -120,10 +141,11 @@
 
 ## DSH 宿主升级适配
 
-DSH 发新预发布版（如 `0.1.2-alpha.4`）后，在 alpha 分支：
+DSH 的 `alpha` dist-tag 前进（新预发布线开跑，如 `0.1.2-alpha.4` →
+`0.1.3-alpha.0`）后，在 alpha 分支：
 
 ```bash
-node scripts/adapt-dsh.mjs 0.1.2-alpha.4   # 改全部 @deepseek-ai/dsh-* range + exclude 清单
+node scripts/adapt-dsh.mjs 0.1.3-alpha.0   # 改全部 @deepseek-ai/dsh-* range + exclude 清单
 pnpm install                                # 重新生成 lockfile
 # 对照新宿主的 diff 复核用到的契约（参照历史 CHANGELOG 的记录方式），
 # 升版本号、写 CHANGELOG，然后：
@@ -133,24 +155,35 @@ pnpm run test:ci && git push
 `adapt-dsh.mjs` 支持 `--dry-run` 预览；它按 lockfile 闭包整块重建 exclude
 清单，宿主新引入的 dsh 子依赖会自动纳入。若 `pnpm install` 仍报某 dsh 包
 解析不到（闭包外的新依赖），把该包手工补进清单后重试。稳定线（main）跟进
-新的 rc（如 `0.1.1-rc.3`）时同样在 main 上执行同一流程；稳定线无需维护排除
-清单。
+`latest` 前进（如 `0.1.1-rc.2` → `0.1.2-rc.1`）时同样在 main 上执行同一
+流程；稳定线无需维护排除清单。
+
+同一命令也用于把 alpha 分支重建回 alpha tag 基线：adapt 不比较新旧、按
+指定版本整块覆写，收敛期对齐后恢复 alpha 形态（见「宿主跟随规则」）就是
+`node scripts/adapt-dsh.mjs <alpha tag 版本>` + `pnpm install`。
 
 ## 双线生命周期（常态循环）
 
-1. **dsh 出新预发布线**：alpha 分支执行「DSH 宿主升级适配」流程，以
-   `-alpha.N` 版本发布到 `alpha` dist-tag。main 不动，继续服务稳定线。
-2. **预发布线进入 rc**：dsh 发 `0.1.2-rc.1` 时仍在 alpha 分支适配，版本后缀
-   换成 `-rc.N`，发布到 `rc` dist-tag。
-3. **dsh 转正**：在 alpha 分支把各包版本号去掉预发布后缀（`0.3.2-alpha.0` →
-   `0.3.2`；若稳定线热修已占用该基础号，先跳到下一个基础号），然后合并回
-   稳定线：在 `.worktrees/main` 工作树里 `git merge alpha`——此刻两线目标宿主
-   相同，可以合并；`pnpm-lock.yaml` 冲突任取一边后 `pnpm install` 重新生成。
-   在 main 上推送发布 `latest`，再回到 alpha 分支 `git merge main` 对齐两分支，
-   等待 dsh 的下一条预发布线。
-4. **循环**：dsh 出下一条预发布线，回到第 1 步。若某个时期同时活跃的宿主线
-   超过两条（如 `0.1.2-rc` 与 `0.1.3-alpha` 并行），照同样模型再拉一条分支
-   即可——分支数跟随活跃宿主线数，dist-tag 始终由版本后缀决定、与分支名无关。
+1. **dsh 出新预发布线**（`alpha` dist-tag 前进）：alpha 分支执行「DSH 宿主
+   升级适配」流程，以 `-alpha.N` 版本发布到 `alpha` dist-tag。main 不动，
+   继续服务稳定线。
+2. **预发布线进入 rc**：dsh 发同基础号的 rc（如 `0.1.2-rc.1`）时，rc 仍在
+   alpha 分支的 range 覆盖范围内，**依赖基线不动**；仅当 rc 引入需要适配的
+   API 变化时才在 alpha 分支适配，版本后缀换成 `-rc.N`，发布到 `rc`
+   dist-tag。
+3. **dsh 转正**（rc/正式版进 `latest`）：在 alpha 分支把各包版本号去掉预
+   发布后缀（`0.3.2-alpha.0` → `0.3.2`；若稳定线热修已占用该基础号，先跳到
+   下一个基础号），然后合并回稳定线：在 `.worktrees/main` 工作树里
+   `git merge alpha`——此刻两线目标宿主相同，可以合并；`pnpm-lock.yaml`
+   冲突任取一边后 `pnpm install` 重新生成。在 main 上推送发布 `latest`，再
+   回到 alpha 分支 `git merge main`（或可 ff 时快进）对齐两分支。对齐后
+   alpha 暂时处于 main 形态（range/lockfile/清单），等待下一条预发布线时
+   用 `node scripts/adapt-dsh.mjs <alpha tag 版本>` + `pnpm install` 恢复
+   alpha 形态。
+4. **循环**：dsh 出下一条预发布线（`alpha` dist-tag 前进），回到第 1 步。
+   若某个时期同时活跃的宿主线超过两条（如 `0.1.2-rc` 与 `0.1.3-alpha`
+   并行），照同样模型再拉一条分支即可——分支数跟随活跃宿主线数，dist-tag
+   始终由版本后缀决定、与分支名无关。
 
 ## 手动兜底
 

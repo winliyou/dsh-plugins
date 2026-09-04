@@ -1,0 +1,43 @@
+name: DSH follow status
+
+# 宿主跟随核对（RELEASING.md「宿主跟随规则」）：main ↔ dsh 的 latest，
+# alpha ↔ dsh 的 alpha dist-tag。落后或形态漂移时发 GitHub Actions
+# warning annotation。刻意非阻塞（永远 exit 0）：这是提醒，不是门禁——
+# 发布门禁仍由 publish.yml 全权负责。
+on:
+  # dsh 宿主随时可能发新预发布版，dist-tags 变化不会触发 push 事件——
+  # 每日定时核对是主要手段。schedule 只在默认分支的 workflow 上生效。
+  schedule:
+    - cron: '17 3 * * *'
+  push:
+    branches:
+      - main
+      - alpha
+    paths:
+      - 'scripts/dsh-follow-status.mjs'
+      - '.github/workflows/dsh-follow.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # 脚本要 git show 另一条分支的 package.json
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Compare branch baselines with dsh dist-tags
+        run: node scripts/dsh-follow-status.mjs --ci
