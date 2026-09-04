@@ -1,10 +1,16 @@
-// DSH 宿主跟随状态核对：对比 npm 上 @deepseek-ai/dsh 的 dist-tags 与两条
-// 分支实际的 dsh-* 依赖基线，报告谁落后、谁漂移。
+// DSH 宿主跟随状态核对：按 DSH 的发布习惯判定两条分支的跟随目标，对比
+// npm 上 @deepseek-ai/dsh 的实际发布与两条分支的 dsh-* 依赖基线，报告谁
+// 落后、谁漂移。
 //
-// 分支模型（RELEASING.md「宿主跟随规则」）：
-//   main  ↔ dsh 的 `latest` dist-tag（稳定线）
-//   alpha ↔ dsh 的 `alpha` dist-tag（预发布线；range 以该版本为基线，
-//           semver 上 ^X.Y.Z-alpha.N 天然向上覆盖同段 rc/正式版）
+// DSH 的发布习惯（RELEASING.md「宿主跟随规则」）：每条版本线都是
+// `<基础号>-alpha.N` 迭代若干版 → 进入 rc（= 稳定候选，直接发成 latest）
+// → 该基础号终结（出了稳定版就不会再有同基础号的 alpha）→ 下一条线从
+// 更高基础号的 `<新基础号>-alpha.0` 重新开始。因此归属判据是版本号语义：
+//   main  ↔ latest（稳定线本身）
+//   alpha ↔ 基础号高于 latest 的进行中 -alpha 线；不存在时休眠（基线
+//           维持上一条线的 alpha 锚点，semver 覆盖恰好含 latest）
+// 判定不用 `alpha` dist-tag——它滞后（线进入 rc 后不再更新，而该线已归
+// 稳定线）。
 //
 // 用法：node scripts/dsh-follow-status.mjs [--ci]
 //   --ci  落后/漂移时输出 GitHub Actions `::warning::` annotation
@@ -110,36 +116,70 @@ function currentBranch() {
   return execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: ROOT, encoding: "utf8" }).trim();
 }
 
-const distTags = JSON.parse(execFileSync("npm", ["view", "@deepseek-ai/dsh", "dist-tags", "--json"], { encoding: "utf8" }));
+const PKG = "@deepseek-ai/dsh";
+const distTags = JSON.parse(execFileSync("npm", ["view", PKG, "dist-tags", "--json"], { encoding: "utf8" }));
+const versions = JSON.parse(execFileSync("npm", ["view", PKG, "versions", "--json"], { encoding: "utf8" }));
 const head = currentBranch();
 const other = head === "main" ? "alpha" : "main";
-const expectedTag = { main: distTags.latest, alpha: distTags.alpha };
+
+// ── 按 DSH 发布习惯判定跟随目标 ────────────────────────────────────
+// 稳定线 = latest；进行中预发布线 = 基础号高于 latest 的最高 -alpha 版本
+// （-beta 同样算进行中；-rc 不算——rc 即稳定候选，一出现该线就归稳定线）。
+const latest = distTags.latest;
+const latestBase = parseVersion(latest).n.join(".");
+const devVersions = versions.filter((v) => {
+  const p = parseVersion(v);
+  return p.pre.length > 0 && p.pre[0] !== "rc" && cmpVersion(v, latest) > 0;
+});
+const devLine = devVersions.length > 0
+  ? devVersions.reduce((a, b) => (cmpVersion(a, b) > 0 ? a : b))
+  : null;
 
 const rows = [];
 for (const branch of ["main", "alpha"]) {
   const { baseline, mixed } = branchBaseline(branch === head ? null : branch);
-  const tag = expectedTag[branch];
-  const cmp = mixed ? NaN : cmpVersion(baseline, tag);
-  const state = mixed ? "漂移(基线不一致)" : cmp === 0 ? "就位" : cmp < 0 ? "落后" : "超前于 tag";
-  rows.push({ branch, baseline, tag, state, cmp });
+  let target;
+  let state;
+  if (branch === "main") {
+    target = latest;
+    const cmp = mixed ? NaN : cmpVersion(baseline, latest);
+    state = mixed ? "漂移(基线不一致)" : cmp === 0 ? "就位" : cmp < 0 ? "落后" : "超前";
+  } else if (devLine !== null) {
+    target = devLine;
+    const cmp = mixed ? NaN : cmpVersion(baseline, devLine);
+    state = mixed ? "漂移(基线不一致)" : cmp === 0 ? "就位" : cmp < 0 ? "落后" : "超前";
+  } else {
+    // 休眠：没有进行中的预发布线。基线为上一条线的 alpha 锚点即就位——
+    // 同基础号的 prerelease range 向上覆盖该线全部形态（含 latest）。
+    target = `(休眠，等待 >${latestBase} 的新线)`;
+    const p = mixed ? null : parseVersion(baseline);
+    state = mixed
+      ? "漂移(基线不一致)"
+      : p !== null && p.n.join(".") === latestBase && cmpVersion(baseline, latest) <= 0
+        ? "就位(休眠)"
+        : "落后";
+  }
+  rows.push({ branch, baseline, target, state });
 }
 
-console.log(`@deepseek-ai/dsh dist-tags: latest=${distTags.latest}  alpha=${distTags.alpha}`);
-for (const { branch, baseline, tag, state } of rows) {
-  const mark = state === "就位" ? "✔" : "✖";
-  console.log(`${mark} ${branch.padEnd(5)} 依赖基线 ${baseline.padEnd(16)} ↔ dsh ${branch === "main" ? "latest" : "alpha "} ${String(tag).padEnd(16)} ${state}`);
+console.log(`dsh 稳定线(latest) = ${latest}`);
+console.log(devLine === null
+  ? `进行中预发布线: 无 —— alpha 分支休眠，等待 >${latestBase} 的新 alpha 线`
+  : `进行中预发布线 = ${devLine}`);
+for (const { branch, baseline, target, state } of rows) {
+  const mark = state.startsWith("就位") ? "✔" : "✖";
+  console.log(`${mark} ${branch.padEnd(5)} 依赖基线 ${baseline.padEnd(16)} ↔ ${String(target).padEnd(24)} ${state}`);
 }
 
 let problems = 0;
-for (const { branch, baseline, tag, state } of rows) {
-  if (state === "就位") continue;
+for (const { branch, baseline, target, state } of rows) {
+  if (state.startsWith("就位")) continue;
   problems++;
-  const advice = state === "落后"
-    ? `请在该分支执行 pnpm run adapt ${tag} 跟进`
-    : branch === "alpha"
-      ? "alpha 分支的依赖基线应以 dsh alpha dist-tag 为准（收敛期对齐后的暂替状态请尽快重建 alpha 形态，见 RELEASING.md「宿主跟随规则」）"
-      : "main 分支的依赖基线应以 dsh latest 为准";
-  const message = `dsh 跟随: ${branch} 分支依赖基线 ${baseline} 与 dsh ${branch === "main" ? "latest" : "alpha"} (${tag}) 不一致（${state}）。${advice}`;
+  const targetVersion = branch === "main" ? latest : devLine;
+  const advice = state === "落后" && targetVersion !== null
+    ? `请在该分支执行 pnpm run adapt ${targetVersion} 跟进`
+    : "核对 RELEASING.md「宿主跟随规则」";
+  const message = `dsh 跟随: ${branch} 分支依赖基线 ${baseline} 与跟随目标不一致（${state}，目标 ${target}）。${advice}`;
   if (ci) console.log(`::warning::${message}`);
   console.log(`⚠ ${message}`);
 }
