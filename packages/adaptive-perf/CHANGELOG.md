@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.10.3 (2026-09-05)
+
+### Fixes
+
+* 全新安装缺 `ptc` preset：`cordis.patch.yml` 的 `presets` 与
+  `DEFAULT_CONFIG` 对齐（补 `ptc`）——此前全新安装的 PTC 会话完全不被
+  接管（存量用户不受影响，patch 已落盘）
+* `escalateOnUnknownTool` 在首轮锚定（bootstrap）阶段失效：失败信号的
+  隐藏集现在计入 bootstrap deny（默认配置下这是工具隐藏的唯一来源）。
+  命中的隐藏工具属于某工具族时放行整族；不属于任何族（如 `read`/
+  `write` 等核心编码工具）时按名解锁该工具（与晋升后 dev_tool_search
+  的解锁同一通道，下一请求生效），PTC 程序不再对这些工具永远 UNKNOWN_TOOL
+
+### Docs
+
+* README 同步失败信号对 bootstrap 阶段的行为说明
+
 ## 0.10.2 (2026-09-03)
 
 ### Changes

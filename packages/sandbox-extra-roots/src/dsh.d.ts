@@ -5,7 +5,10 @@ declare module "@deepseek-ai/cordis" {
     sandbox: {
       [key: string]: any;
       [key: symbol]: any;
-      confine?: (...args: any[]) => Promise<any>;
+      /** 官方 dsh-sandbox-local 的 confine(argv, policy) 同步返回包装结果
+       * ({ argv, enforcement, ... }),并非 Promise。confine 包装按同步消费
+       * (wrapped.argv 立即取用);宿主若异步化此处需同步改造。 */
+      confine?: (...args: any[]) => { argv: string[]; [key: string]: any };
     };
     fs: {
       [key: string]: any;

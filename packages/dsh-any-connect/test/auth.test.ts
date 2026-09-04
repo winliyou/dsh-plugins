@@ -110,16 +110,23 @@ describe('WorkBuddyCredentialStore', () => {
     const desktop = join(dir, 'workbuddy-desktop.info')
     const own = join(dir, 'own.json')
     await writeFile(desktop, nestedDoc(Date.now() - 1000))
+    let refreshes = 0
     const store = new WorkBuddyCredentialStore({
       desktopPath: desktop,
       ownPath: own,
-      refresh: async () => ({ accessToken: 'fresh', refreshToken: 'rt2', expiresInSec: 3600 }),
+      refresh: async () => {
+        refreshes += 1
+        return { accessToken: 'fresh', refreshToken: 'rt2', expiresInSec: 3600 }
+      },
     })
     await expect(store.resolve()).resolves.toMatchObject({ accessToken: 'fresh', source: 'dsh' })
     const saved = JSON.parse(await readFile(own, 'utf8')) as { version: number, credential: { accessToken: string } }
     expect(saved.version).toBe(1)
     expect(saved.credential.accessToken).toBe('fresh')
     await expect(store.resolve()).resolves.toMatchObject({ accessToken: 'fresh' })
+    // 副本读回时必须带正确的过期时间:字段名不对称曾让副本读回
+    // expiresAtMs=0、needsRefresh 恒真,第二次 resolve 仍会刷新。
+    expect(refreshes).toBe(1)
   })
 
   it('still returns a not-yet-expired token when refresh fails', async () => {
@@ -147,6 +154,80 @@ describe('WorkBuddyCredentialStore', () => {
       refresh: async credential => ({ accessToken: credential.accessToken }),
     })
     await expect(store.resolve()).rejects.toThrow(/no signed-in WorkBuddy account/)
+  })
+
+  it('keeps a refreshed token in memory when saving the owned copy fails', async () => {
+    // H4 回归:上游可能把 refresh token 轮换为一次性新值,落盘失败时若退回
+    // 磁盘旧副本,下一次刷新必然 session_dead;刷新成果必须保留在内存里,
+    // 且告警要说清是「落盘失败」而非「上游刷新失败」。
+    const dir = await mkdtemp(join(tmpdir(), 'wb-store-'))
+    CLEANUP.push(() => rm(dir, { recursive: true, force: true }))
+    const desktop = join(dir, 'workbuddy-desktop.info')
+    await writeFile(desktop, nestedDoc(Date.now() - 1000))
+    // ownPath 落在普通文件之下:withFileLock 建锁文件即失败(ENOTDIR),
+    // 原子写必然走不出去;logout 的 force rm 对不存在路径无害。
+    const own = join(dir, 'plain-file', 'own.json')
+    await writeFile(join(dir, 'plain-file'), 'x')
+    const warnings: string[] = []
+    let refreshes = 0
+    const store = new WorkBuddyCredentialStore({
+      desktopPath: desktop,
+      ownPath: own,
+      onWarning: message => warnings.push(message),
+      refresh: async () => {
+        refreshes += 1
+        return { accessToken: 'fresh', refreshToken: 'rt2', expiresInSec: 3600 }
+      },
+    })
+    await expect(store.resolve()).resolves.toMatchObject({ accessToken: 'fresh', refreshToken: 'rt2' })
+    expect(warnings.some(w => w.includes('saving the plugin-owned copy failed')), '告警报告落盘失败').toBe(true)
+    expect(await readFile(own, 'utf8').then(() => true, () => false), '目录路径不产生副本文件').toBe(false)
+    // 内存兜底生效:后续请求不再刷新(也不丢轮换后的 refresh token)
+    await expect(store.resolve()).resolves.toMatchObject({ accessToken: 'fresh' })
+    expect(refreshes).toBe(1)
+  })
+
+  it('does not re-refresh on every request when the upstream omits expiresIn', async () => {
+    // H5 回归:缺 expiresIn 时沿用旧过期时间会让 needsRefresh 恒真,
+    // 每条请求都打一次刷新端点;必须按保守下限外推。
+    const dir = await mkdtemp(join(tmpdir(), 'wb-store-'))
+    CLEANUP.push(() => rm(dir, { recursive: true, force: true }))
+    const desktop = join(dir, 'workbuddy-desktop.info')
+    await writeFile(desktop, nestedDoc(Date.now() - 1000))
+    let refreshes = 0
+    const store = new WorkBuddyCredentialStore({
+      desktopPath: desktop,
+      ownPath: join(dir, 'own.json'),
+      refresh: async () => {
+        refreshes += 1
+        return { accessToken: 'fresh' }
+      },
+    })
+    await expect(store.resolve()).resolves.toMatchObject({ accessToken: 'fresh' })
+    const served = await store.resolve()
+    expect(served.accessToken).toBe('fresh')
+    expect(refreshes).toBe(1)
+    expect(served.expiresAtMs).toBeGreaterThan(Date.now() + 60_000)
+  })
+
+  it('throttles refreshes for very short-lived tokens within the window', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wb-store-'))
+    CLEANUP.push(() => rm(dir, { recursive: true, force: true }))
+    const desktop = join(dir, 'workbuddy-desktop.info')
+    await writeFile(desktop, nestedDoc(Date.now() - 1000))
+    let refreshes = 0
+    const store = new WorkBuddyCredentialStore({
+      desktopPath: desktop,
+      ownPath: join(dir, 'own.json'),
+      refresh: async () => {
+        refreshes += 1
+        return { accessToken: `fresh-${refreshes}`, expiresInSec: 5 }
+      },
+    })
+    await expect(store.resolve()).resolves.toMatchObject({ accessToken: 'fresh-1' })
+    // token 未过期 + 30s 节流窗口内:不再次刷新
+    await expect(store.resolve()).resolves.toMatchObject({ accessToken: 'fresh-1' })
+    expect(refreshes).toBe(1)
   })
 
   it('applies a desktop-path repoint on the next read', async () => {

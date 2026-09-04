@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { apply } from "../src/index.js";
@@ -148,6 +148,79 @@ describe("sandbox-extra-roots host (bwrap)", () => {
       process.env.DSH_HOME = fakeHome;
       rmSync(fakeHome2, { recursive: true, force: true });
       rmSync(existingExtra, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("sandbox-extra-roots 运行期符号链接重定向(逃逸防护)", () => {
+  // 攻击模型:extra root 位于沙盒可写区(如 /tmp),沙盒内的 agent 把它
+  // 替换成指向危险根的符号链接;confine/fs fence 每次调用重新 canonical
+  // 化会跟随新目标,必须在授予前复查并剔除,否则等价于全盘可写。
+  function swapToSymlink(root: string, target: string) {
+    rmSync(root, { recursive: true, force: true });
+    symlinkSync(target, root, "dir");
+  }
+
+  it("extra root 被换成指向 / 的符号链接后,bash profile 与 fs fence 都不授予", async () => {
+    const base = mkdtempSync(join(tmpdir(), "ser-swap-"));
+    const root = join(base, "cache");
+    mkdirSync(root, { recursive: true });
+    const sandboxMock = makeSandboxMock();
+    const fsMock = makeFsMock();
+    const ctx = makeCtx(sandboxMock, fsMock);
+    try {
+      await apply(ctx, { extraWritableRoots: [root] });
+      // 配置期目录真实存在,正常授予(前置确认,排除假阳性)
+      expect(sandboxMock.confine(["bash"], { mode: "workspace-write", workspaceRoot: WS }).argv[2])
+        .toContain(`(subpath "${canonicalPath(root)}")`);
+
+      swapToSymlink(root, "/");
+      const out = sandboxMock.confine(["bash", "-c", "x"], { mode: "workspace-write", workspaceRoot: WS });
+      expect(out.argv[2]).not.toContain('(subpath "/")');
+      // fs 侧同样不得放行(指向 / 后全盘都会命中该根)
+      await expect(fsMock.checkedTarget({ displayPath: "/etc/hosts" })).rejects.toThrow("FS_SANDBOX_DENIED");
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it("extra root 被换成指向用户主目录的符号链接后同样被剔除", async () => {
+    const base = mkdtempSync(join(tmpdir(), "ser-swap2-"));
+    const root = join(base, "cache");
+    mkdirSync(root, { recursive: true });
+    const sandboxMock = makeSandboxMock();
+    const fsMock = makeFsMock();
+    const ctx = makeCtx(sandboxMock, fsMock);
+    try {
+      await apply(ctx, { extraWritableRoots: [root] });
+      swapToSymlink(root, fakeHome);
+      const out = sandboxMock.confine(["bash", "-c", "x"], { mode: "workspace-write", workspaceRoot: WS });
+      expect(out.argv[2]).not.toContain(`(subpath "${canonicalPath(fakeHome)}")`);
+      await expect(fsMock.checkedTarget({ displayPath: fakeHome + "/secret" })).rejects.toThrow("FS_SANDBOX_DENIED");
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it("bwrap 侧同样剔除重定向后的危险根", async () => {
+    const base = mkdtempSync(join(tmpdir(), "ser-swap3-"));
+    const root = join(base, "cache");
+    mkdirSync(root, { recursive: true });
+    const bwrapMock = {
+      confine(argv: string[], policy: any) {
+        return { argv: ["bwrap", "--ro-bind", "/", "/", "--", ...argv], enforcement: "full", denialSignatures: [], runnerFailureRules: [] };
+      },
+    };
+    const ctx = makeCtx(bwrapMock, makeFsMock());
+    try {
+      await apply(ctx, { extraWritableRoots: [root] });
+      swapToSymlink(root, "/");
+      const out = bwrapMock.confine(["bash", "-c", "x"], { mode: "workspace-write", workspaceRoot: WS });
+      const bindArgs = out.argv.slice(0, out.argv.indexOf("--"));
+      // 不出现 "--bind / /"
+      expect(bindArgs).not.toContain("--bind");
+    } finally {
+      rmSync(base, { recursive: true, force: true });
     }
   });
 });

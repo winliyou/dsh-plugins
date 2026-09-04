@@ -296,6 +296,29 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
       return [...new Set(normalized)];
     }
 
+    // 运行期危险根复查:配置期的 classifyRoot 只看配置时刻的文件系统,而
+    // confine 与 fs fence 每次调用都会重新 canonical 化并跟随符号链接。
+    // 若 extra root 位于沙盒可写区,沙盒内的 agent 可以把它替换成指向
+    // "/"、homedir 等危险根的符号链接——重新 canonical 化会得到危险根,
+    // 不复查就等于给"跟随重定向"开了沙盒逃逸通道。因此每次调用对最新
+    // canonical 结果重跑分类,reject/filter 一律剔除;同一侧同一根只告警
+    // 一次(每次 confine 都会走到这里,不能按调用告警)。
+    function safeRuntimeRoots(roots: string[], warned: Set<string>, side: string): string[] {
+      const safe: string[] = [];
+      for (const root of roots) {
+        if (classifyRoot(root) === null) {
+          safe.push(root);
+          continue;
+        }
+        const key = `runtime-danger:${side}:${root}`;
+        if (!warned.has(key)) {
+          warned.add(key);
+          ctx.logger?.warn?.(`sandbox-extra-roots: extra writable root now resolves to a dangerous root (symlink swap?); not granting it to ${side}: ${root}`);
+        }
+      }
+      return safe;
+    }
+
     // 目录存在性短 TTL 缓存：bwrap/Landlock 的每次 confine 与 fs fence 的每次
     // 拒绝复核都会按根逐个 statSync（同步 IO 落在 bash 启动热路径上）。目录的
     // 创建/删除是低频事件，TTL 内沿用上次结果；代价是新建目录最多延迟 TTL
@@ -361,8 +384,13 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
           if (sandboxState.extraRoots.length === 0) return wrapped;
           // 每次调用重新 canonical 化(与官方 writableRoots 对 workspaceRoot
           // 的姿态一致):符号链接重定向后,下一次 confine 立即跟随新目标,
-          // 不必等配置重新加载。
-          const roots: string[] = [...new Set<string>(sandboxState.extraRoots.map(canon))];
+          // 不必等配置重新加载。跟随之后必须复查危险根:重定向目标可能是
+          // "/"或 homedir(沙盒内符号链接交换),运行期一律剔除。
+          const roots = safeRuntimeRoots(
+            [...new Set<string>(sandboxState.extraRoots.map(canon))],
+            sandboxState.warned,
+            "bash commands",
+          );
           const a = wrapped.argv;
           // Seatbelt:官方 argv 为 [sandbox-exec, -p, <profile>, --, ...inner]。
           if (a[1] === "-p" && typeof a[2] === "string" && a[2].includes("(version 1)")) {
@@ -450,8 +478,14 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
             // 与 bash 侧(bwrap/Landlock)对齐:只对当前真实存在的目录放行,
             // 消除"文件工具放行、bash 拒绝"或反向的分叉;每次调用重新
             // canonical 化,符号链接重定向后立即跟随(同 confine 路径)。
+            // 跟随之后同样复查危险根(bash 侧 safeRuntimeRoots 的镜像,
+            // 沙盒内符号链接交换不能让 fs 侧单侧放行全盘)。
             const roots = existingDirectoryRoots(
-              [...new Set<string>(fsState.extraRoots.map(canon))],
+              safeRuntimeRoots(
+                [...new Set<string>(fsState.extraRoots.map(canon))],
+                fsState.warned,
+                "the fs fence",
+              ),
               fsState.warned,
               "the fs fence"
             );

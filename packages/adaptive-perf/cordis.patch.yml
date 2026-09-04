@@ -10,16 +10,18 @@
       name: '@chaoset/adaptive-perf'
       config:
         enabled: true
-        presets: [standard, code, cordis]
+        # 与 src/index.ts 的 DEFAULT_CONFIG.presets 一致（含 ptc——官方
+        # dsh-agent-presets 内置 preset 之一，缺了它 PTC 会话不被接管）。
+        presets: [standard, code, ptc, cordis]
         suppressRuntimeContext: true
         leanByDefault: false
         escalateOnKeyword: true
         escalateOnUnknownTool: true
-        # 常驻上下文抑制（0.7.0 默认关闭）：true = 整个会话剥离技能目录
-        # 提醒与 AGENTS.md 摘要注入；false（默认）= 只在首轮剥离，晋升后
-        # 常驻剥离注入（0.7.0 默认开启）：技能目录/AGENTS.md 摘要的可见性
-        # 由 resident 发现工具 dev_tool_search / skill_search / skill_load
-        # 承担——实测晋升后恢复注入会把轨迹拉回 standard-like。
+        # 常驻上下文抑制（suppressInjectedContext，0.7.0 起默认开启）：
+        # true = 整个会话剥离技能目录提醒与 AGENTS.md 摘要注入，功能可见
+        # 性由常驻发现工具 dev_tool_search / skill_search / skill_load
+        # 承担——实测晋升后恢复注入会把轨迹拉回 standard-like；false =
+        # 只剥离首轮，晋升后恢复常规注入。
         suppressInjectedContext: true
         # 首轮锚定、晋升后 resident 目录（参照 dsh-anchored-standard issue
         # #11）：请求 #1 只暴露真实 Minimal 工具对（realPair 挂载官方 minimal

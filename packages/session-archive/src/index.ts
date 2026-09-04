@@ -34,8 +34,8 @@
  * 本文件不依赖任何 dsh 内部包（纯 ESM + ctx.* service），可独立安装。
  */
 
-import { stat, rm } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readdir, stat, rm } from 'node:fs/promises';
+import { basename, dirname } from 'node:path';
 import type { Context } from '@deepseek-ai/cordis';
 import { createConfigStore } from './config-store.js';
 
@@ -52,6 +52,43 @@ export const name = 'session-archive';
 
 /** sessions 参与 inject：删除前必须能查询 live 会话（存在即拒绝删除）。 */
 export const inject = ['workspaceRegistry', 'sessionPersistence', 'sessions'];
+
+/**
+ * 删除会话文件后清理其所属目录。官方布局(dsh-session-persistence-jsonl)
+ * 是"一会话一目录":目录名 = encodeSegment(sessionId),目录归该会话独占。
+ * 删除目录前做两道归属校验,任何一道不过就只删文件、保留目录(fail-safe:
+ * 宁可留下空壳目录,不可递归多删——布局契约一旦变化,rm -recursive 会
+ * 不可逆地连带其他会话的数据):
+ *   1. 目录名包含 sessionId 原文字面:官方 encodeSegment 对 UUID 的全部
+ *      字符([0-9a-f-],均在保留集内)原样保留;若未来目录名改用哈希等
+ *      不含 id 的方案,校验失败,自动降级为仅删文件;
+ *   2. 目录内容不含其他会话的 .jsonl(.zstd) 文件——防御"多会话共目录"
+ *      的未来布局。
+ */
+async function removeSessionDirIfOwned(sessionId: string, filePath: string, warn: (message: string) => void): Promise<void> {
+  const dir = dirname(filePath);
+  if (dir === '' || dir === '.' || dir === '/') return;
+  const base = basename(dir);
+  if (!base.includes(sessionId)) {
+    warn(`session-archive: session directory "${base}" does not reference session ${sessionId}; keeping it (layout contract changed?)`);
+    return;
+  }
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return; // 目录不存在或不可读:无需清理
+  }
+  const ownFile = basename(filePath);
+  for (const entry of entries) {
+    if (entry === ownFile) continue;
+    if (entry.endsWith('.jsonl') || entry.endsWith('.jsonl.zstd')) {
+      warn(`session-archive: session directory "${base}" holds other session logs; keeping it`);
+      return;
+    }
+  }
+  await rm(dir, { recursive: true, force: true });
+}
 
 /** 默认配置。apply 时与 YAML 传入的 config 合并（cordis 不合并小写 config 导出）。 */
 const DEFAULT_CONFIG = {
@@ -407,7 +444,7 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
             continue;
           }
           await rm(file.path, { force: true });
-          await rm(dirname(file.path), { recursive: true, force: true });
+          await removeSessionDirIfOwned(sessionId, file.path, (message) => ctx.logger?.warn?.(message));
           // rm 后复验：防宿主 materialize 的 mkdir -p 把路径在删除窗口内重建。
           // 重现只可能来自活跃写入方（内存中的生成流，或刚写完不久、客户端
           // 重连即恢复的 tab）。据此分两档：
@@ -421,7 +458,7 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
           if (await filePresentAfterSettle(file.path, settleMs)) {
             try {
               await rm(file.path, { force: true });
-              await rm(dirname(file.path), { recursive: true, force: true });
+              await removeSessionDirIfOwned(sessionId, file.path, (message) => ctx.logger?.warn?.(message));
             } catch {}
             if (await filePresentAfterSettle(file.path, settleMs)) {
               failed.push({ sessionId, reason: 'reappeared' });

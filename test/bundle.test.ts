@@ -76,15 +76,19 @@ describe("npm bundle metadata", () => {
   }
 });
 
-describe("两包共享实现一致性", () => {
-  it("config-store/remote 两包 src 一致", () => {
+describe("共享实现一致性", () => {
+  it("config-store 三包 src 一致", () => {
     const read = (pkg: string, file: string) =>
       readFileSync(join(ROOT, "packages", pkg, "src", file), "utf8");
-    for (const file of ["config-store.ts", "remote.ts"]) {
-      const sb = read("sandbox-extra-roots", file);
-      const ap = read("adaptive-perf", file);
-      expect(sb).toBe(ap);
+    for (const file of ["config-store.ts"]) {
+      expect(read("sandbox-extra-roots", file)).toBe(read("adaptive-perf", file));
+      expect(read("sandbox-extra-roots", file)).toBe(read("session-archive", file));
     }
+  });
+  it("remote.ts 两配置类包 src 一致(session-archive 为业务分叉,不参与)", () => {
+    const read = (pkg: string, file: string) =>
+      readFileSync(join(ROOT, "packages", pkg, "src", file), "utf8");
+    expect(read("sandbox-extra-roots", "remote.ts")).toBe(read("adaptive-perf", "remote.ts"));
   });
 });
 

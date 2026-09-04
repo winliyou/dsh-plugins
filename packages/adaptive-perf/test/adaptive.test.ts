@@ -519,6 +519,37 @@ describe("adaptive-perf 自适应引擎", () => {
     emit("agent/disposed", { agent: a });
   });
 
+  it("P0 回归:escalateOnUnknownTool 在 bootstrap 阶段生效(默认 lean 关闭,族内放行整族、族外按名解锁)", async () => {
+    const m = buildMocks();
+    const { ctx, emit, agent, restrictCalls } = m;
+    await ap.apply(ctx, {
+      presets: ["standard"],
+      leanByDefault: false, // 默认配置:族 restrict 不挂,工具隐藏只来自 bootstrap deny
+      suppressRuntimeContext: false,
+      minimalPrompt: { enabled: false },
+      bootstrap: { enabled: true, realPair: false },
+    }, { realPairModules: null });
+    const a = agent("s-h3", "standard", { id: "s-h3", header: {}, events: [] });
+    emit("agent/created", { agent: a });
+    const lastDeny = () => {
+      const c = [...restrictCalls].reverse().find((cc) => cc.agent === "s-h3");
+      return c === void 0 ? [] : c.deny;
+    };
+    expect(lastDeny().includes("subagent") && lastDeny().includes("read") && lastDeny().includes("web_search"),
+      "bootstrap 阶段族内(subagent)与族外(read/web_search)工具都被隐藏").toBe(true);
+
+    // 族内:失败信号放行 subagent 所在族(整族离开 deny)
+    emit("tools/result", { agent: a }, { isError: true, error: { code: "UNKNOWN_TOOL", message: 'unknown tool "subagent"' }, content: [] });
+    expect(lastDeny().includes("subagent") === false && lastDeny().includes("send_message") === false,
+      "失败信号放行 subagent 所在族").toBe(true);
+
+    // 族外:按名解锁 read,不影响其余隐藏工具
+    emit("tools/result", { agent: a }, { isError: true, error: { code: "UNKNOWN_TOOL", message: 'unknown tool "read"' }, content: [] });
+    expect(lastDeny().includes("read") === false && lastDeny().includes("web_search"),
+      "失败信号按名解锁族外工具 read,其余保持隐藏").toBe(true);
+    emit("agent/disposed", { agent: a });
+  });
+
   it("P0 回归:dev_tool_search 用限制前快照目录,能解锁被隐藏的工具", async () => {
     const m = buildMocks();
     const { ctx, emit, agent, toolDefs } = m;

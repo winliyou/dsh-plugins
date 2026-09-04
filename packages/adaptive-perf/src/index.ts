@@ -1118,12 +1118,23 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       }
     }
 
-    /** 当前隐藏的工具名（活跃限制族的 deny 并集，供失败信号匹配）。 */
+    /** 当前隐藏的工具名（活跃限制族的 deny 并集 + bootstrap 阶段 restrict
+     *  的 deny 并集，供失败信号匹配）。bootstrap restrict 必须计入：默认
+     *  配置 leanByDefault=false 时它是工具隐藏的唯一来源，不计入则
+     *  escalateOnUnknownTool 在 bootstrap 阶段永远空转。 */
     function hiddenNames(a: any) {
       const out = new Set();
       for (const [id, family] of Object.entries(cfg.families as Record<string, any>)) {
         if (!a.familyDisposers.has(id)) continue;
         for (const n of familyDeny(a, family)) out.add(n);
+      }
+      if (a.bootstrapDisposer !== null) {
+        const keep = bootstrapKeepSet(a);
+        if (keep !== null) {
+          for (const n of a.visibleNames) {
+            if (!keep.has(n)) out.add(n);
+          }
+        }
       }
       return out;
     }
@@ -1385,6 +1396,14 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       if (text.length === 0) return;
       const hidden = hiddenNames(a);
       if (hidden.size === 0) return;
+      // 可按族放行的工具名（启用族的全集）：命中它的失败走 escalate——
+      // 放行整族（README 的承诺语义）；禁用族的工具与族外工具走按名解锁。
+      const escalatable = new Set<string>();
+      for (const family of Object.values(cfg.families as Record<string, any>)) {
+        if (family.enabled === false) continue;
+        for (const n of family.tools) escalatable.add(n);
+      }
+      let needResync = false;
       for (const [id, family] of Object.entries(cfg.families as Record<string, any>)) {
         if (a.escalated.has(id) || family.enabled === false) continue;
         for (const n of family.tools) {
@@ -1394,6 +1413,18 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
           }
         }
       }
+      // bootstrap 阶段的隐藏范围远大于族并集（首轮只保留工具对 + run_code），
+      // 文本命中的隐藏工具若不属于任何可按族放行的工具，按名解锁（与晋升后
+      // dev_tool_search 的解锁同一通道，下一请求生效），否则 PTC 程序对该
+      // 工具的调用永远失败。
+      for (const n of hidden) {
+        if (typeof n !== 'string' || escalatable.has(n) || a.unlocked.has(n)) continue;
+        if (!text.includes(n)) continue;
+        a.unlocked.add(n);
+        needResync = true;
+        info(`agent ${a.agent.id}: unlocked "${n}" (unknown-tool signal)`);
+      }
+      if (needResync) syncBootstrap(a);
     });
 
     // ── 首轮锚定（bootstrap，参照 dsh-anchored-standard 的实测结论）─────
@@ -1464,8 +1495,12 @@ export async function apply(ctx: any, config: any, options: any = {}): Promise<v
       }
       if (phase.promoted) {
         for (const name of cfg.bootstrap.discoveryTools) keep.add(name);
-        for (const name of a.unlocked) keep.add(name);
       }
+      // 解锁集在晋升前后都并入:晋升后来自 dev_tool_search 的按需解锁;
+      // bootstrap 阶段来自失败信号的按名解锁(escalateOnUnknownTool 对
+      // 不属于任何族的隐藏工具——如 coreTools 的 read/write——按名放行,
+      // 否则 PTC 程序对这些工具的调用永远 UNKNOWN_TOOL)。
+      for (const name of a.unlocked) keep.add(name);
       return keep;
     }
 

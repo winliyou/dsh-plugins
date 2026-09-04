@@ -232,6 +232,44 @@ describe("session-archive host", () => {
     expect(!(await archiveHost.list()).items.some((i) => i.sessionId === "s-busy")).toBe(true);
   });
 
+  it("H6 回归:目录归属校验失败时只删文件、保留目录(fail-safe)", async () => {
+    // 场景 1:目录名不含 sessionId(模拟布局契约改为哈希目录名)——
+    // 文件删除,目录保留,绝不递归误删。
+    saRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sa-own1-"));
+    const f1 = makeFixture({
+      archived: ["s-x"],
+      headers: [{ id: "s-x", cwd: "/proj/x", createdAt: 1000 }],
+    });
+    const archiveHost1 = createArchiveHost(f1.ctx, baseCfg);
+    writeSession("s-x", []);
+    // locate 覆盖为哈希式目录,同时让 list 的存在性过滤仍能看到该会话
+    const hashDir = path.join(saRoot, "--proj--", "deadbeef");
+    fs.mkdirSync(hashDir, { recursive: true });
+    fs.writeFileSync(path.join(hashDir, "session.jsonl"), "[]");
+    const realLocate = f1.ctx.sessionPersistence.locate;
+    f1.ctx.sessionPersistence.locate = (meta: { id: string }) =>
+      meta.id === "s-x" ? { kind: "jsonl", path: path.join(hashDir, "session.jsonl") } : realLocate(meta);
+    const out1 = await archiveHost1.deleteArchived(["s-x"]);
+    expect(out1.deleted.includes("s-x")).toBe(true);
+    expect(fs.existsSync(path.join(hashDir, "session.jsonl"))).toBe(false); // 文件已删
+    expect(fs.existsSync(hashDir)).toBe(true); // 目录保留
+
+    // 场景 2:目录内还有其他会话日志("多会话共目录"布局)——目录保留。
+    saRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sa-own2-"));
+    const f2 = makeFixture({
+      archived: ["s-y"],
+      headers: [{ id: "s-y", cwd: "/proj/y", createdAt: 2000 }],
+    });
+    const archiveHost2 = createArchiveHost(f2.ctx, baseCfg);
+    writeSession("s-y", []);
+    fs.writeFileSync(path.join(saRoot, "--proj--", "s-y", "other-session.jsonl"), "[]");
+    const out2 = await archiveHost2.deleteArchived(["s-y"]);
+    expect(out2.deleted.includes("s-y")).toBe(true);
+    expect(fs.existsSync(sessionPath("s-y"))).toBe(false); // 本会话文件已删
+    expect(fs.existsSync(path.join(saRoot, "--proj--", "s-y", "other-session.jsonl"))).toBe(true); // 他者日志保留
+    expect(fs.existsSync(path.join(saRoot, "--proj--", "s-y"))).toBe(true); // 目录保留
+  });
+
   it("unarchive:恢复仍存在文件的会话、拒绝 ghost;降级路径仅按存在性过滤", async () => {
     saRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sa-un-"));
     const f = makeFixture({

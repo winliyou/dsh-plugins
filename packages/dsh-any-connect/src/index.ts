@@ -101,6 +101,7 @@ export function apply(ctx: Context, config: Config): void {
   const store = new WorkBuddyCredentialStore({
     ...config.authFile === undefined ? {} : { desktopPath: config.authFile },
     refresh: credential => client.refreshToken(credential),
+    onWarning: message => ctx.logger?.warn?.(message),
   })
   const catalog = new WorkBuddyCatalog()
   const shim = createWorkBuddyShim({ store, client, catalog, logger: ctx.logger })

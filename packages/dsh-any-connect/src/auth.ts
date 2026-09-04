@@ -49,6 +49,9 @@ export interface WorkBuddyStoreOptions {
   refresh: (credential: WorkBuddyCredential) => Promise<WorkBuddyRefreshOutcome>
   /** Refresh this long before actual expiry; default five minutes. */
   refreshMarginMs?: number
+  /** Non-fatal warning channel (e.g. the owned-copy save failing after a
+   * successful refresh); defaults to `console.warn`. */
+  onWarning?: (message: string) => void
 }
 
 /** Basename of the plugin-owned credential copy inside the Harness home. */
@@ -59,6 +62,14 @@ export const WORKBUDDY_AUTH_FILE_ENV = 'WORKBUDDY_AUTH_FILE'
 
 /** Current on-disk format of the plugin-owned copy; readers reject others. */
 const OWN_FORMAT_VERSION = 1
+
+/** 刷新响应缺 expiresIn 时新 access token 的保守寿命下限(10 分钟):
+ * 沿用旧过期时间会让 needsRefresh 恒真、每条请求都打一次刷新端点。 */
+const DEFAULT_EXPIRES_IN_SEC = 10 * 60
+
+/** 两次刷新之间的最小间隔:极短有效期/缺 expiresIn 的上游响应 otherwise
+ * 会把刷新端点打成每请求一次;窗口内 token 未真正过期时直接用现值。 */
+const MIN_REFRESH_INTERVAL_MS = 30_000
 
 interface OwnDocument {
   version: typeof OWN_FORMAT_VERSION
@@ -205,7 +216,17 @@ function parseOwnDocument(text: string): WorkBuddyCredential | undefined {
   const document = parsed as Record<string, unknown>
   if (document['version'] !== OWN_FORMAT_VERSION) return undefined
   if (typeof document['credential'] !== 'object' || document['credential'] === null) return undefined
-  const credential = parseWorkBuddyAuth(JSON.stringify({ auth: document['credential'] }))
+  const raw = document['credential'] as Record<string, unknown>
+  // parseWorkBuddyAuth 认桌面文件的 expiresAt/refreshExpiresAt 拼写,而自有
+  // 副本直接序列化 WorkBuddyCredential(字段名带 Ms 后缀)——这一不对称曾让
+  // 副本每次读回 expiresAtMs=0,needsRefresh 恒真,每条请求都打一次刷新
+  // 端点。序列化前补上桌面拼写别名,存量副本(只带 Ms 字段)同样解析。
+  const authLike = 'expiresAt' in raw ? raw : {
+    ...raw,
+    'expiresAt': raw['expiresAtMs'],
+    ...'refreshExpiresAtMs' in raw ? { 'refreshExpiresAt': raw['refreshExpiresAtMs'] } : {},
+  }
+  const credential = parseWorkBuddyAuth(JSON.stringify({ auth: authLike }))
   if (credential === undefined) return undefined
   return { ...credential, source: 'dsh' }
 }
@@ -228,14 +249,21 @@ export class WorkBuddyCredentialStore {
   private readonly refresh: WorkBuddyStoreOptions['refresh']
   private readonly refreshMarginMs: number
   private readonly ownPath: string
+  private readonly onWarning: (message: string) => void
   private desktopPathOverride: string | undefined
   private inflight: Promise<WorkBuddyCredential> | undefined
+  /** 落盘失败时的内存兜底:承载着可能已被上游轮换的 refresh token,
+   * 比磁盘副本新时 {@link current} 优先返回它,进程退出即失。 */
+  private memoryCredential: WorkBuddyCredential | undefined
+  /** 上一次成功刷新的时刻;{@link MIN_REFRESH_INTERVAL_MS} 内不再刷新。 */
+  private lastRefreshAtMs = 0
 
   constructor(options: WorkBuddyStoreOptions) {
     this.refresh = options.refresh
     this.refreshMarginMs = options.refreshMarginMs ?? 5 * 60 * 1000
     this.ownPath = options.ownPath ?? workbuddyOwnAuthPath()
     this.desktopPathOverride = options.desktopPath
+    this.onWarning = options.onWarning ?? (message => console.warn(message))
   }
 
   /**
@@ -282,9 +310,16 @@ export class WorkBuddyCredentialStore {
   /** Read the freshest stored credential without refreshing anything. */
   async current(): Promise<WorkBuddyCredential | undefined> {
     const [desktop, own] = await Promise.all([this.readDesktop(), this.readOwn()])
-    if (desktop === undefined) return own
-    if (own === undefined) return desktop
-    return own.expiresAtMs > desktop.expiresAtMs ? own : desktop
+    const stored = desktop === undefined
+      ? own
+      : own === undefined ? desktop : (own.expiresAtMs > desktop.expiresAtMs ? own : desktop)
+    // 落盘失败期间的内存兜底:它承载着可能已轮换的 refresh token,比磁盘
+    // 副本新时优先;桌面端此后若刷新出更新的凭据则自然回落桌面文件。
+    if (this.memoryCredential !== undefined
+      && (stored === undefined || this.memoryCredential.expiresAtMs > stored.expiresAtMs)) {
+      return this.memoryCredential
+    }
+    return stored
   }
 
   /**
@@ -302,6 +337,13 @@ export class WorkBuddyCredentialStore {
       )
     }
     if (!this.needsRefresh(credential)) return credential
+    // 刷新节流:needsRefresh 只看过期时间,上游签发极短有效期(或刷新
+    // 响应缺 expiresIn)会让每条请求都打一次刷新端点——单飞只合并并发、
+    // 不节流。窗口内且 token 尚未真正过期时直接用现值;已过期则必须尝试。
+    if (credential.expiresAtMs > Date.now()
+      && Date.now() - this.lastRefreshAtMs < MIN_REFRESH_INTERVAL_MS) {
+      return credential
+    }
     this.inflight ??= this.refreshNow(credential)
       .finally(() => {
         this.inflight = undefined
@@ -329,6 +371,7 @@ export class WorkBuddyCredentialStore {
 
   /** Remove the plugin-owned copy; the desktop file is untouched. */
   async logout(): Promise<void> {
+    this.memoryCredential = undefined
     await rm(this.ownPath, { force: true })
     await rm(`${this.ownPath}.lock`, { force: true })
   }
@@ -343,20 +386,9 @@ export class WorkBuddyCredentialStore {
       if (credential.expiresAtMs > Date.now() + 30_000) return credential
       throw new Error('workbuddy: access token expired and no refresh token is stored; sign in again in the WorkBuddy desktop app')
     }
+    let outcome: WorkBuddyRefreshOutcome
     try {
-      const outcome = await this.refresh(credential)
-      const refreshed: WorkBuddyCredential = {
-        ...credential,
-        accessToken: outcome.accessToken,
-        ...outcome.refreshToken === undefined ? {} : { refreshToken: outcome.refreshToken },
-        expiresAtMs: outcome.expiresInSec !== undefined
-          ? Date.now() + outcome.expiresInSec * 1000
-          : credential.expiresAtMs,
-        ...outcome.domain === undefined || outcome.domain === '' ? {} : { domain: outcome.domain },
-        source: 'dsh',
-      }
-      await this.saveOwn(refreshed)
-      return refreshed
+      outcome = await this.refresh(credential)
     } catch (error: unknown) {
       if (credential.expiresAtMs > Date.now() + 30_000) return credential
       throw new Error(
@@ -364,6 +396,36 @@ export class WorkBuddyCredentialStore {
         + ' open the WorkBuddy desktop app once to sign in again',
       )
     }
+    this.lastRefreshAtMs = Date.now()
+    const refreshed: WorkBuddyCredential = {
+      ...credential,
+      accessToken: outcome.accessToken,
+      ...outcome.refreshToken === undefined ? {} : { refreshToken: outcome.refreshToken },
+      // 上游省略 expiresIn 时不能沿用旧过期时间:旧值必然已在刷新 margin
+      // 内(否则不会走到这里),沿用会让 needsRefresh 恒真、每条请求都触发
+      // 刷新。按保守下限外推;若真实寿命更短,后续请求的失败路径仍会再次
+      // 尝试刷新。
+      expiresAtMs: outcome.expiresInSec !== undefined
+        ? Date.now() + outcome.expiresInSec * 1000
+        : Date.now() + DEFAULT_EXPIRES_IN_SEC * 1000,
+      ...outcome.domain === undefined || outcome.domain === '' ? {} : { domain: outcome.domain },
+      source: 'dsh',
+    }
+    try {
+      await this.saveOwn(refreshed)
+      this.memoryCredential = undefined
+    } catch (error: unknown) {
+      // 落盘失败绝不丢刷新成果:上游可能已把 refresh token 轮换为一次性
+      // 新值,退回磁盘上的旧副本会让下一次刷新必然 session_dead。内存兜底
+      // 让本进程继续用新凭据,并把真实原因(磁盘写失败,而非上游刷新失败)
+      // 送告警通道。
+      this.memoryCredential = refreshed
+      this.onWarning(
+        'workbuddy: token refreshed but saving the plugin-owned copy failed'
+        + ` (${String(error)}); the refreshed token is kept in memory only and will be lost on exit`,
+      )
+    }
+    return refreshed
   }
 
   private async saveOwn(credential: WorkBuddyCredential): Promise<void> {
