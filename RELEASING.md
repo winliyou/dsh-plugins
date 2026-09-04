@@ -122,9 +122,11 @@ main 分支的每次 dsh 稳定版适配都会被发布流水自动归档为一�
 
 ## 日常发布流程
 
-**发布门槛：功能完全实现 + 测试全绿 + dsh 测试实例真实验证通过，三者齐备
-才 bump 版本并推送。** 版本一旦发到 npm 不可撤回，"发布后再验证发现问题
-再发一版"会产生大量无意义的版本号（2026-09-03 单日 6+ 版本的教训）。
+**发布门槛：功能完全实现 + 本地 `pnpm run test:ci` 全绿 + dsh 测试实例真实
+验证通过，三者齐备才 bump 版本并推送。** 版本一旦发到 npm 不可撤回，"发布后
+再验证发现问题再发一版"会产生大量无意义的版本号（2026-09-03 单日 6+ 版本、
+2026-09-05 连发 0.10.4/0.10.5 的教训——后者是改动散落两个工作树，提交信息
+声称新增的字段实际不在提交里，发布产物缺字段）。
 
 1. 在目标分支改代码，`pnpm run test:ci` 全绿。
 2. 启动隔离测试实例（独立 `DSH_HOME` + 本地路径安装插件），在真实浏览器
@@ -134,8 +136,14 @@ main 分支的每次 dsh 稳定版适配都会被发布流水自动归档为一�
    - 在 `CHANGELOG.md` 顶部新增 `## <版本> (YYYY-MM-DD)` 小节——GitHub
      Release 说明自动取自这里（`scripts/release-notes.mjs`），不写就没有说明；
    - 升 `package.json` 的 `version`（bump 是最后一步）。
-4. 提交推送。CI（`.github/workflows/publish.yml`）自动执行：测试 → 状态式
-   门禁 → 发布 → 打 git tag `<目录>-v<版本>` → 创建 GitHub Release。
+4. **推送前逐提交复核**（`git log --oneline origin/<分支>..HEAD` +
+   `git diff origin/<分支>..HEAD`）：版本号、CHANGELOG 小节、实际 diff 三者
+   必须互相印证——提交信息声称的每一项变更都要能在 diff 里找到，diff 里的
+   每一处行为变更都要有 CHANGELOG 与版本号对应。**任何一项对不上就不要推**。
+5. 推送。CI（`.github/workflows/publish.yml`）自动执行：测试 → 状态式门禁 →
+   发布 → 打 git tag `<目录>-v<版本>` → 创建 GitHub Release →（仅 main）按
+   当前 dsh 基线更新 `dsh-v*` 归档 tag。发布完成后核对 npm 上的版本号与
+   `dsh.host` 字段符合预期（`npm view <包名> version dsh.host`）。
 
 发布门禁（`scripts/publish-gate.mjs`）的判定，按每个包依次：
 
