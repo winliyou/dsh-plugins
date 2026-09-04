@@ -19,14 +19,11 @@
 // 本脚本只读：不改任何文件、不 install、不发布。
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { aggregateBaseline, ROOT } from "./lib/dsh-deps.mjs";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ci = process.argv.includes("--ci");
-const DEP_PREFIX = "@deepseek-ai/dsh-";
-const SECTIONS = ["dependencies", "optionalDependencies", "devDependencies", "peerDependencies"];
 
 /** 解析 dsh 版本号为可比较结构（0.1.2-alpha.5 → {n:[0,1,2], pre:["alpha",5]}）。 */
 function parseVersion(v) {
@@ -62,25 +59,6 @@ function cmpVersion(a, b) {
   return 0;
 }
 
-/** 从一个 package.json 对象提取 dsh-* 依赖基线的 Set（去 ^ 前缀后的版本）。 */
-function dshBaselines(manifest) {
-  const baselines = new Set();
-  for (const section of SECTIONS) {
-    const deps = manifest[section];
-    if (!deps) continue;
-    for (const [name, range] of Object.entries(deps)) {
-      if (!name.startsWith(DEP_PREFIX)) continue;
-      const m = /^\^([0-9][^\s]*)$/.exec(range);
-      if (m === null) {
-        baselines.add(`(非 ^ range: ${range})`);
-        continue;
-      }
-      baselines.add(m[1]);
-    }
-  }
-  return baselines;
-}
-
 /** 解析分支名到可 git show 的引用：CI 的 checkout 只有 origin/<branch>
  *  远端引用而没有本地分支，本地恰好相反的场景也存在——两者按序回退。 */
 function branchRef(branch) {
@@ -101,22 +79,9 @@ function branchBaseline(ref) {
     if (resolved === null) return JSON.parse(readFileSync(join(ROOT, path), "utf8"));
     return JSON.parse(execFileSync("git", ["show", `${resolved}:${path}`], { cwd: ROOT, encoding: "utf8" }));
   };
-  const paths = ["package.json", ...readdirSync(join(ROOT, "packages"), { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => `packages/${e.name}/package.json`)];
-  const all = new Set();
-  const hosts = new Set();
-  for (const p of paths) {
-    const manifest = read(p);
-    for (const b of dshBaselines(manifest)) all.add(b);
-    if (typeof manifest.dsh?.host === "string" && manifest.dsh.host !== "") hosts.add(manifest.dsh.host);
-  }
-  if (all.size > 1) return { baseline: `[不一致: ${[...all].join(" / ")}]`, host: [...hosts].join("/") || undefined, mixed: true };
-  return {
-    baseline: [...all][0] ?? "(无 dsh 依赖)",
-    host: hosts.size === 1 ? [...hosts][0] : hosts.size === 0 ? undefined : "[不一致]",
-    mixed: false,
-  };
+  const { baseline, host } = aggregateBaseline(read, ROOT);
+  const mixed = baseline.startsWith("[不一致") || host === "[不一致]";
+  return { baseline, host, mixed };
 }
 
 function currentBranch() {

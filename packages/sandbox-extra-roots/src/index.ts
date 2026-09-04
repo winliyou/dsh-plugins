@@ -360,7 +360,7 @@ export async function apply(ctx: Context, config?: any): Promise<void> {
       return existing;
     }
 
-    // ── 1. 包装 bash 沙盒的 confine:按 runner 追加额外可写目录 ──
+    // ── 前置:官方 dsh-sandbox 可用性检查 ──
     // 官方 dsh-sandbox 解析失败(包缺失/file:// 部署三个 profile anchor 都
     // 找不到)时降级为"插件不存在":跳过全部包装,只留一条高音量告警;
     // 绝不能让静态导入链的异常逃出 apply——那会拖垮 harness 启动。

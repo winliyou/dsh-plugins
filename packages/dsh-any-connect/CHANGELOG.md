@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.12 (2026-09-05)
+
+### Refactoring
+
+* 可维护性清理，无功能变更：删除确认死代码（adaptive-perf 的
+  `filterBootstrapTools` 与 dev_tool_search 的不可达默认文案）、提取
+  `quietDispose` / `disposeAll` 释放助手替换 14 处重复的静默 try/catch、
+  魔法数字提为命名常量、修正两处过时注释（测试路径引用、重复标题）。
+  另有 scripts 共享工具提取（dsh-baseline / dsh-follow-status 共用
+  `scripts/lib/dsh-deps.mjs`，发布产物不含 scripts）。
+
 ## 0.3.11 (2026-09-05)
 
 ### Fixes

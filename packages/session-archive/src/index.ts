@@ -53,6 +53,12 @@ export const name = 'session-archive';
 /** sessions 参与 inject：删除前必须能查询 live 会话（存在即拒绝删除）。 */
 export const inject = ['workspaceRegistry', 'sessionPersistence', 'sessions'];
 
+/** 「最近有写入」的判定窗口：内存中的会话 60s 内写过文件即视为忙碌
+ * （生成流可能把半截日志 append 回刚删的路径）。 */
+const BUSY_WRITE_WINDOW_MS = 60_000;
+/** 复验前的沉降等待：活跃写入方重建路径的典型间隔。 */
+const REAPPEAR_SETTLE_MS = 300;
+
 /**
  * 删除会话文件后清理其所属目录。官方布局(dsh-session-persistence-jsonl)
  * 是"一会话一目录":目录名 = encodeSegment(sessionId),目录归该会话独占。
@@ -193,7 +199,7 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
   /** 归档瞬间的生成流兜底：会话仍在内存且文件最近有写入（60s 内）时
    * 视为忙碌——删除文件后进行中的请求会把半截日志 append 回来。 */
   const isBusy = (sessionId: string, file: { path: string; size: number; mtimeMs: number } | null) =>
-    file !== null && ctx.sessions.get(sessionId) !== undefined && Date.now() - file.mtimeMs < 60_000;
+    file !== null && ctx.sessions.get(sessionId) !== undefined && Date.now() - file.mtimeMs < BUSY_WRITE_WINDOW_MS;
 
   /** 从归档集合移除若干 id（恢复用；删除不调用——见 deleteArchived），返回实际移除的 id。
    * confirm 在 registry 写锁临界区内逐个复核 id 是否仍可恢复（文件仍存在）:
@@ -439,7 +445,7 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
             continue;
           }
           const inMemory = ctx.sessions.get(sessionId) !== undefined;
-          if (inMemory && Date.now() - fresh.mtimeMs < 60_000) {
+          if (inMemory && Date.now() - fresh.mtimeMs < BUSY_WRITE_WINDOW_MS) {
             failed.push({ sessionId, reason: 'busy' });
             continue;
           }
@@ -453,8 +459,8 @@ export function createArchiveHost(ctx: Context, cfg: Record<string, any>) {
           //   - 冷文件（不在内存且超过 60s 无写入）：未来写入需要用户主动继续
           //     对话，不会落在删除窗口内——做零等待的即时复验即可。批量清理
           //     陈旧归档不再为每个文件白付 2×300ms。
-          const plausiblyActive = inMemory || Date.now() - fresh.mtimeMs < 60_000;
-          const settleMs = plausiblyActive ? 300 : 0;
+          const plausiblyActive = inMemory || Date.now() - fresh.mtimeMs < BUSY_WRITE_WINDOW_MS;
+          const settleMs = plausiblyActive ? REAPPEAR_SETTLE_MS : 0;
           if (await filePresentAfterSettle(file.path, settleMs)) {
             try {
               await rm(file.path, { force: true });

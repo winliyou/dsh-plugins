@@ -33,7 +33,7 @@ export const inject = ['slots', 'locale']
  * status` reports host health via the heartbeat file.
  *
  * NOTE: the try/catch boundary of this function is mirrored (duplicated) in
- * `tests/client-fallback.spec.ts`, because the real client entry imports
+ * `test/client-fallback.test.ts`, because the real client entry imports
  * browser-only DSH packages that cannot load in the Node test environment.
  * That test therefore does not import this function — it replicates its
  * shape. If you change the guarded body or the `console.error` message here,

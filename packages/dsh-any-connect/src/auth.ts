@@ -71,6 +71,14 @@ const DEFAULT_EXPIRES_IN_SEC = 10 * 60
  * 会把刷新端点打成每请求一次;窗口内 token 未真正过期时直接用现值。 */
 const MIN_REFRESH_INTERVAL_MS = 30_000
 
+/** 「token 剩余寿命长于这个值就容忍一次刷新失败/无 refresh token」的下限。
+ *  与 MIN_REFRESH_INTERVAL_MS 同值但语义不同(节流窗口 vs 可容忍寿命),
+ *  两者不得互相替代。 */
+const MIN_REUSABLE_LIFETIME_MS = 30_000
+
+/** refreshMarginMs 的默认值(5 分钟):文档承诺 "default five minutes"。 */
+const DEFAULT_REFRESH_MARGIN_MS = 5 * 60 * 1000
+
 interface OwnDocument {
   version: typeof OWN_FORMAT_VERSION
   credential: WorkBuddyCredential
@@ -260,7 +268,7 @@ export class WorkBuddyCredentialStore {
 
   constructor(options: WorkBuddyStoreOptions) {
     this.refresh = options.refresh
-    this.refreshMarginMs = options.refreshMarginMs ?? 5 * 60 * 1000
+    this.refreshMarginMs = options.refreshMarginMs ?? DEFAULT_REFRESH_MARGIN_MS
     this.ownPath = options.ownPath ?? workbuddyOwnAuthPath()
     this.desktopPathOverride = options.desktopPath
     this.onWarning = options.onWarning ?? (message => console.warn(message))
@@ -383,14 +391,14 @@ export class WorkBuddyCredentialStore {
 
   private async refreshNow(credential: WorkBuddyCredential): Promise<WorkBuddyCredential> {
     if (credential.refreshToken === '') {
-      if (credential.expiresAtMs > Date.now() + 30_000) return credential
+      if (credential.expiresAtMs > Date.now() + MIN_REUSABLE_LIFETIME_MS) return credential
       throw new Error('workbuddy: access token expired and no refresh token is stored; sign in again in the WorkBuddy desktop app')
     }
     let outcome: WorkBuddyRefreshOutcome
     try {
       outcome = await this.refresh(credential)
     } catch (error: unknown) {
-      if (credential.expiresAtMs > Date.now() + 30_000) return credential
+      if (credential.expiresAtMs > Date.now() + MIN_REUSABLE_LIFETIME_MS) return credential
       throw new Error(
         `workbuddy: token refresh failed and the access token is expired (${String(error)});`
         + ' open the WorkBuddy desktop app once to sign in again',
@@ -457,8 +465,10 @@ export class WorkBuddyCredentialStore {
   private async readOwn(): Promise<WorkBuddyCredential | undefined> {
     try {
       return parseOwnDocument(await readFile(this.ownPath, 'utf8'))
-    } catch (error: unknown) {
-      if (isENOENT(error)) return undefined
+    } catch {
+      // 有意与 readDesktop 的策略不同:自有副本是唯一可写副本,读失败
+      // (缺失/损坏/无权限)一律视为无凭据并静默回落桌面文件——这里抛错
+      // 只会让每次 resolve 都失败,而桌面文件通常仍在。
       return undefined
     }
   }

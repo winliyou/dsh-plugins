@@ -188,20 +188,7 @@ describe("adaptive-perf pure functions + config-store", () => {
     expect(phaseState.get("s1").promoted === true, "AP: 阶段观察-已晋升保持").toBe(true);
   });
 
-  it("工具/消息过滤 + 预算", () => {
-    const fullAsm = { tools: ["bash", "read", "write", "edit", "glob", "grep", "str_replace_editor", "subagent", "workflow"].map((name) => ({ name })) };
-    expect((() => {
-      const r = ap.filterBootstrapTools(fullAsm, ["bash", "str_replace_editor"]);
-      return r.missing.length === 0 && r.tools.length === 2 && r.tools.every((t: any) => ["bash", "str_replace_editor"].includes(t.name));
-    })(), "AP: 工具过滤-收窄到 bootstrap 对").toBe(true);
-    expect((() => {
-      const r = ap.filterBootstrapTools(fullAsm, ["bash", "not-a-tool"]);
-      return r.missing.length === 1 && r.missing[0] === "not-a-tool" && r.tools.length === 1;
-    })(), "AP: 工具过滤-缺失工具报 missing 且保留可用集").toBe(true);
-    expect((() => {
-      const r = ap.filterBootstrapTools(fullAsm, ["bash", "str_replace_editor", "read", "write"]);
-      return r.missing.length === 0 && r.tools.length === 4;
-    })(), "AP: 工具过滤-多工具保留集").toBe(true);
+  it("消息过滤 + 预算", () => {
     expect((() => {
       const msgs = [
         { role: "user", source: { kind: "skill-catalog" }, content: [{ type: "text", text: "skills" }] },
