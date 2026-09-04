@@ -33,6 +33,10 @@ DeepSeek-V4-Flash、Kimi-K3、MiniMax-M3、Hy3 等）自动接入 DeepSeek Harne
 
 ## 安装
 
+> 适配的 DSH 版本见本包 `package.json` 的 `dsh.host` 字段
+> （`npm view <包名> dsh.host` 可查）；仓库的 `dsh-v*` git tag 是各次
+> 稳定版适配的归档点。
+
 前置：已安装并登录 WorkBuddy 桌面 App（插件复用 App 的登录状态，账号切换自动
 跟随）。
 

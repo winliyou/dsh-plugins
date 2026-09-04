@@ -187,6 +187,11 @@ pnpm run test:ci && git push
 `latest` 前进（如 `0.1.1-rc.2` → `0.1.2-rc.1`）时同样在 main 上执行同一
 流程；稳定线无需维护排除清单。
 
+`adapt-dsh.mjs` 同时把每个发布包 `package.json` 的 `dsh.host` 字段改写为
+目标版本——那是 npm 消费者可见的「本包适配的宿主版本」声明
+（`npm view <包名> dsh.host` 可查），跟随宿主版本自动维护，无需手工改。
+`dsh-follow-status.mjs` 会核对它与依赖基线的一致性，漂移即 warning。
+
 同一命令也用于把 alpha 分支重建回休眠基线：adapt 不比较新旧、按指定版本
 整块覆写，收敛期对齐后恢复 alpha 形态（见「宿主跟随规则」）就是
 `node scripts/adapt-dsh.mjs <上一条线的 alpha 锚点>` + `pnpm install`。

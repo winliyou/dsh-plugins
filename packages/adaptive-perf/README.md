@@ -32,6 +32,10 @@
 
 ## 安装
 
+> 适配的 DSH 版本见本包 `package.json` 的 `dsh.host` 字段
+> （`npm view <包名> dsh.host` 可查）；仓库的 `dsh-v*` git tag 是各次
+> 稳定版适配的归档点。
+
 本包是 DSH bundle：自带 `cordis.patch.yml`，`dsh plugin` 安装后自动加入
 profile 的 `dsh.profile.bundles`，无需手改 `cordis.patch.yml`。
 

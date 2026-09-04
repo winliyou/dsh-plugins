@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.10 (2026-09-05)
+
+### Metadata
+
+* package.json 新增 `dsh.host` 字段：声明本包适配的 DSH 版本，随每次
+  宿主适配由 `adapt-dsh.mjs` 自动维护；`npm view <包名> dsh.host` 可查，
+  README 安装节与仓库 `dsh-v*` 归档 tag 同步标注。无功能变更。
+
 ## 0.3.9 (2026-09-05)
 
 ### Fixes

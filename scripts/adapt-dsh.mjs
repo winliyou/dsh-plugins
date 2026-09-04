@@ -42,6 +42,13 @@ function adaptPackageJson(path) {
       }
     }
   }
+  // dsh.host 适配声明（发布包的 package.json 声明当前适配的宿主版本，
+  // npm 消费者 `npm view <pkg> dsh.host` 可查；根 package.json 私有不
+  // 发布、无 dsh 对象，自然跳过。
+  if (json.dsh && json.dsh.host !== version) {
+    changes.push(["dsh", "host", json.dsh.host ?? "(缺省)"]);
+    json.dsh.host = version;
+  }
   if (changes.length === 0) return;
   for (const [section, name, from] of changes) {
     console.log(`  ${rel} [${section}] ${name}: ${from} → ^${version}`);
