@@ -36,7 +36,7 @@
     }
   },
   "optionalDependencies": {
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.2-rc.1"
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.2-alpha.5"
   },
   "scripts": {
     "build": "node ../../scripts/build.mjs",
