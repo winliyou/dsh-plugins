@@ -116,3 +116,23 @@ jobs:
             NOTES=$(node scripts/release-notes.mjs "$dir" "$version")
             gh release create "$tag" --target "$GITHUB_SHA" --title "$PKG_NAME v$version" --notes "$NOTES"
           done
+
+      # dsh 稳定版适配归档：main 流水成功（测试全绿 + 门禁走完）后，按当前
+      # dsh 依赖基线打 `dsh-v<版本>` tag（幂等：基线没变则 tag 已存在跳过）。
+      # 语义：「该提交 = 对 dsh 此稳定版的已验证适配」，供回退与对照（见
+      # RELEASING.md「dsh 适配归档 tag」）。alpha 分支不打——它永远追随
+      # dsh 最新的 alpha 线，没有按宿主版本回退的管理需求。基线未变的日常
+      # 发布不影响此 tag；基线前进（跟进新稳定版）的首次成功流水自动落
+      # 一个新 tag。
+      - name: Tag the dsh release baseline
+        if: github.ref == 'refs/heads/main'
+        run: |
+          BASELINE=$(node scripts/dsh-baseline.mjs)
+          TAG="dsh-v$BASELINE"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "refs/tags/$TAG$"; then
+            echo "$TAG already exists, skipping."
+          else
+            git tag "$TAG" "$GITHUB_SHA"
+            git push origin "$TAG"
+            echo "Tagged $TAG at $GITHUB_SHA"
+          fi
