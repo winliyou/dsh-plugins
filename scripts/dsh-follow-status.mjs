@@ -93,7 +93,8 @@ function branchRef(branch) {
   return branch;
 }
 
-/** 读某分支的全部 package.json 基线并聚合成单一基线（应全仓一致）。 */
+/** 读某分支的全部 package.json 基线并聚合成单一基线（应全仓一致）；
+ *  同时收集 dsh.host 适配声明（npm 消费者的可见元数据），供一致性核对。 */
 function branchBaseline(ref) {
   const resolved = ref === null ? null : branchRef(ref);
   const read = (path) => {
@@ -104,11 +105,18 @@ function branchBaseline(ref) {
     .filter((e) => e.isDirectory())
     .map((e) => `packages/${e.name}/package.json`)];
   const all = new Set();
+  const hosts = new Set();
   for (const p of paths) {
-    for (const b of dshBaselines(read(p))) all.add(b);
+    const manifest = read(p);
+    for (const b of dshBaselines(manifest)) all.add(b);
+    if (typeof manifest.dsh?.host === "string" && manifest.dsh.host !== "") hosts.add(manifest.dsh.host);
   }
-  if (all.size > 1) return { baseline: `[不一致: ${[...all].join(" / ")}]`, mixed: true };
-  return { baseline: [...all][0] ?? "(无 dsh 依赖)", mixed: false };
+  if (all.size > 1) return { baseline: `[不一致: ${[...all].join(" / ")}]`, host: [...hosts].join("/") || undefined, mixed: true };
+  return {
+    baseline: [...all][0] ?? "(无 dsh 依赖)",
+    host: hosts.size === 1 ? [...hosts][0] : hosts.size === 0 ? undefined : "[不一致]",
+    mixed: false,
+  };
 }
 
 function currentBranch() {
@@ -137,7 +145,7 @@ const devLine = devVersions.length > 0
 
 const rows = [];
 for (const branch of ["main", "alpha"]) {
-  const { baseline, mixed } = branchBaseline(branch === head ? null : branch);
+  const { baseline, host, mixed } = branchBaseline(branch === head ? null : branch);
   let target;
   let state;
   if (branch === "main") {
@@ -159,19 +167,25 @@ for (const branch of ["main", "alpha"]) {
         ? "就位(休眠)"
         : "落后";
   }
-  rows.push({ branch, baseline, target, state });
+  rows.push({ branch, baseline, host, target, state });
 }
 
 console.log(`dsh 稳定线(latest) = ${latest}`);
 console.log(devLine === null
   ? `进行中预发布线: 无 —— alpha 分支休眠，等待 >${latestBase} 的新 alpha 线`
   : `进行中预发布线 = ${devLine}`);
-for (const { branch, baseline, target, state } of rows) {
+let problems = 0;
+for (const { branch, baseline, host, target, state } of rows) {
   const mark = state.startsWith("就位") ? "✔" : "✖";
   console.log(`${mark} ${branch.padEnd(5)} 依赖基线 ${baseline.padEnd(16)} ↔ ${String(target).padEnd(24)} ${state}`);
+  if (typeof host === "string" && !host.startsWith("[") && host !== baseline) {
+    problems++;
+    const message = `dsh 跟随: ${branch} 分支 package.json 的 dsh.host (${host}) 与依赖基线 (${baseline}) 不一致——npm 消费者看到的适配声明失真，请以依赖基线为准修正。`;
+    if (ci) console.log(`::warning::${message}`);
+    console.log(`⚠ ${message}`);
+  }
 }
 
-let problems = 0;
 for (const { branch, baseline, target, state } of rows) {
   if (state.startsWith("就位")) continue;
   problems++;

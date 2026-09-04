@@ -1,6 +1,6 @@
 {
   "name": "@chaoset/adaptive-perf",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "DSH host plugin: bring standard / PTC presets to minimal-mode-level performance — real Minimal tool pair, permanent injected-context suppression with on-demand discovery, runtime-context suppression, and adaptive tool-catalog trimming with demand-driven escalation",
   "engines": {
     "node": ">=22.19.0"
