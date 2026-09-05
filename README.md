@@ -106,28 +106,9 @@ pnpm run test:ci   # build + typecheck + test（发布前验证）
 
 ## 版本管理与发布
 
-分支模型、版本号规则、跨分支同步与 DSH 宿主升级适配的完整约定见
-[RELEASING.md](RELEASING.md)。速查：
-
-- 分支跟随 DSH 宿主线：`main` = 稳定线（发 `latest`），`alpha` = 进行中的
-  dsh alpha 线（`-alpha.N` 进入 rc 阶段后换 `-rc.N`，dist-tag 跟随后缀）。
-  dsh 一条线终结出稳定版后、下一条 alpha 线开跑前，alpha 分支休眠（依赖
-  基线维持上一条线的 alpha 锚点），见 RELEASING.md「宿主跟随规则」。双线
-  并行是常态，main 的工作树始终处于可直接发布状态。
 - **想知道某个包版本适配哪个 dsh**：`npm view @chaoset/<包名>@<版本> dsh.host`，
-  或看该包 README 安装节；仓库的 `dsh-v<dsh版本>` git tag 是各次稳定版适配
-  的归档点。
-- 版本号在本地手工修改（编辑各包 `package.json` 的 `version`），CI 绝不改写；
-  alpha 线版本带 `-alpha.N` 后缀，dist-tag 由后缀自动派生。
-- 推送后 CI（`.github/workflows/publish.yml`）自动测试并发布。该发什么由
-  git tag + npm 状态判定（`scripts/publish-gate.mjs`）：**版本号落后于 npm
-  已发布版本的包会直接让 CI 失败**（防止「改了代码忘升版本」被静默跳过）；
-  发布成功后自动打 `<目录>-v<版本>` tag 并创建 GitHub Release（说明取自该包
-  CHANGELOG 的对应小节），main 流水还会按当前适配的 dsh 稳定版自动维护
-  `dsh-v*` 归档 tag。
-- DSH 宿主升级适配一键完成：`node scripts/adapt-dsh.mjs <新宿主版本>`
-  （改全部 `@deepseek-ai/dsh-*` 依赖 range、workspace 排除清单与 `dsh.host`
-  声明）；两分支与 dsh 目标版本的差距随时 `pnpm run dsh-status` 核对。
-- 发布纪律：本地测试全绿 + 测试实例验证通过才 bump 版本、提交、推送；
-  推送前逐提交复核（详见 RELEASING.md「日常发布流程」与 AGENTS.md
-  「发布纪律」）——绝不带病发版刷版本号。
+  或看该包 README 安装节。
+- 发布线：npm `latest` 适配 dsh 稳定线，`@alpha` / `@rc` dist-tag 适配 dsh
+  预发布线（版本后缀自动决定 dist-tag）。
+- 分支模型、版本号规则、宿主升级适配与发布流程的完整约定见
+  [RELEASING.md](RELEASING.md)。

@@ -30,6 +30,11 @@
 
 所有开关与工具族可在设置页配置，保存后热生效（无需重启）。
 
+> 已知现象：dsh 0.1.2 的 web profile 下设置卡片暂不可见（宿主 settings
+> 接口变更，适配中）；配置仍可通过 profile 的 `cordis.patch.yml` 或
+> `~/.dsh/plugins/adaptive-perf/config.json` 生效。
+
+
 ## 安装
 
 > 适配的 DSH 版本见本包 `package.json` 的 `dsh.host` 字段
@@ -119,10 +124,10 @@ dsh plugin --profile web remove @chaoset/adaptive-perf
 
 ```json
 {
-  "delegation": { "tools": ["subagent", "subagent_fork", "send_message", "list_agents", "interrupt_agent"], "keywords": ["子代理", "子agent", "委托", "分派", "subagent", "delegate"] },
-  "workflow":   { "tools": ["workflow"], "keywords": ["工作流", "workflow", "编排"] },
-  "ralph":      { "tools": ["ralph"], "keywords": ["ralph"] },
-  "goal":       { "tools": ["create_goal", "get_goal", "update_goal"], "keywords": ["长期目标", "跨轮次", "goal"] }
+  "delegation": { "tools": ["subagent", "subagent_fork", "send_message", "list_agents", "interrupt_agent"], "keywords": ["子代理", "子agent", "委托", "分派", "派给", "子任务", "subagent", "delegate", "fork"] },
+  "workflow":   { "tools": ["workflow"], "keywords": ["工作流", "workflow", "编排", "多阶段"] },
+  "ralph":      { "tools": ["ralph"], "keywords": ["ralph", "全新agent", "fresh agent"] },
+  "goal":       { "tools": ["create_goal", "get_goal", "update_goal"], "keywords": ["长期目标", "跨轮次", "目标追踪", "goal"] }
 }
 ```
 

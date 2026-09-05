@@ -84,7 +84,8 @@ Windows 用户目录；也可用 `WORKBUDDY_AUTH_FILE` 环境变量直接指定�
 
 稳定线锁 `dsh 0.1.2-rc.1` 依赖并随 monorepo `main` 分支发布；适配 dsh
 预发布线的版本在 alpha 分支维护，用 `-alpha.N` / `-rc.N` 后缀 + 对应
-dist-tag 发布。与 dsh 版本无关的改动会同步到两条线。
+dist-tag 发布（各包实际适配的宿主版本看 `npm view @chaoset/<包名>
+dsh.host`）。与 dsh 版本无关的改动会同步到两条线。
 
 ## 与上游的差异
 
@@ -93,7 +94,7 @@ dist-tag 发布。与 dsh 版本无关的改动会同步到两条线。
 - 版本改为运行时读 `package.json`（monorepo 无 tsdown `define`），杜绝发布产物
   报旧版本号的漂移。
 - 上游 v0.3.0-alpha.0 的费率显示、思考强度、`developer`→`system` 改写、
-  15 模型兜底目录均已并入（双线均已适配 `dsh 0.1.2-rc.1`）。
+  15 模型兜底目录均已并入。
 
 ## 免责声明
 
