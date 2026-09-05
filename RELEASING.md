@@ -41,7 +41,8 @@ DSH 的发布习惯：每条版本线都是 `<基础号>-alpha.N` 迭代若干�
   新旧，重跑即重建基线与排除清单）。
 
 核对手段：`pnpm run dsh-status`（本地随时跑，输出稳定线、进行中线与两分支
-基线的对照）；CI 的 `dsh-follow.yml` 每日与 push 时自动核对，不一致发
+基线的对照）；CI 的 `dsh-follow.yml` 每日定时核对（push 仅在核对脚本自身
+变更时触发），不一致发
 warning（刻意非阻塞——提醒，不是门禁）。
 
 ### dsh 适配归档 tag（main 专属）
@@ -67,33 +68,29 @@ main 分支的每次 dsh 稳定版适配都会被发布流水自动归档为一�
 - **历史说明**：tag 体系自 2026-09-05 起；更早的适配（`0.1.1-rc.2` 等）
   的提交点被历史回退与补丁打断，不做回填——需要时以提交信息定位。
 
-> 2026-09 已把 main 上误入的 alpha 适配内容回退（三个包依赖回 `^0.1.1-rc.2`、
-> 版本号回 `0.10.1` / `0.4.3` / `0.3.3`，CHANGELOG 的 alpha 小节归还 alpha
-> 分支），并补齐 rc.2 闭包的 peer devDeps（`dsh-timeout` 等——auto-install-peers
-> 关闭后，`dsh-sandbox`→`dsh-llm`、`dsh-llm-pi-ai` 的 peers 需要显式声明才能
-> 在测试环境解析）。
-
 ### 功能一致性原则
 
 两条分支的**功能集保持一致**：一个功能要么两边都有，要么两边都没有。唯一
-允许的代码差异是 **dsh 预发布线的破坏性 API 变更迫使的适配**（现状即
+允许的代码差异是 **dsh 预发布线的破坏性 API 变更迫使的适配**——适配只
+改变「怎么接进宿主」，不改变功能本身。分线实现只在两分支跟随**不同宿主
+基础号**时出现（如 main 在 `0.1.1-rc.2`、alpha 在 `0.1.2-alpha.x` 时期的
 `dsh-any-connect`：dsh 0.1.2 移除了 `settingsNamespace()`、把
-`installSettingsSection()` 挪到 provider 服务，分线实现不可避免）——适配只
-改变「怎么接进宿主」，不改变功能本身。
+`installSettingsSection()` 挪到 provider 服务）；两分支跟随同一条宿主线时
+预期**源码零差异**（当前即此状态）。
 
 由此推论：
 
-- 功能开发默认落在活跃的 alpha 分支，完成后 cherry-pick 回 main（宿主无关的
-  改动通常零冲突）；只在稳定线有意义的功能（如针对 rc.2 的修复）直接在 main
-  做并反向同步。
+- 功能开发落在活跃的 alpha 分支（无进行中预发布线时两分支代码一致，在
+  main 做即可），完成后按需 cherry-pick；只对稳定线有意义的修复直接在
+  main 做并反向同步。
 - CHANGELOG 双记录：同一功能在两条分支各记一节，版本号按各自规则取。
 - 周期性体检（每次宿主适配完成后跑一次）：
 
   ```bash
-  # 三个无分线代码的包：预期零差异
-  git diff main alpha -- packages/adaptive-perf/src packages/adaptive-perf/client
-  # 有分线实现的包：预期 diff 全部是 dsh API 适配，不出现功能增删
-  git diff main alpha -- packages/dsh-any-connect/src
+  # 两分支同宿主基础号时：全部包预期零差异
+  # 两分支不同宿主基础号时：有分线实现的包预期 diff 全部是 dsh API 适配，
+  # 不出现功能增删
+  git diff main alpha -- packages/
   ```
 
 ## 版本号规则
@@ -173,8 +170,8 @@ main 分支的每次 dsh 稳定版适配都会被发布流水自动归档为一�
 - **基础设施文件**（`.github/workflows/`、`scripts/`、`RELEASING.md`、根
   `package.json`、`.npmrc`）：两分支保持一致，直接 cherry-pick，不手改。
 - `pnpm-workspace.yaml` 两分支内容不同（`minimumReleaseAgeExclude` 清单各自
-  跟随自己的宿主线；稳定线的官方包都超过发布时长门槛、无需清单），cherry-pick
-  基建提交时跳过该文件。
+  跟随本分支的宿主基线（由 adapt-dsh.mjs 整块重建），cherry-pick 基建提交
+  时跳过该文件。
 
 ## DSH 宿主升级适配
 
@@ -193,7 +190,7 @@ pnpm run test:ci && git push
 清单，宿主新引入的 dsh 子依赖会自动纳入。若 `pnpm install` 仍报某 dsh 包
 解析不到（闭包外的新依赖），把该包手工补进清单后重试。稳定线（main）跟进
 `latest` 前进（如 `0.1.1-rc.2` → `0.1.2-rc.1`）时同样在 main 上执行同一
-流程；稳定线无需维护排除清单。
+流程；排除清单按本分支基线同样重建。
 
 `adapt-dsh.mjs` 同时把每个发布包 `package.json` 的 `dsh.host` 字段改写为
 目标版本——那是 npm 消费者可见的「本包适配的宿主版本」声明

@@ -4,18 +4,17 @@
 
 ### Refactoring
 
-* 可维护性清理，无功能变更：删除确认死代码（adaptive-perf 的
-  `filterBootstrapTools` 与 dev_tool_search 的不可达默认文案）、提取
-  `quietDispose` / `disposeAll` 释放助手替换 14 处重复的静默 try/catch、
-  魔法数字提为命名常量、修正两处过时注释（测试路径引用、重复标题）。
-  另有 scripts 共享工具提取（dsh-baseline / dsh-follow-status 共用
-  `scripts/lib/dsh-deps.mjs`，发布产物不含 scripts）。
+* 可维护性清理，无功能变更：`readOwn` 的死分支简化（`isENOENT` 判断
+  与返回值同义）并补「与 readDesktop 策略差异是有意的」注释；30 秒双重
+  语义拆分为 `MIN_REFRESH_INTERVAL_MS`（刷新节流窗口）与
+  `MIN_REUSABLE_LIFETIME_MS`（可容忍寿命），`DEFAULT_REFRESH_MARGIN_MS`
+  提常量；client 注释里的测试路径更新。
 
 ## 0.3.11 (2026-09-05)
 
 ### Fixes
 
-* 0.10.4 / 0.3.10 / 0.3.6 / 0.4.6 的 `dsh.host` 字段因改动散落两个工作树未随 0.10.4 的提交进入发布产物——本版本重新包含该字段。此外无任何变更。
+* 上一版本（0.3.10）的 `dsh.host` 字段因改动散落两个工作树未随发布提交进入发布产物——本版本重新包含该字段。此外无任何变更。
 
 ## 0.3.10 (2026-09-05)
 
